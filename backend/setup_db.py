@@ -50,29 +50,16 @@ def create_tables():
             UNIQUE(nome, partido, esfera)
         );
 
-        CREATE TABLE IF NOT EXISTS convenios_federal (
-            id SERIAL PRIMARY KEY,
-            nr_convenio VARCHAR(50) UNIQUE NOT NULL,
-            municipio_id INTEGER REFERENCES municipios(id),
-            proponente_nome VARCHAR(500),
-            orgao_concedente VARCHAR(500),
-            objeto TEXT,
-            situacao VARCHAR(200),
-            valor_global NUMERIC(18,2),
-            valor_repasse NUMERIC(18,2),
-            valor_contrapartida NUMERIC(18,2),
-            valor_empenhado NUMERIC(18,2),
-            valor_desembolsado NUMERIC(18,2),
-            dt_inicio DATE,
-            dt_fim DATE,
-            dt_fim_vigencia DATE,
-            ano INTEGER,
-            programa VARCHAR(500),
-            modalidade VARCHAR(200),
-            raw_data JSONB,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
+        -- ⚠️ SEM AS TABELAS DO REFACTOR LEAN (2026-05). `convenios_federal`,
+        -- `emendas`, `desembolsos`, `editais`, `edital_acompanhamento`,
+        -- `prestacao_contas`, `prestacao_documentos` e `dados_eleitorais` eram
+        -- criadas AQUI a cada boot e derrubadas logo depois por
+        -- `migrations/drop_lean_tables.sql`. O DROP ... CASCADE tira as chaves
+        -- estrangeiras para `convenios_estadual`/`municipios`/`users` e precisa de
+        -- lock nelas: em 15/09/2026 o boot da API da Freitas ficou esperando o
+        -- `sigcon`, que escrevia em `convenios_estadual`, ate o healthcheck do
+        -- Coolify desistir e voltar o container antigo. Guardado por
+        -- `tests/test_boot_nao_recria_tabela_morta.py`.
 
         CREATE TABLE IF NOT EXISTS convenios_estadual (
             id SERIAL PRIMARY KEY,
@@ -137,92 +124,6 @@ def create_tables():
         -- Colunas valor_*/situacao_contratacao*/clausula_*/parlamentar/id_proposta_siconv
         -- sao adicionadas pelas migrations add_voluntarias_* (ADD COLUMN IF NOT EXISTS).
 
-        CREATE TABLE IF NOT EXISTS emendas (
-            id SERIAL PRIMARY KEY,
-            nr_emenda VARCHAR(100),
-            parlamentar_id INTEGER REFERENCES parlamentares(id),
-            municipio_id INTEGER REFERENCES municipios(id),
-            convenio_federal_id INTEGER REFERENCES convenios_federal(id),
-            convenio_estadual_id INTEGER REFERENCES convenios_estadual(id),
-            valor NUMERIC(18,2),
-            ano INTEGER,
-            tipo VARCHAR(100),
-            esfera VARCHAR(20),
-            funcao VARCHAR(200),
-            subfuncao VARCHAR(200),
-            raw_data JSONB
-        );
-
-        CREATE TABLE IF NOT EXISTS desembolsos (
-            id SERIAL PRIMARY KEY,
-            convenio_federal_id INTEGER REFERENCES convenios_federal(id),
-            data_desembolso DATE,
-            valor NUMERIC(18,2),
-            nr_ordem_bancaria VARCHAR(100),
-            raw_data JSONB
-        );
-
-        CREATE TABLE IF NOT EXISTS editais (
-            id SERIAL PRIMARY KEY,
-            titulo VARCHAR(1000) NOT NULL,
-            orgao VARCHAR(500),
-            area VARCHAR(100),
-            esfera VARCHAR(20),
-            url TEXT,
-            dt_publicacao DATE,
-            dt_encerramento DATE,
-            valor_total NUMERIC(18,2),
-            resumo TEXT,
-            status VARCHAR(50) DEFAULT 'aberto',
-            created_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS edital_acompanhamento (
-            id SERIAL PRIMARY KEY,
-            edital_id INTEGER REFERENCES editais(id),
-            municipio_id INTEGER REFERENCES municipios(id),
-            user_id INTEGER REFERENCES users(id),
-            notas TEXT,
-            status VARCHAR(50) DEFAULT 'acompanhando',
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            UNIQUE(edital_id, municipio_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS prestacao_contas (
-            id SERIAL PRIMARY KEY,
-            convenio_estadual_id INTEGER REFERENCES convenios_estadual(id),
-            convenio_federal_id INTEGER REFERENCES convenios_federal(id),
-            municipio_id INTEGER REFERENCES municipios(id),
-            etapa_atual INTEGER DEFAULT 1,
-            etapa_nome VARCHAR(200),
-            responsavel_id INTEGER REFERENCES users(id),
-            status VARCHAR(100) DEFAULT 'pendente',
-            observacoes TEXT,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW()
-        );
-
-        CREATE TABLE IF NOT EXISTS prestacao_documentos (
-            id SERIAL PRIMARY KEY,
-            prestacao_id INTEGER REFERENCES prestacao_contas(id),
-            documento_nome VARCHAR(500) NOT NULL,
-            enviado BOOLEAN DEFAULT false,
-            dt_envio DATE,
-            responsavel_id INTEGER REFERENCES users(id),
-            observacao TEXT
-        );
-
-        CREATE TABLE IF NOT EXISTS dados_eleitorais (
-            id SERIAL PRIMARY KEY,
-            parlamentar_id INTEGER REFERENCES parlamentares(id),
-            municipio_id INTEGER REFERENCES municipios(id),
-            ano_eleicao INTEGER,
-            votos INTEGER,
-            cargo VARCHAR(100),
-            eleito BOOLEAN,
-            UNIQUE(parlamentar_id, municipio_id, ano_eleicao, cargo)
-        );
-
         CREATE TABLE IF NOT EXISTS ingestion_log (
             id SERIAL PRIMARY KEY,
             source VARCHAR(100) NOT NULL,
@@ -236,16 +137,9 @@ def create_tables():
         );
 
         -- Indexes
-        CREATE INDEX IF NOT EXISTS idx_convenios_fed_municipio ON convenios_federal(municipio_id);
-        CREATE INDEX IF NOT EXISTS idx_convenios_fed_situacao ON convenios_federal(situacao);
-        CREATE INDEX IF NOT EXISTS idx_convenios_fed_vigencia ON convenios_federal(dt_fim_vigencia);
         CREATE INDEX IF NOT EXISTS idx_convenios_est_municipio ON convenios_estadual(municipio_id);
         CREATE INDEX IF NOT EXISTS idx_convenios_est_situacao ON convenios_estadual(situacao);
         CREATE INDEX IF NOT EXISTS idx_convenios_est_vigencia ON convenios_estadual(dt_vigencia_atual);
-        CREATE INDEX IF NOT EXISTS idx_emendas_parlamentar ON emendas(parlamentar_id);
-        CREATE INDEX IF NOT EXISTS idx_emendas_municipio ON emendas(municipio_id);
-        CREATE INDEX IF NOT EXISTS idx_editais_area ON editais(area);
-        CREATE INDEX IF NOT EXISTS idx_editais_status ON editais(status);
         """))
         conn.commit()
         print("Tabelas criadas com sucesso!")

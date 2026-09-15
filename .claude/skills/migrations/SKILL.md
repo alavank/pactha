@@ -19,7 +19,7 @@ boot** (`services/startup.py::run_migrations`, called from `main.py`'s `lifespan
    comments around `add_siconv_federal.sql`.
 
 2. **Must be idempotent** (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING` / guarded `ALTER`). It
-   runs against **5 live tenant databases**, and re-runs on every boot — including a
+   runs against **6 live tenant databases**, and re-runs on every boot — including a
    **fresh** one: Santa Maria (08/2026) and Nova Palma (01/09/2026) were created from
    scratch, and the second exposed an ORDERING bug (a file altering a table created later in
    `MIGRATION_FILES`), now guarded by `tests/test_migrations_ordem_tabela.py`.
@@ -48,6 +48,17 @@ boot** (`services/startup.py::run_migrations`, called from `main.py`'s `lifespan
 
 5. A boot-time advisory lock (`pg_try_advisory_lock`) serializes the two uvicorn workers so
    migrations never run concurrently. Don't remove it.
+
+6. ⚠️ **"Idempotent" is not "lock-free".** `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`,
+   `CREATE INDEX IF NOT EXISTS` and `DROP ... CASCADE` take their lock **before** finding
+   there is nothing to do. Every boot, they wait on any collector holding a long transaction
+   on that table. Coolify's healthcheck gives up after about 1 min and rolls back the
+   container. This hit api-freitas on 15/09/2026 while `sigcon` was running.
+   - A table dropped by `drop_lean_tables.sql` must **never** be recreated — not in
+     `setup_db.py`, not as a model, not in a migration. The recreate/drop cycle made every
+     boot lock `parlamentares`/`municipios`/`convenios_estadual`/`users`. Guarded by
+     `tests/test_boot_nao_recria_tabela_morta.py`.
+   - Prefer DDL on tables the collectors don't keep open.
 
 ## Before writing one
 
