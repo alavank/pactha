@@ -348,7 +348,6 @@ export default function TransfereGovPropostas({
   const propostaParam = sp.get("proposta");
 
   const [items, setItems] = useState<Proposta[]>([]);
-  const [foraDaPrefeitura, setForaDaPrefeitura] = useState(0);
   const [atualizadoEm, setAtualizadoEm] = useState<string | undefined>();
   const [loading, setLoading] = useState(false);
   /* QUATRO CAMPOS, e não uma caixa. A caixa única era um OR de três colunas — e
@@ -461,7 +460,6 @@ export default function TransfereGovPropostas({
       const r = await api.get<Resp>(`/transferegov/lista/${categoria}`,
                                     { params: buildParams() });
       setItems(r.data.items); setAtualizadoEm(r.data.atualizado_em);
-      setForaDaPrefeitura(r.data.fora_da_prefeitura ?? 0);
     } catch (e) { console.error(e); } finally { setLoading(false); }
   }, [municipioId, categoria, buildParams]);
 
@@ -526,6 +524,17 @@ export default function TransfereGovPropostas({
     if (anosSel.length) r = r.filter((i) => anosSel.includes(anoDa(i)));
     return r;
   }, [items, situacoesSel, anosSel]);
+
+  /** Quantas das propostas NA TELA não são da prefeitura.
+   *
+   *  ⚠️ CONTADO AQUI, sobre `displayItems`, e não o `fora_da_prefeitura` da
+   *  resposta. Aquele conta a lista inteira do servidor, e o filtro de ANO e o
+   *  de situação são aplicados no navegador. Visto em produção (15/09/2026,
+   *  Nova Serrana): "2 propostas · 2 não são da prefeitura" com o ano 2026
+   *  filtrado, e as duas de 2026 ERAM da prefeitura — as 2 de fora eram de 2023
+   *  e 2024. Frase na tela contando outra lista é a frase que mente. */
+  const foraDaPrefeitura = useMemo(
+    () => displayItems.filter((i) => i.municipal === false).length, [displayItems]);
 
   /** Agrupado por ano, do mais recente para o mais antigo.
    *
