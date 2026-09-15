@@ -47,10 +47,12 @@
 -- que a ponta esta protegida.
 --
 -- ----------------------------------------------------------------------------
--- ⚠️ ESTE ARQUIVO RODA A CADA BOOT, INTEIRO, NUMA UNICA TRANSACAO.
+-- ⚠️ ESTE ARQUIVO PODE RODAR MAIS DE UMA VEZ, INTEIRO, NUMA UNICA TRANSACAO.
 -- ----------------------------------------------------------------------------
--- O runner de `services/startup.py` nao tem registro de "migration ja aplicada":
--- executa a lista toda em todo start e ENGOLE o erro (so loga). Entao aqui
+-- O runner de `services/startup.py` registra o checksum em
+-- `migrations_aplicadas` e roda o arquivo de novo sempre que ele e editado (ate
+-- 15/09/2026 rodava a lista toda em todo start); banco novo roda tudo; e o
+-- runner ENGOLE o erro (so loga). Entao aqui
 -- TUDO e `IF NOT EXISTS` / `CREATE OR REPLACE`, e rodar duas vezes tem de ser
 -- inofensivo. O selo da cadeia (no fim) converge: a partir do segundo boot ele
 -- nem chega a executar UPDATE nenhum.

@@ -5,8 +5,9 @@
 
 -- ATENCAO: irreversivel. Backup deve ter sido feito antes do deploy.
 --
--- ⚠️ RODA A CADA BOOT, e so e barata porque as tabelas NAO EXISTEM mais: DROP ...
--- IF EXISTS de tabela ausente nao pede lock. Ate 15/09/2026 o `setup_db.py`
+-- ⚠️ RODA EM BANCO NOVO E SEMPRE QUE FOR EDITADO (registro `migrations_aplicadas`;
+-- ate 15/09/2026, a cada boot), e so e barata porque as tabelas NAO EXISTEM mais:
+-- DROP ... IF EXISTS de tabela ausente nao pede lock. Ate 15/09/2026 o `setup_db.py`
 -- recriava oito delas antes daqui, e o DROP ... CASCADE esperava lock em
 -- `convenios_estadual`/`municipios` enquanto um coletor escrevia — o boot da API
 -- estourava o healthcheck. Nenhuma tabela desta lista pode voltar a ser criada

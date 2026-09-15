@@ -13,7 +13,8 @@
 -- Defesa Civil — que é o que esta tela acrescenta. Casa com a permissão, que
 -- herda de `convenios` pela mesma chave (add_permissoes_por_acao.sql).
 --
--- ATENÇÃO ao NOT EXISTS: o runner roda TODOS os arquivos a cada boot. Sem a
+-- ATENÇÃO ao NOT EXISTS: o arquivo roda de novo sempre que é editado (até
+-- 15/09/2026 o runner rodava TODOS os arquivos a cada boot). Sem a
 -- guarda, o backfill devolveria a tela a quem um admin tivesse revogado. Com
 -- ela, só roda enquanto NINGUÉM tiver `obrasgov` — concessão única, revogação
 -- respeitada dali em diante.

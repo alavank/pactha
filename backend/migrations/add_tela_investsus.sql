@@ -11,7 +11,8 @@
 -- o repasse que ela vira. E casa com a permissao, que ja herda de `consultas`
 -- (add_permissoes_por_acao.sql).
 --
--- ATENCAO ao NOT EXISTS: o runner roda TODOS os arquivos a cada boot. Sem a
+-- ATENCAO ao NOT EXISTS: o arquivo roda de novo sempre que e editado (ate
+-- 15/09/2026 o runner rodava TODOS os arquivos a cada boot). Sem a
 -- guarda, o backfill devolveria a tela a quem um admin tivesse revogado. Com
 -- ela, so roda enquanto NINGUEM tiver `investsus` — concessao unica, revogacao
 -- respeitada dali em diante.

@@ -8,9 +8,10 @@
 -- nascem NULL — e aqui NULL significa "linha anterior ao incremento", nunca
 -- "nao aconteceu". Quem for ler a trilha precisa distinguir os dois.
 --
--- ⚠️ ESTE ARQUIVO RODA A CADA BOOT. O runner de `services/startup.py` nao tem
--- registro de "migration ja aplicada": ele executa a lista inteira todo start e
--- engole o erro. Por isso TUDO aqui e IF NOT EXISTS e o unico UPDATE tem guarda
+-- ⚠️ ESTE ARQUIVO PODE RODAR MAIS DE UMA VEZ: roda de novo sempre que for
+-- editado (o registro `migrations_aplicadas` compara o checksum), e banco novo
+-- roda a lista inteira. Ate 15/09/2026 o runner rodava tudo em todo boot. E o
+-- runner engole o erro. Por isso TUDO aqui e IF NOT EXISTS e o unico UPDATE tem guarda
 -- que o faz convergir. Sem a guarda, cada reinicio reescreveria a trilha — que
 -- e exatamente a unica coisa que ela nao pode sofrer.
 --

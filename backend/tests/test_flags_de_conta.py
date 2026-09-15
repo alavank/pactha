@@ -31,7 +31,9 @@ from services.auth import SUPER_ADMIN_EMAILS
 
 BACKEND = pathlib.Path(__file__).resolve().parent.parent
 REPO = BACKEND.parent
-MIGRATION = (BACKEND / "migrations" / "add_role_vira_rotulo.sql").read_text(encoding="utf-8")
+# A semente do super_admin saiu de `add_role_vira_rotulo.sql` em 15/09/2026 para
+# um arquivo proprio, o unico que roda em TODO boot (marca a-cada-boot).
+MIGRATION = (BACKEND / "migrations" / "semeia_super_admin.sql").read_text(encoding="utf-8")
 
 
 def _emails(texto: str) -> set[str]:

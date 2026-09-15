@@ -10,8 +10,9 @@
 -- RECUSA UPDATE e DELETE em audit_log. Telemetria la e impossivel — a coluna de
 -- tempo ativo precisa ser somada a cada batimento.
 --
--- Idempotente por construcao (IF NOT EXISTS em tudo): o runner do PACTHA executa
--- a lista inteira de migrations a CADA BOOT, sem registro de aplicada.
+-- Idempotente por construcao (IF NOT EXISTS em tudo): o runner do PACTHA roda o
+-- arquivo de novo sempre que ele e editado, e banco novo roda a lista inteira
+-- (ate 15/09/2026 rodava tudo a CADA BOOT, sem registro de aplicada).
 
 CREATE TABLE IF NOT EXISTS uso_sessao (
   sid           CHAR(32) PRIMARY KEY,

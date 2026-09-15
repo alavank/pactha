@@ -60,6 +60,11 @@ CREATE TABLE IF NOT EXISTS obrasgov_projetos (
     atualizado_em     TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS ux_obrasgov_projetos ON obrasgov_projetos (id_unico);
+-- ⚠️ SEM o UNIQUE em `id_unico` sozinho (15/09/2026). A chave natural virou
+-- (municipio_id, id_unico) em `add_obrasgov_territorio_e_detalhe.sql`, que cria
+-- `ux_obrasgov_projetos_mun` e DERRUBA `ux_obrasgov_projetos`. Com a linha aqui,
+-- todo boot recriava o indice que a migration seguinte apagava — e nos tenants
+-- com a mesma obra em dois municipios (freitas, trust, bgk) o CREATE falhava
+-- com "duplicate key", o que o runner antigo rotulava "ja aplicada (skip)".
 CREATE INDEX IF NOT EXISTS ix_obrasgov_projetos_mun
     ON obrasgov_projetos (municipio_id, situacao);

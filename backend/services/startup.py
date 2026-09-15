@@ -10,6 +10,7 @@ Cada migration e rodada via psycopg2 raw - usa SYNC para nao bloquear o
 event loop async no caso de demora. Falha em uma migration nao impede o
 boot (logs warning).
 """
+import hashlib
 import os
 import logging
 import time
@@ -243,6 +244,10 @@ MIGRATION_FILES = [
     # acima nesta lista. O backfill so pode rodar UMA VEZ — a propria migration
     # cria `migration_backfills` para isso; ver o cabecalho dela.
     "add_role_vira_rotulo.sql",
+    # A semente do super_admin, a unica parte de add_role_vira_rotulo que roda
+    # em TODO boot (marca `-- migration: a-cada-boot`). DEPENDE dela: le
+    # `users.super_admin`, criada la.
+    "semeia_super_admin.sql",
     # Incremento 5 — permissao por ACAO (`recurso.acao`) por usuario: a
     # tabela-catalogo (chave estrangeira que mata o typo silencioso), a tabela
     # de concessao e o BACKFILL de compatibilidade (quem tem a tela X ganha
@@ -746,17 +751,120 @@ def run_migrations():
                 pass
 
 
+# ---------------------------------------------------------------------------
+# ⭐ REGISTRO DE MIGRATION APLICADA (15/09/2026)
+# ---------------------------------------------------------------------------
+# Ate aqui o runner executava a lista INTEIRA em todo boot. Idempotente nao e
+# sem lock: `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT
+# EXISTS` e `DROP ... CASCADE` pegam o lock ANTES de ver que nao ha nada a fazer,
+# e esperam qualquer coletor com transacao aberta na tabela. Em 15/09/2026 o boot
+# da api-freitas ficou preso atras do `sigcon` ate o healthcheck do Coolify
+# desistir e voltar o container antigo.
+#
+# Agora cada arquivo e registrado em `migrations_aplicadas` com o SHA-256 do
+# conteudo, e so roda de novo quando e NOVO ou foi ALTERADO. Tres consequencias:
+#   - boot normal (nada novo) nao toca tabela de ninguem: zero lock de DDL;
+#   - editar um .sql faz ele rodar de novo UMA vez — por isso continuam todos
+#     IDEMPOTENTES (e banco novo, criado do zero, roda a lista inteira);
+#   - falha NAO registra: o arquivo tenta de novo no proximo boot, e o log diz.
+# Quem precisa rodar em TODO boot (limpeza autocurativa, dado que depende de
+# outra tabela mudar) declara isso no proprio arquivo, com `MARCA_A_CADA_BOOT`.
+# Forcar uma migration a rodar de novo, a mao:
+#   DELETE FROM migrations_aplicadas WHERE arquivo = '<arquivo>.sql';
+REGISTRO_SQL = """
+CREATE TABLE IF NOT EXISTS migrations_aplicadas (
+    arquivo      TEXT PRIMARY KEY,
+    checksum     TEXT NOT NULL,
+    aplicada_em  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)
+"""
+_REGISTRA_SQL = (
+    "INSERT INTO migrations_aplicadas (arquivo, checksum, aplicada_em) "
+    "VALUES (%s, %s, NOW()) ON CONFLICT (arquivo) DO UPDATE SET "
+    "checksum = EXCLUDED.checksum, aplicada_em = NOW()")
+MARCA_A_CADA_BOOT = "-- migration: a-cada-boot"
+# O schema base (`setup_db.SCHEMA_BASE_SQL`) entra no mesmo registro com esta chave.
+CHAVE_SCHEMA_BASE = "__setup_db__"
+
+
+def checksum_de(texto: str) -> str:
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+
+
+def decide_migration(conteudo: str | None, registrado: str | None) -> str:
+    """O que fazer com UM arquivo. Funcao PURA.
+
+    'ausente'     — o arquivo nao existe no disco;
+    'a-cada-boot' — traz `MARCA_A_CADA_BOOT`: roda sempre;
+    'nova'        — nunca registrada (ou o registro nao pode ser lido: None);
+    'alterada'    — registrada com outro checksum: roda de novo;
+    'registrada'  — mesmo checksum ja aplicado: NAO roda."""
+    if conteudo is None:
+        return "ausente"
+    if MARCA_A_CADA_BOOT in conteudo:
+        return "a-cada-boot"
+    if registrado is None:
+        return "nova"
+    return "registrada" if registrado == checksum_de(conteudo) else "alterada"
+
+
+def _le_registro(sync_url: str) -> dict[str, str] | None:
+    """Cria (se preciso) e le `migrations_aplicadas`. `None` = nao consegui:
+    o boot volta ao comportamento antigo (roda tudo, nao registra nada) —
+    melhor lock de DDL que schema pela metade."""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(sync_url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(REGISTRO_SQL)
+                cur.execute("SELECT arquivo, checksum FROM migrations_aplicadas")
+                reg = {a: c for a, c in cur.fetchall()}
+            conn.commit()
+            return reg
+        finally:
+            conn.close()
+    except Exception as e:
+        _log(f"Registro de migrations indisponivel - rodando a lista inteira: {str(e)[:150]}")
+        return None
+
+
+def _roda_sql(sync_url: str, sql: str, arquivo: str | None, checksum: str | None) -> None:
+    """Executa um SQL numa transacao e, se `arquivo`, registra NA MESMA transacao:
+    ou os dois acontecem, ou nenhum."""
+    import psycopg2
+    conn = psycopg2.connect(sync_url)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            if arquivo:
+                cur.execute(_REGISTRA_SQL, (arquivo, checksum))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _rodar_migrations(sync_url: str):
     """O trabalho em si, ja com o lock do boot na mao."""
     import psycopg2
 
+    registro = _le_registro(sync_url)
+
     # Schema base (tabelas + seed) antes das migrations incrementais. No Coolify
     # nao existe o passo manual "rodar setup_db.py uma vez"; e idempotente
-    # (CREATE TABLE IF NOT EXISTS + INSERT ON CONFLICT DO NOTHING). O seed so roda
-    # quando a tabela users esta vazia (evita re-hash/print de senha a cada boot).
+    # (CREATE TABLE IF NOT EXISTS + INSERT ON CONFLICT DO NOTHING). Desde
+    # 15/09/2026 so roda quando o SQL dele muda (ou em banco novo) — ver o bloco
+    # do registro acima. O seed so roda quando a tabela users esta vazia (evita
+    # re-hash/print de senha a cada boot).
     try:
         import setup_db
-        setup_db.create_tables()
+        cs_base = checksum_de(setup_db.SCHEMA_BASE_SQL)
+        if registro is not None and registro.get(CHAVE_SCHEMA_BASE) == cs_base:
+            _log("Schema base ja registrado (setup_db pulado)")
+        else:
+            setup_db.create_tables()
+            if registro is not None:
+                _roda_sql(sync_url, "SELECT 1", CHAVE_SCHEMA_BASE, cs_base)
         # Tabelas modeladas ausentes do setup_db e sem migration CREATE (ex.:
         # cofre_senhas, audit_log): cria a partir dos models SQLAlchemy.
         # checkfirst=True nao toca tabelas ja existentes.
@@ -787,28 +895,35 @@ def _rodar_migrations(sync_url: str):
         _log(f"Pasta migrations nao encontrada: {base}")
         return
 
-    rodadas = 0
+    rodadas = registradas = 0
     for fname in MIGRATION_FILES:
         path = base / fname
-        if not path.exists():
+        conteudo = path.read_text(encoding="utf-8") if path.exists() else None
+        decisao = decide_migration(conteudo, registro.get(fname) if registro else None)
+        if decisao == "ausente":
             _log(f"  Migration ausente: {fname}")
             continue
+        if decisao == "registrada":
+            registradas += 1
+            continue
         try:
-            with psycopg2.connect(sync_url) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(path.read_text(encoding="utf-8"))
-                conn.commit()
+            _roda_sql(sync_url, conteudo, fname if registro is not None else None,
+                      checksum_de(conteudo))
             rodadas += 1
-            _log(f"  Migration OK: {fname}")
+            _log(f"  Migration OK: {fname}" + ("" if decisao == "nova" else f" ({decisao})"))
         except Exception as e:
-            # Erros tipicos: tabela ja existe, coluna ja adicionada - sao seguros
+            # ⚠️ NADA E REGISTRADO: o arquivo tenta de novo no proximo boot. O
+            # rotulo "ja aplicada" de antes escondia falha de verdade — um UNIQUE
+            # que nao pode ser criado porque ha duplicata tambem diz "duplicate"
+            # (foi o que o add_obrasgov.sql fez em tres tenants ate 15/09/2026).
             msg = str(e)[:200]
-            if any(k in msg.lower() for k in ["already exists", "duplicate", "ja existe"]):
-                _log(f"  Migration {fname}: ja aplicada (skip)")
-            else:
-                _log(f"  Migration {fname} falhou: {msg}")
+            dica = (" (objeto ja existe?)" if any(k in msg.lower() for k in
+                    ["already exists", "duplicate", "ja existe"]) else "")
+            _log(f"  Migration {fname} falhou{dica}: {msg}")
 
-    _log(f"Startup migrations: {rodadas}/{len(MIGRATION_FILES)} executadas")
+    # "N/N em dia" e o sinal de boot saudavel: executadas agora + ja registradas.
+    _log(f"Startup migrations: {rodadas + registradas}/{len(MIGRATION_FILES)} em dia "
+         f"({rodadas} executadas agora, {registradas} ja registradas)")
     _log_estado_da_trava()
 
     # Bootstrap do control token (Console Alavank), apos as migrations (kind ja existe).

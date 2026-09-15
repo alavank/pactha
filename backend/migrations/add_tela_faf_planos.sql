@@ -17,7 +17,8 @@
 -- menu visível e 403 no clique — o defeito que `add_tela_emendas_federais.sql`
 -- teve de consertar depois.
 --
--- ATENÇÃO ao NOT EXISTS: o runner roda TODOS os arquivos a cada boot. Sem a
+-- ATENÇÃO ao NOT EXISTS: o arquivo roda de novo sempre que é editado (até
+-- 15/09/2026 o runner rodava TODOS os arquivos a cada boot). Sem a
 -- guarda, o backfill devolveria a tela a quem um admin tivesse revogado. Com
 -- ela, só roda enquanto NINGUÉM tiver `faf_planos` — concessão única, revogação
 -- respeitada dali em diante.

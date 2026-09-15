@@ -34,8 +34,9 @@
 -- ⚠️ POR QUE A SEMENTE DOS MOLDES CRUZA `migration_backfills` (e a do
 --    catalogo de permissoes NAO cruza) — leia antes de mexer.
 -- ---------------------------------------------------------------------
--- `services/startup.py` roda TODO arquivo da lista a CADA boot e engole
--- erro. Para DDL idempotente isso e inofensivo. Para dado que o
+-- `services/startup.py` roda o arquivo de novo sempre que ele e editado (ate
+-- 15/09/2026, a CADA boot) e engole erro. Para DDL idempotente isso e
+-- inofensivo. Para dado que o
 -- ADMINISTRADOR pode editar, nao e.
 --
 -- A semente de `permissoes_catalogo` (add_permissoes_por_acao.sql) roda a

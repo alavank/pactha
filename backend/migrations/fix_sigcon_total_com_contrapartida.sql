@@ -11,7 +11,8 @@
 --
 -- IDEMPOTENTE POR CONSTRUCAO: depois de rodar, `valor_total <> valor_concedente`
 -- nessas linhas e o WHERE deixa de casar. Isso e OBRIGATORIO aqui — o runner do
--- PACTHA executa TODAS as migrations a cada boot, nao ha registro de aplicada.
+-- PACTHA roda o arquivo de novo sempre que ele e editado, e banco novo roda tudo
+-- (ate 15/09/2026 executava TODAS as migrations a cada boot).
 --
 -- ⚠️ SO fonte='SIGCON-MG'. No GCONV-ES o `valor_total` ja INCLUI os aditivos, e
 -- recalcular como concedente+contrapartida apagaria R$ 11.651.752,18 de uma
