@@ -2593,10 +2593,12 @@ async def run():
     # atualizada -- em vez do cenario antigo, em que uma falha do navegador
     # deixava TUDO desatualizado. Isolado: um erro aqui nao impede o resto.
     # TG_OPENDATA=0 desliga (volta ao comportamento so-navegador).
+    _open_ok = False
     if (os.getenv("TG_OPENDATA", "1") or "1").strip() not in ("0", "false", "no"):
         try:
             from ingestion.transferegov_opendata import run as _open_run
             _open_run()
+            _open_ok = True
             # ⚠️ ORDEM IMPORTA. Estes backfills (baratos, HTTP, carteira inteira)
             # ficavam DEPOIS do loop de browser — e o timeout do cron mata dentro
             # do loop, entao no freitas e no trust eles NUNCA rodavam: clausula
@@ -2628,6 +2630,46 @@ async def run():
                 logger.warning(f"  licitacoes (dado aberto) falhou: {str(e)[:160]}")
         except Exception as e:
             logger.warning(f"  camada de dados abertos falhou (segue p/ navegador): {e}")
+
+    # ⭐ A LISTAGEM PELO NAVEGADOR NESTA RODADA DIARIA ESTA DESLIGADA desde
+    # 15/09/2026 (a pedido do dono: "mede a listagem playwright e desliga se
+    # der"). RESERVA: TG_LISTAGEM_BASE=1 religa.
+    #
+    # MEDIDO na rodada de 15/09 (inicio -> fim do laco abaixo): freitas 20,6 min
+    # (42 municipios), trust 29,2, bgk 11,6, santa maria 2,3, nova palma 0,9,
+    # monte siao 0,6 — ~65 min de Chromium por noite, no mesmo portal (e IP) do
+    # lote. O que o laco trazia e o dado aberto acima nao traz:
+    #   - `possui_parecer`: NENHUM leitor (a rota devolve; a tela nao mostra);
+    #   - propostas fora do dump: 7 na freitas e 77 na trust, e sao "Proposta do
+    #     Legado SIAFI" (6 e 71), "Eliminada em Analise Preliminar" (1 e 5) e UMA
+    #     recem-aprovada, que entra no dump no dia seguinte. Ficam no banco (o
+    #     upsert nao apaga) e o LOTE continua listando cada municipio no rodizio;
+    #   - a `situacao` lida AO VIVO, ~19 h mais nova que a do dump da noite. O lote
+    #     segue lendo ao vivo os municipios da rodada dele (17 de 42 na freitas em
+    #     26 h); nos outros, a mudanca chega pelo dump do dia seguinte.
+    # A linha `transferegov_voluntarias` do ingestion_log continua (o vigia a
+    # cobra em 30 h): passa a dizer a verdade desta rodada — a camada base.
+    if (os.getenv("TG_LISTAGEM_BASE", "0") or "0").strip() != "1":
+        logger.info("  listagem pelo navegador PULADA (TG_LISTAGEM_BASE=0): a camada base "
+                    "veio do dado aberto; o lote lista cada municipio no rodizio")
+        try:
+            import psycopg2
+            url = os.getenv("DATABASE_URL_SYNC", "").replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+            conn = psycopg2.connect(url); cur = conn.cursor()
+            cur.execute("INSERT INTO ingestion_log (source, status, records_processed, records_inserted, "
+                        "error_message, finished_at) VALUES ('transferegov_voluntarias',%s,%s,0,%s,NOW())",
+                        ("success" if _open_ok else "erro", len(municipios),
+                         "listagem pelo navegador desligada (TG_LISTAGEM_BASE=0); base pelo dado aberto"
+                         if _open_ok else "dado aberto falhou e a listagem pelo navegador esta desligada"))
+            conn.commit(); cur.close(); conn.close()
+        except Exception:
+            pass
+        try:
+            from ingestion.transferegov_pac import run as _pac_run
+            await _pac_run()
+        except Exception as e:
+            logger.warning(f"  PAC (apos voluntarias) falhou: {str(e)[:160]}")
+        return
 
     total = 0
     _ok_diario = 0

@@ -398,6 +398,14 @@ O desenho atual (13/09/2026, "coleta noturna"):
   O que continua pela sessão gov.br: histórico de comunicações, termos de notificação,
   projeto básico rico e anexos. As chaves e o código ficam como reserva; religar é mudar a
   env e redeployar o worker.
+- **A task base `transferegov` não abre mais o navegador (15/09/2026).** Ela roda o
+  opendata, os backfills, as licitações do dado aberto e o PAC. A listagem Playwright por
+  município ficou só no lote.
+  - Medido na última rodada com ela: freitas 20,6 min, trust 29,2, bgk 11,6, santa maria
+    2,3, nova palma 0,9, monte sião 0,6.
+  - A rodada cai para ~2 min + o PAC.
+  - Reserva: `TG_LISTAGEM_BASE=1` na env do worker. O porquê está em
+    `ingestion/transferegov_voluntarias.run()`.
 - **SIGCON: uma rodada completa + rodadas só do scraper.** A task `sigcon`
   (`run_sigcon_cron.py`: dados abertos + backfill CKAN + scraper) roda 1×/noite; a
   `sigcon-rodizio` (só na Freitas, que tem 21 municípios com senha a ~18 min cada) chama

@@ -1598,8 +1598,16 @@ As regras comuns ficam em `services/voluntarias_dump.py`.
 - **Task `empenho-aberto`:** desativada (reserva). O vigia cobra a `transferegov_arvore`.
 - **Continuam pela sessão:** histórico de comunicações, termos de notificação, projeto
   básico rico e anexos.
-- **Ainda candidato:** a listagem Playwright da base (~40 s por município) é coberta pelo
-  opendata; só o `possui_parecer` vem só dela. Não foi medido para desligar.
+- **Listagem Playwright da coleta base: DESLIGADA** (medido e decidido em 15/09, a pedido
+  do dono).
+  - Custava ~65 min de Chromium por noite nos seis.
+  - O que só ela trazia:
+    - `possui_parecer`, sem leitor nenhum;
+    - propostas fora do dump, que são "Legado SIAFI" e "Eliminada em Análise
+      Preliminar" (7 na Freitas, 77 na Trust);
+    - a situação ao vivo, ~19 h mais nova que a do dump.
+  - A `transferegov-lote` segue listando cada município no rodízio (2 a 3 dias nos
+    clientes grandes). Reserva: `TG_LISTAGEM_BASE=1`.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
