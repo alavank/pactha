@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 22 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 23 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 22 sources has its own collector file with source-specific gotchas documented
+Each of the 23 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -54,11 +54,44 @@ So `buscar()` / `_pub_todos()` in `parcerias.py`, `faf_planos.py` and
 município ↔ data link must pass it** — above the ceiling they return `None`, which the
 collectors already treat as "could not ask", never as absence.
 `tests/test_filtro_ignorado_em_silencio.py` parses the collectors and fails naming any
-IBGE/CNPJ query that forgot it. Queries by parent id (`id_proposta`, `id_plano_acao`)
-stay without a ceiling on purpose.
+IBGE/CNPJ query that forgot it.
 
-When adding a filter, prove it filters: send an impossible value. `9999999` must return
-**0**, not everything.
+**Queries by parent id get a ceiling too once a child table is big.** `parcerias` and
+`faf_planos` still query their few children without one. The Transferência Especial
+tree (`transferegov_te.arvore_do_plano`) goes through `_pub_filhos`, which applies
+`_TETO_FILHOS` (5.000) and discards a tree with a missing middle page. The reason: an
+ignored child filter hits a national table of 730.455 lançamentos (3.653 pages)
+and would save it as one plano's bank statement. `tests/test_te_arvore.py` fails if the
+tree calls `_pub_todos` directly.
+
+When adding a filter, prove it filters: send an impossible value. `9999999` (or id `0`)
+must return **0**, not everything. The 21 child filters of `/especiais` were proven this
+way on 14/09/2026.
+
+## The official APIs return field names that differ from their own openapi
+
+`api-publica.transferegov.gestao.gov.br/especiais`, measured 14/09/2026:
+- **Filter name ≠ response name.** You filter by
+  `tx_identificacao_recebedor_relatorio_gestao_dl`, but the field comes back as
+  `tx_identificacao_recebedor_mascarado_relatorio_gestao_dl`. Same for
+  `tx_cpf_responsavel_mascarado_devolucao`. Read the field names from a real response,
+  never from the openapi or the data model. A wrong key gives `None` and raises no error.
+- **CNPJ comes as float text.** `doc_favorecido_gestao_financeira = '394460055477.0'`
+  is CNPJ 00.394.460/0554-77, with the leading zeros lost. Normalize it with
+  `_doc_normalizado` (type 2 → 14 digits, type 1 → 11). Values masked by the source
+  (`'***47295***'`) stay as they are.
+- **The official API updates once a day** (`/data-atualizacao`); the internal SPA API
+  updates in real time. An OB issued today shows up in the official API tomorrow.
+
+## Transferência Especial — who provides what (14/09/2026)
+
+- **Official API:** everything. Plano listing, the tree with 21 resources, and
+  **payments** (`pagamentos_da_arvore`, in the same format as the SPA path).
+- **Internal SPA API** (`especiais.transferegov.sistema.gov.br`, quota per IP): only
+  phase 3, `run_reserva_spa`. It fetches the ordenador/gestor CPF and the OP event
+  history, **once per OP**, and the result is inherited on later runs. It stops at the
+  first refusal, because a rejected request extends the IP penalty.
+- **`TE_PGTO_FONTE=spa`** switches the old payment path back on as a full fallback.
 
 ## Authenticated sources
 

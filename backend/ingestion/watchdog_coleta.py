@@ -160,6 +160,15 @@ FRESCOR_HORAS_NACIONAL = {
     # ⚠️ NACIONAL, nunca no mapa por UF: a carteira sai do CNPJ do municipio, sem
     # recorte de estado. Emenda federal existe nos cinco tenants.
     "portal_transparencia": 30,
+    # TRANSFERENCIA ESPECIAL / Emenda Pix (task `transferegov-te`, 1x/dia nos
+    # seis). Estava no Frescor desde 06/09/2026 e fora DAQUI — o item O2 do
+    # BACKLOG_POR_ESTADO. Entrou em 14/09/2026, no PR que levou a coleta para a
+    # API oficial inteira: a rodada passou a gravar UMA linha somando listagem e
+    # arvore do plano (`status_da_rodada`), entao `partial` aqui quer dizer
+    # planos que ficaram sem resposta ou fora do orcamento, e diz quantos.
+    # 30h = 1x/dia + folga, o mesmo numero das outras diarias. NACIONAL: a
+    # carteira entra pelo CNPJ do municipio.
+    "transferegov_te": 30,
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio
