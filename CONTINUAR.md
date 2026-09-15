@@ -1415,9 +1415,15 @@ Nova Serrana, Santa Maria e Monte Sião.
   com acento.
 - Rodada forçada repetida sem duplicar nada.
 
-**Próximo (PR B):** a tela `dashboard/parcerias`, com um modal por proposta (plano,
-execução, conta e extrato, parecer), selos de pago, saldo e não classificado, e o bloco
-de emendas indicadas.
+**A tela (PR B, mesmo dia):**
+- **`dashboard/parcerias` ganhou três cartões de execução:** pago pela OB, saldo em conta
+  e ingresso não classificado, somando só a administração municipal e dizendo quantas
+  propostas já foram medidas.
+- **Selos por proposta:** pago com a data, saldo, não classificado.
+- **O bloco "Emendas indicadas ao município"** marca as que ainda não viraram proposta.
+- **Modal de detalhe** (`GET /api/parcerias/proposta/{id}`, inteiro do banco, gate de tela
+  + município da linha), com as abas Proposta (com indicadores e programa), Plano de
+  Trabalho, Execução, Conta e Extrato (com OPP), Análise e Emenda e Instrumento.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
