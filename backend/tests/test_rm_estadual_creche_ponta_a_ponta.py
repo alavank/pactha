@@ -115,10 +115,11 @@ def _termos_13(tc):
             "30/12/2024", tc[4], tc[5], tc[6], tc[7], tc[8], tc[9])
 
 
-def _db(convenios, segov_rows=(), voluntarias=(), termos=()):
+def _db(convenios, segov_rows=(), voluntarias=(), termos=(), mg_rows=()):
     return FakeDb([
         ("FROM municipios", _Res(obj=SimpleNamespace(id=1, nome="Araújos", uf="MG"))),
-        ("FROM transparencia_mg_empenhos", _Res()),            # o Joomla: 403 na VPS
+        # o Joomla da 403 na VPS; o que existe aqui e o bloco da CGE (Fase 2)
+        ("FROM transparencia_mg_empenhos", _Res(rows=mg_rows)),
         ("FROM segov_convenios_empenhos", _Res(rows=segov_rows)),
         ("FROM convenios_estadual", _Res(rows=convenios)),
         ("FROM transferegov_propostas", _Res(rows=voluntarias)),
@@ -165,6 +166,37 @@ def test_estadual_com_empenho_da_segov_e_sem_joomla_mostra_NEs_e_pendente_de_des
     assert it["valor_desembolsado"] == 0.0
     assert it["situacao_atual"].endswith("Pendente de desembolso")
     assert "desembolsos" not in it, "o CSV nao tem data: nenhum lancamento fabricado"
+
+
+def test_estadual_com_OB_da_cge_mostra_data_e_numero_e_complementa_o_atraso_do_dump():
+    """Fase 2: o bloco da CGE em transparencia_mg_empenhos da a data e o nº da OB;
+    o marcador vira "Desembolsado". E quando a SEGOV (mais fresca) diz pago
+    mais que as OBs publicadas, a diferenca entra como linha propria."""
+    from ingestion.cge_despesa_ob import SIT_OB, montar_bloco
+    bloco = montar_bloco([{"data": "14/05/2026", "numero": "1674", "situacao": SIT_OB, "valor": 35.7}])
+    segov = [(2, "981", date(2026, 5, 10), 801000.0, 801000.0, 801000.0, "pg", 2026, "SEE")]
+    db = _db([_conv(2, "1261002153/2026", "Em vigor", valor=801000.0)],
+             segov_rows=segov, mg_rows=[(2, bloco)])
+    it = _por_numero(_monta(db), "1261002153/2026")[0]
+    assert it["situacao_atual"].endswith("Desembolsado: R$ 801.000,00")
+    assert it["valor_desembolsado"] == 801000.0
+    assert it["desembolsos"][0]["numero_ob"] == "1674" and it["desembolsos"][0]["data"] == "14/05/2026"
+    assert "pago após o último dump da CGE" in it["desembolsos"][1]["situacao"]
+    assert it["desembolsos"][1]["valor"] == 800964.3
+    # a SEGOV continua dando NEs e valor empenhado; o total pago dela NAO
+    # sobrescreve o da CGE por baixo dos panos (so pela linha rotulada)
+    assert it["valor_empenhado"] == 801000.0 and "NE 981/2026" in it["nes"]
+
+
+def test_estadual_com_OB_da_cge_igual_a_segov_nao_ganha_linha_extra():
+    from ingestion.cge_despesa_ob import SIT_OB, montar_bloco
+    bloco = montar_bloco([{"data": "25/03/2026", "numero": "1939", "situacao": SIT_OB, "valor": 938793.55}])
+    segov = [(2, "881", date(2026, 3, 5), 938793.55, 938793.55, 938793.55, "pg", 2026, "SEE")]
+    db = _db([_conv(2, "1261002849/2025", "Em vigor", valor=938793.55)],
+             segov_rows=segov, mg_rows=[(2, bloco)])
+    it = _por_numero(_monta(db), "1261002849/2025")[0]
+    assert it["situacao_atual"].endswith("Desembolsado: R$ 938.793,55")
+    assert len(it["desembolsos"]) == 1 and it["desembolsos"][0]["numero_ob"] == "1939"
 
 
 def test_estadual_sem_linha_na_segov_cala():

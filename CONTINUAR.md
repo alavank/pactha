@@ -1649,8 +1649,10 @@ Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#
      OBs da CGE = `valor_pago_financeiro` da SEGOV em 4.866/4.888 (99,5 %)**; as 22 diferenças são o
      **atraso do dump** (CGE até 10/09 vs SEGOV 15/09 — ex.: SEGOV R$ 801 mil pagos, CGE só uma OB de
      R$ 35,70 de maio). rp2026: 144 resolvidas, **144/144 iguais**. Pequi 7/7, OB a OB. Consequência:
-     por alguns dias a SEGOV pode dizer "pago" mais que a lista de OBs da CGE — o RM deve preferir o
-     maior dos dois no marcador "Desembolsado" (mesma contabilidade, o maior é o mais fresco).
+     por alguns dias a SEGOV pode dizer "pago" mais que a lista de OBs da CGE — `_complemento_segov`
+     põe a diferença na caixa como **linha própria** ("pago após o último dump da CGE — nº e data da OB
+     ainda não publicados") e sobe o total junto; cabeçalho, lista e marcador ficam consistentes, e a
+     linha some sozinha quando a OB chega no dump seguinte.
    - `ingestion/segov_pagamentos.py` → tabela `segov_convenios_empenhos` (só linhas que casaram
      com um convênio nosso por SIAFI; `ON DELETE SET NULL` por causa do
      `fix_duplicatas_chave_natural.sql`; IDs de recurso resolvidos por `package_show` a cada carga).

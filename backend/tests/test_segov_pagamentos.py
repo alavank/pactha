@@ -20,7 +20,7 @@ from ingestion import status_coleta as st
 from ingestion.segov_pagamentos import (_SQL_UPSERT, _money, agregar_por_chave, casar,
                                         chave_siafi, indice_convenios, ler_csv,
                                         linha_para_empenho, resolver_recursos)
-from services.rm_builder import _segov_campos, _segov_resumo
+from services.rm_builder import _complemento_segov, _segov_campos, _segov_resumo
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MIGRATION = os.path.join(RAIZ, "migrations", "add_segov_convenios_empenhos.sql")
@@ -363,6 +363,30 @@ def test_linha_que_falha_no_upsert_volta_ao_savepoint_e_a_rodada_vira_partial(mo
     sqls = [s for s, _ in cur.execucoes]
     assert n == 1 and "ROLLBACK TO SAVEPOINT sp_seg" in sqls
     assert _log(conn)[1] == "partial" and "1 linha(s) nao gravadas" in _log(conn)[3]
+
+
+def test_o_atraso_do_dump_da_cge_entra_como_linha_propria_e_nao_troca_o_total():
+    """Medido: 22 de 4.888 NEs em que a SEGOV (do dia) diz pago mais que as OBs
+    do dump da CGE (de 2-5 dias antes). A diferenca vira uma linha rotulada,
+    sem data nem OB, e o total sobe junto — cabecalho, lista e marcador ficam
+    consistentes. Quando a OB chegar, a diferenca e zero e a linha some."""
+    sg = {"valor_pago": 801000.0}
+    mg = {"_consultado": True, "_incerto": False, "valor_desembolsado": 35.7}
+    des = {"valor_desembolsado": 35.7,
+           "desembolsos": [{"data": "14/05/2026", "valor": 35.7, "numero_ob": "1674", "situacao": "OB emitida"}]}
+    c = _complemento_segov(sg, mg, des)
+    assert c["valor_desembolsado"] == 801000.0
+    assert len(c["desembolsos"]) == 2 and c["desembolsos"][0]["numero_ob"] == "1674"
+    extra = c["desembolsos"][1]
+    assert extra["valor"] == 800964.3 and extra["data"] == "" and extra["numero_ob"] == ""
+    assert "pago após o último dump da CGE" in extra["situacao"]
+    # iguais, CGE mais fresca (estorno) ou sem SEGOV: nada a complementar
+    assert _complemento_segov({"valor_pago": 35.7}, mg, des) == {}
+    assert _complemento_segov({"valor_pago": 10.0}, mg, des) == {}
+    assert _complemento_segov({}, mg, des) == {} and _complemento_segov(None, mg, des) == {}
+    # CGE/Joomla incerto ou nao consultado: o RM cala, como sempre
+    assert _complemento_segov(sg, {"_consultado": True, "_incerto": True, "valor_desembolsado": 0}, des) == {}
+    assert _complemento_segov(sg, {}, des) == {}
 
 
 def test_o_cron_do_sigcon_chama_a_carga_depois_do_backfill():

@@ -852,6 +852,43 @@ def _segov_campos(sg: dict, mg_consultado: bool) -> dict:
     return out
 
 
+def _complemento_segov(sg: dict, mg_pg: dict, mg_des: dict) -> dict:
+    """O que a SEGOV diz que foi pago ALEM do que as OBs da CGE ja mostram.
+
+    Medido em 15/09/2026 nos dumps reais: NE a NE, a soma das OBs da CGE bate
+    com o `valor_pago` da SEGOV em 4.866 de 4.888 — e as 22 que nao batem sao o
+    ATRASO do dump (a CGE publica com dados de 2 a 5 dias antes; a SEGOV, do
+    dia). Nesses dias o item dizia "Desembolsado: R$ 35,70" com a SEGOV
+    registrando R$ 801 mil pagos — o marcador ficava para tras da fonte mais
+    fresca da MESMA contabilidade.
+
+    ⚠️ NAO se troca o total por um numero de outra origem: a diferenca entra
+    na caixa como uma LINHA PROPRIA, rotulada, sem data nem nº de OB (que a
+    SEGOV nao tem), e o total sobe junto — cabecalho, lista e marcador seguem
+    consistentes entre si, e o leitor ve de onde veio cada parcela. Quando a
+    OB chegar no dump seguinte, a linha some sozinha (a diferenca vira zero).
+
+    Vazio quando: nao ha SEGOV; a CGE/Joomla nao respondeu ou esta incerta
+    (`_incerto` — ai o RM cala, como sempre); ou a SEGOV nao diz mais que a
+    CGE (CGE mais fresca, estorno, ou iguais)."""
+    if not sg or not mg_pg or not mg_pg.get("_consultado") or mg_pg.get("_incerto"):
+        return {}
+    pago_segov = _num0(sg.get("valor_pago"))
+    pago_cge = _num0(mg_pg.get("valor_desembolsado"))
+    diff = round(pago_segov - pago_cge, 2)
+    if diff <= 0.01:
+        return {}
+    lanc = list((mg_des or {}).get("desembolsos") or [])
+    lanc.append({
+        "data": "",
+        "valor": diff,
+        "numero_ob": "",
+        "situacao": ("pago após o último dump da CGE (SEGOV) — nº e data da OB "
+                     "ainda não publicados"),
+    })
+    return {"valor_desembolsado": round(pago_cge + diff, 2), "desembolsos": lanc}
+
+
 def _simec_termos_mapa(linhas) -> dict:
     """{digitos do processo: termo} a partir das linhas de `simec_termos`
     (processo, nr_documento, tipo_documento, tipo_objeto, dt_vigencia, valor_termo,
@@ -1981,9 +2018,13 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         # (OB a OB) quando respondeu; senao a SEGOV (o total por NE), em que
         # "pode desembolsar" = ha empenho no CSV. Sem nenhum dos dois, cala.
         _sg = _segov_resumo(_segov.get(c.id))
+        # O atraso do dump da CGE: a SEGOV pode registrar pago ALEM das OBs ja
+        # publicadas. A diferenca entra como linha propria na caixa e no total
+        # (ver _complemento_segov) — vazio quando nao ha o que complementar.
+        _compl = _complemento_segov(_sg, _mg_pg, _mg_des)
         if _mg_pg.get("_consultado"):
             _pode_est = not _mg_pg.get("_incerto")
-            _vd_est = _mg_pg.get("valor_desembolsado")
+            _vd_est = _compl.get("valor_desembolsado", _mg_pg.get("valor_desembolsado"))
         elif _sg:
             _pode_est = (_sg.get("valor_empenhado") or 0) > 0
             _vd_est = _sg.get("valor_pago")
@@ -2042,6 +2083,9 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # com nenhuma acima, mas a ordem torna visivel que este bloco e o
             # ULTIMO a falar sobre dinheiro no item.
             **_mg_des,
+            # O que a SEGOV diz pago alem das OBs do dump (atraso da CGE): a
+            # linha extra na caixa e o total corrigido. DEPOIS de `**_mg_des`.
+            **_compl,
             # SEGOV (dado aberto): NEs, valor empenhado, "Empenhado: Sim" e — so
             # quando o Joomla nao respondeu — o total pago em `valor_desembolsado`.
             # DEPOIS de `**_mg_des` de proposito: ver _segov_campos.
