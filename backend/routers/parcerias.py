@@ -103,12 +103,18 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
     """Nucleo da consulta, SEM gate de auth — mesmo desenho de
     `fetch_obras_federais`, para o Painel de Indicadores poder reusar depois sem
     duplicar a agregacao."""
+    # `detalhe->'_resumo'` e o que o coletor calculou da arvore da proposta
+    # (ingestion/parcerias.execucao_da_arvore): pago pela OB, saldo, nao
+    # classificado. SO o resumo — a arvore inteira (~8 KB por proposta) fica para
+    # o detalhe, que busca uma proposta por vez.
     linhas = (await db.execute(text("""
         SELECT id_proposta, objeto, situacao, valor_total, ano_proposta,
                data_proposta, nome_ente_recebedor, cnpj_ente_recebedor,
                natureza_juridica, id_parceria, codigo_parceria,
                situacao_parceria, data_assinatura, numero_emenda, parlamentar,
-               tipo_emenda, valor_emenda, resultado_esperado, atualizado_em
+               tipo_emenda, valor_emenda, resultado_esperado, atualizado_em,
+               detalhe->'_resumo' AS resumo, detalhe IS NOT NULL AS detalhe_coletado,
+               nu_externo
           FROM parcerias_propostas
          WHERE municipio_id = :m
          ORDER BY ano_proposta DESC NULLS LAST, valor_total DESC NULLS LAST
@@ -116,6 +122,12 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
 
     if not linhas:
         return {"tem_dados": False, "motivo": MOTIVO_SEM_COLETA}
+    # ⭐ A EXECUCAO, somada so na administracao municipal (a mesma regra dos
+    # totais). "Medidas" conta quantas propostas ja tem a arvore colhida: sem
+    # isso, R$ 0 pago numa carteira que o coletor ainda nao percorreu seria lido
+    # como "nada foi pago".
+    ex_pago = ex_saldo = ex_nao_class = 0.0
+    ex_medidas = ex_com_saldo = ex_pendentes = 0
 
     itens = []
     # ⚠️ AGREGADOS EM PYTHON, e não em SQL com GROUP BY: a tela precisa da lista
@@ -131,6 +143,7 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
     for p in linhas:
         valor = _f(p["valor_total"])
         vl_emenda = _f(p["valor_emenda"])
+        resumo = p["resumo"] if isinstance(p["resumo"], dict) else None
         # ⚠️ SÓ A ADMINISTRAÇÃO MUNICIPAL ENTRA NA CONTA. Ver `_municipal`: o
         # Fundo ESTADUAL de Saúde e a associação privada aparecem na lista, mas
         # somá-los diria que a prefeitura recebeu o que ela não recebeu.
@@ -164,7 +177,26 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
             "valor_emenda": vl_emenda,
             "resultado_esperado": p["resultado_esperado"],
             "url_fonte": URL_FONTE + str(p["id_proposta"]),
+            # Numero da proposta no sistema de ORIGEM (para a saude, o FNS).
+            "nu_externo": p["nu_externo"],
+            # ⭐ DA ARVORE DA PROPOSTA (15/09/2026). `resumo` nulo com
+            # `detalhe_coletado` falso = o coletor ainda nao passou; nulo com
+            # `detalhe_coletado` verdadeiro = proposta sem parceria celebrada
+            # (nao ha execucao). Nunca "zero".
+            "detalhe_coletado": bool(p["detalhe_coletado"]),
+            "resumo": resumo,
         })
+        if municipal and p["detalhe_coletado"]:
+            ex_medidas += 1
+            if resumo:
+                ex_pago += float(resumo.get("pago") or 0)
+                if resumo.get("saldo_total") is not None:
+                    ex_com_saldo += 1
+                    ex_saldo += float(resumo.get("saldo_total") or 0)
+                nc = float(resumo.get("nao_classificado") or 0)
+                ex_nao_class += nc
+                if nc > 0:
+                    ex_pendentes += 1
         if p["parlamentar"] and municipal:
             e = por_parlamentar.setdefault(
                 p["parlamentar"], {"parlamentar": p["parlamentar"],
@@ -214,7 +246,59 @@ async def fetch_parcerias(db: AsyncSession, municipio_id: int) -> dict:
         "fora_do_municipio": {"qtd": fora_qtd, "valor": round(fora_valor, 2)},
         "atualizado_em": max((p["atualizado_em"] for p in linhas
                               if p["atualizado_em"]), default=None),
+        # ⭐ O QUE ACONTECEU COM O DINHEIRO (15/09/2026), so da administracao
+        # municipal. `medidas` de `total` diz quanto da carteira ja tem a arvore.
+        "execucao": {
+            "medidas": ex_medidas,
+            "pago": round(ex_pago, 2),
+            "saldo": round(ex_saldo, 2),
+            "com_saldo": ex_com_saldo,
+            "nao_classificado": round(ex_nao_class, 2),
+            # Propostas com ingresso ainda nao classificado — pendencia do municipio.
+            "com_nao_classificado": ex_pendentes,
+        },
     }
+
+
+async def fetch_emendas_indicadas(db: AsyncSession, municipio_id: int,
+                                  emendas_com_proposta: set[str]) -> list[dict]:
+    """Emendas que o parlamentar ja indicou ao municipio (`/beneficiario_emenda_
+    parlamentar`), EXISTA PROPOSTA OU NAO.
+
+    ⭐ A PERGUNTA NOVA: "tem dinheiro indicado para nos que ainda nao virou
+    proposta?". `tem_proposta` casa o numero da emenda (mesmo formato nas duas
+    rotas, "2026.2023.0002") com o das propostas coletadas.
+
+    [] se a tabela ainda nao existe (a API sobe antes da migration): a tela segue
+    inteira, so sem o bloco."""
+    try:
+        linhas = (await db.execute(text("""
+            SELECT numero_emenda, ano_emenda, parlamentar, tipo_emenda,
+                   valor_gnd3, valor_gnd4, valor_total, nome_beneficiario,
+                   cnpj_beneficiario, natureza_juridica, indicacoes, id_programa
+              FROM parcerias_emendas_indicadas
+             WHERE municipio_id = :m
+             ORDER BY ano_emenda DESC NULLS LAST, valor_total DESC NULLS LAST
+        """), {"m": municipio_id})).mappings().all()
+    except Exception:
+        await db.rollback()
+        return []
+    return [{
+        "numero_emenda": r["numero_emenda"],
+        "ano": r["ano_emenda"],
+        "parlamentar": r["parlamentar"],
+        "tipo": r["tipo_emenda"],
+        "valor_gnd3": _f(r["valor_gnd3"]),
+        "valor_gnd4": _f(r["valor_gnd4"]),
+        "valor_total": _f(r["valor_total"]),
+        "beneficiario": r["nome_beneficiario"],
+        "cnpj_beneficiario": r["cnpj_beneficiario"],
+        "natureza_juridica": r["natureza_juridica"],
+        "municipal": _municipal(r["natureza_juridica"]),
+        "id_programa": r["id_programa"],
+        "indicacoes": r["indicacoes"] if isinstance(r["indicacoes"], list) else [],
+        "tem_proposta": bool(r["numero_emenda"]) and r["numero_emenda"] in emendas_com_proposta,
+    } for r in linhas]
 
 
 @router.get("", dependencies=[exige("parcerias.ver")])
@@ -232,4 +316,49 @@ async def listar(
         raise HTTPException(404, "Município não encontrado")
     dados = await fetch_parcerias(db, municipio_id)
     dados["municipio"] = {"id": mun.id, "nome": mun.nome, "uf": mun.uf}
+    com_proposta = {i["numero_emenda"] for i in dados.get("itens") or [] if i.get("numero_emenda")}
+    dados["emendas_indicadas"] = await fetch_emendas_indicadas(db, municipio_id, com_proposta)
     return dados
+
+
+@router.get("/proposta/{id_proposta}", dependencies=[exige("parcerias.ver")])
+async def detalhe_proposta(
+    id_proposta: int,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Uma proposta INTEIRA, do banco: o registro da fonte (`raw_data`, com a
+    parceria e a emenda) e a arvore da proposta (`detalhe`) — plano de trabalho,
+    parecer, indicadores, conta, extrato, OPP, empenhos e DH -> OP/OB.
+
+    Nenhuma requisicao de saida: tudo foi colhido pelo coletor noturno. `detalhe`
+    NULO significa "ainda nao colhido", nunca "a proposta nao tem nada".
+
+    ⚠️ O MUNICIPIO VEM DA LINHA. `id_proposta` e id federal; o que impede quem so
+    ve Araujos de abrir proposta de Nova Serrana e a checagem sobre o
+    `municipio_id` gravado. Mesmo desenho do detalhe da Transferencia Especial.
+    """
+    ensure_tela(current, "parcerias")
+    row = (await db.execute(text(
+        "SELECT municipio_id, raw_data, detalhe, detalhe_atualizado_em, atualizado_em "
+        "  FROM parcerias_propostas WHERE id_proposta = :p "
+        " ORDER BY atualizado_em DESC NULLS LAST LIMIT 1"
+    ), {"p": id_proposta})).first()
+    if not row:
+        raise HTTPException(404, "Proposta não encontrada nesta base")
+    ensure_municipio_access(current, row[0])
+    fonte_em = None
+    try:
+        fonte_em = (await db.execute(text(
+            "SELECT data_fonte FROM fonte_atualizacao WHERE fonte = 'transferegov_parcerias'"
+        ))).scalar_one_or_none()
+    except Exception:
+        await db.rollback()
+    return {
+        "proposta": row[1] if isinstance(row[1], dict) else None,
+        "detalhe": row[2] if isinstance(row[2], dict) else None,
+        "detalhe_atualizado_em": _d(row[3]),
+        "atualizado_em": _d(row[4]),
+        "fonte_atualizada_em": _d(fonte_em),
+        "url_fonte": URL_FONTE + str(id_proposta),
+    }
