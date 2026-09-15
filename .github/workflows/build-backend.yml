@@ -18,12 +18,12 @@ name: build-backend
 #
 # ESTADO ATUAL (Fase D, desde 09/08/2026): este workflow PUBLICA a imagem e o
 # job `deploy` FECHA o ciclo — avanca a tag dos apps no Coolify e dispara o
-# deploy na ordem certa (API primeiro, que roda as migrations no boot; worker
-# depois). ⚠️ SEM ESPERAR JANELA DE COLETA desde 15/09/2026, por decisao do
-# dono: o gate `janela_ociosa` segurava cada worker ate 15 min enquanto houvesse
-# task em voo, e um deploy noturno levava mais de uma hora. O preco e aceito: a
-# coleta que estiver rodando no worker e reiniciada no meio — os coletores
-# commitam por municipio/plano e retomam na proxima rodada agendada. O auto-deploy por
+# deploy na ordem certa (APIs primeiro, que rodam as migrations no boot;
+# workers depois, cada um so quando nao ha coleta em voo nele). Desde
+# 15/09/2026 as duas coisas sao EM PARALELO entre os tenants: as seis APIs de
+# uma vez, e a janela de coleta dos seis workers olhada junta a cada minuto,
+# com teto de 15 min para a onda inteira (antes: ate 15 min POR worker, em
+# serie — um deploy noturno passava de uma hora). O auto-deploy por
 # webhook do Coolify foi DESLIGADO nos apps pactha: ele recriava os containers
 # com a TAG ANTIGA (churn inutil que registra commit novo rodando imagem velha
 # na fila de deploy) e ja matou coleta no meio duas vezes em 08/08.
@@ -128,10 +128,11 @@ jobs:
   # (rodam as migrations no boot), com o deployment de cada uma CONFIRMADO via
   # GET /deployments/{uuid} (poll no status do app seria placebo: o container
   # velho segue 'running:healthy' enquanto o novo nem puxou imagem); depois os
-  # workers dos tenants cuja API confirmou. API que nao subiu = worker daquele
-  # tenant NAO e tocado (evita worker novo contra schema velho). Sem espera de
-  # janela de coleta desde 15/09/2026. Segredos exigidos: COOLIFY_URL e
-  # COOLIFY_TOKEN (sem eles o job falha alto no primeiro curl).
+  # workers dos tenants cuja API confirmou, cada um assim que ficar sem coleta
+  # em voo (janela olhada em paralelo, teto de 15 min para a onda). API que nao
+  # subiu = worker daquele tenant NAO e tocado (evita worker novo contra schema
+  # velho). Segredos exigidos: COOLIFY_URL e COOLIFY_TOKEN (sem eles o job
+  # falha alto no primeiro curl).
   deploy:
     needs: build
     if: github.ref == 'refs/heads/main'
@@ -152,7 +153,7 @@ jobs:
         novapalma:gemcwirmbelk1dztp2pbcqpf:kqcnvdsdkgn1efkm4nog8oes
         bgk:qhafp9uqmsvny75rzykmibdx:6xast9rw0wbzbownss9vamfq
     steps:
-      - name: Deploy em duas ondas (APIs -> migrations confirmadas -> workers)
+      - name: Deploy em duas ondas (APIs -> migrations confirmadas -> workers na janela)
         run: |
           # POLITICA DE ERRO EXPLICITA. O shell default do Actions e `bash -e {0}`,
           # entao desligamos o -e e tratamos CADA comando: mutacao (PATCH/deploy)
@@ -162,6 +163,9 @@ jobs:
           set -uo pipefail
           TAG="sha-${GITHUB_SHA::7}"
           CURL=(curl -sS --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $COOLIFY_TOKEN")
+          # Denylist das tasks sabidamente CURTAS (<30s, toleram restart). Task
+          # nova/desconhecida cai automaticamente no lado PROTEGIDO da janela.
+          CURTAS='^(watchdog|private-keepalive|queue-sigcon|govbr-renew|painel-alertas)$'
           FALHAS=""
 
           # ⭐ CREDENCIAL PRIMEIRO, E COM O MOTIVO NA TELA.
@@ -263,6 +267,31 @@ jobs:
             echo "::warning::deployment $1 ainda '$st' apos a espera — provavelmente concluiu depois; conferir a tag no Coolify"
             return 0
           }
+          ocioso() {  # $1 worker uuid; 0 = nenhuma task longa em voo AGORA
+            local TASKS T corpo st
+            TASKS=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1/scheduled-tasks" \
+                    | jq -r --arg re "$CURTAS" '.[] | select(.name|test($re)|not) | .uuid')
+            if [ -z "$TASKS" ]; then
+              echo "::warning::worker $1: lista de tasks vazia/inacessivel — tratado como ocioso" >&2
+              return 0
+            fi
+            for T in $TASKS; do
+              # So a execucao MAIS RECENTE conta: 'running' fantasma de execucao
+              # orfa antiga nao pode emperrar o gate para sempre. E task SEM
+              # NENHUMA execucao e OCIOSA, nao "possivelmente rodando" — task
+              # recem-criada bloqueava o gate pelos 15min inteiros (visto no
+              # 1o deploy: siconv-federal do trust, criada horas antes da 1a
+              # rodada). Erro de curl/jq conta como ocupado (fail closed de
+              # LEITURA, nao de ausencia de historico).
+              corpo=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$1/scheduled-tasks/$T/executions") || return 1
+              st=$(printf '%s' "$corpo" | jq -r 'if length==0 then "sem-historico" else (sort_by(.created_at) | last | .status // "?") end' 2>/dev/null)
+              case "$st" in
+                sem-historico|success|failed|cancelled*) : ;;
+                *) return 1 ;;
+              esac
+            done
+            return 0
+          }
           dispara_app() {  # $1 rotulo; $2 uuid -> stdout: deployment_uuid; 1 = nao disparou
             # Mensagens vao para STDERR: quem chama captura o stdout como o id
             # do deployment, e um ::error:: ali viraria "id".
@@ -286,14 +315,15 @@ jobs:
           # API do tenant 2... — um deploy noturno passava de uma hora.
           #
           #   onda 1: as SEIS APIs disparadas juntas, depois espera cada uma
-          #   onda 2: os workers dos tenants cuja API CONFIRMOU, juntos
+          #   onda 2: os workers dos tenants cuja API CONFIRMOU, cada um assim
+          #           que ficar sem coleta em voo (ver a onda 2 abaixo)
           #
           # O que continua sendo regra (e correcao, nao limite de maquina): o
           # worker so sobe depois que a API do MESMO tenant confirmou — ela roda
           # as migrations no boot, e worker novo contra schema velho grava errado.
           # O paralelismo de verdade depende do `concurrent_builds` do servidor
-          # no Coolify; com 1, as ondas so enfileiram (ainda sem a espera de
-          # janela). Ver INFRA.md §4.
+          # no Coolify (6 desde 15/09/2026; com 1, as ondas so enfileiravam).
+          # Ver INFRA.md §4.
           declare -A DEP_API=() DEP_WK=()
           API_OK=" "
           echo "=== onda 1: APIs ==="
@@ -313,17 +343,44 @@ jobs:
               FALHAS="$FALHAS api-$NOME(worker-pulado)"
             fi
           done
-          # SEM esperar janela de coleta (ver o cabecalho): task em voo no worker
-          # e reiniciada e retoma na proxima rodada agendada.
-          echo "=== onda 2: workers ==="
+          # ⭐ ONDA 2 COM JANELA DE COLETA, MAS EM PARALELO (15/09/2026).
+          #
+          # Trocar o worker RECRIA o container: a coleta que estiver rodando nele
+          # morre, com a maquina folgada ou nao — nao e limite de hardware. A
+          # espera existe desde 08/08, quando o deploy matou coleta no meio duas
+          # vezes. O que era lento era ela ser EM SERIE (ate 15 min por worker,
+          # seis workers). Agora a cada minuto os seis sao olhados juntos: quem
+          # esta ocioso sobe na hora, quem tem task em voo espera a proxima
+          # volta. O teto e 15 min para a onda INTEIRA; quem nao ficou ocioso ate
+          # la sobe assim mesmo (upsert incremental + rodizio recuperam).
+          echo "=== onda 2: workers (janela de coleta, em paralelo) ==="
+          declare -A WK_UUID=()
+          PEND=""
           for TRIO in $TENANTS; do
-            NOME="${TRIO%%:*}"; RESTO="${TRIO#*:}"; WORKER="${RESTO#*:}"
+            NOME="${TRIO%%:*}"; RESTO="${TRIO#*:}"
             case "$API_OK" in *" $NOME "*) ;; *) continue ;; esac
-            if DEP=$(dispara_app "worker-$NOME" "$WORKER"); then
-              DEP_WK[$NOME]="$DEP"; echo "worker-$NOME: deployment $DEP"
+            WK_UUID[$NOME]="${RESTO#*:}"; PEND="$PEND $NOME"
+          done
+          sobe_worker() {  # $1 nome do tenant
+            if DEP=$(dispara_app "worker-$1" "${WK_UUID[$1]}"); then
+              DEP_WK[$1]="$DEP"; echo "worker-$1: deployment $DEP"
             else
-              FALHAS="$FALHAS worker-$NOME"
+              FALHAS="$FALHAS worker-$1"
             fi
+          }
+          for tent in $(seq 1 15); do
+            RESTA=""
+            for NOME in $PEND; do
+              if ocioso "${WK_UUID[$NOME]}"; then sobe_worker "$NOME"; else RESTA="$RESTA $NOME"; fi
+            done
+            PEND="$RESTA"
+            if [ -z "$PEND" ]; then break; fi
+            echo "com task em voo, aguardando ($tent/15):$PEND"
+            sleep 60
+          done
+          for NOME in $PEND; do
+            echo "::warning::worker-$NOME nao ficou ocioso em 15min — deployando assim mesmo (upsert incremental + rodizio recuperam)"
+            sobe_worker "$NOME"
           done
           for NOME in "${!DEP_WK[@]}"; do
             if espera_deployment "${DEP_WK[$NOME]}"; then

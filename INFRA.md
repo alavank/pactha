@@ -95,7 +95,7 @@ cada build da `main`:
 
 | Ação | O que acontece em produção |
 |---|---|
-| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 6 tenants em **duas ondas**. **Onda 1:** as seis APIs de uma vez; elas rodam as migrations, e cada deployment é confirmado via `GET /deployments/{uuid}`. **Onda 2:** os workers dos tenants cuja API confirmou, também de uma vez. API que não subiu = worker daquele tenant intocado. **Sem espera de janela de coleta desde 15/09/2026**, por decisão do dono: a coleta em voo é reiniciada e retoma na próxima rodada. |
+| merge/push na `main` (toca `backend/**`) | Builda `pactha-api`+`pactha-worker` e deploya os 6 tenants em **duas ondas**. **Onda 1:** as seis APIs de uma vez; elas rodam as migrations, e cada deployment é confirmado via `GET /deployments/{uuid}`. **Onda 2:** os workers dos tenants cuja API confirmou, cada um **assim que ficar sem coleta em voo**. A janela dos seis é olhada junta a cada minuto, com teto de 15 min para a onda inteira; quem não ficou ocioso até lá sobe assim mesmo. API que não subiu = worker daquele tenant intocado. A janela existe porque trocar o worker **recria o container** e mata a coleta que estiver rodando, com a máquina folgada ou não. Até 15/09/2026 ela era em série (até 15 min *por* worker). |
 | merge/push na `main` (toca `frontend/**`) | Builda as 6 imagens de frontend e dispara o deploy das 6 de uma vez; depois confirma cada uma. |
 | deploy manual (rollback/exceção) | Continua possível: repontar `docker_registry_image_tag` + `GET /deploy?uuid=` — o mesmo que o CI faz. |
 
