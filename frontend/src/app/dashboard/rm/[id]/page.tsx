@@ -32,6 +32,14 @@ interface Item {
   dt_saldo?: string | null;
   dt_fim_vigencia?: string | null;
   situacao_atual?: string;
+  /** "Empenhado: Sim/Não" e a lista de NEs — voluntárias (SICONV) e, desde
+   *  15/09/2026, estaduais (CSV da SEGOV). Frases prontas do builder. */
+  empenhado?: string;
+  nes?: string;
+  valor_empenhado?: number | null;
+  /** O pago do SIMEC/PAR na linha da própria voluntária (a creche), casado
+   *  pelo nº do processo. Frase pronta do builder; ausente = sem termo casado. */
+  simec_pagamento?: string;
   situacao_contratacao?: string;
   situacao_contratacao_detalhe?: Record<string, unknown> | null;
   // Evento ATUAL do Histórico de Comunicações (TransfereGov mandatárias)
@@ -73,6 +81,12 @@ const ITEM_FIELDS: Array<[keyof Item, string, "text" | "number" | "date" | "text
   ["dt_fim_vigencia", "Final da Vigência", "date"],
   ["situacao_contratacao", "Situação de Contratação", "text"],
   ["situacao_atual", "Situação Atual", "textarea"],
+  // Empenho e pagamento — o usuário revisa a frase antes de emitir (o builder
+  // congela o texto em rm_relatorios.conteudo; aqui é o único lugar de corrigir).
+  ["empenhado", "Empenhado", "text"],
+  ["valor_empenhado", "Valor Empenhado (R$)", "number"],
+  ["nes", "Situação do NEs", "textarea"],
+  ["simec_pagamento", "Pagamento SIMEC/PAR", "textarea"],
   // Evento ATUAL do Histórico de Comunicações (TransfereGov)
   ["evento_atual", "Evento Atual", "text"],
   ["evento_data", "Data do Evento", "text"],

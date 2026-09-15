@@ -247,12 +247,14 @@ async def export_convenios_pdf(
     truncado = len(convs) > MAX_EXPORT_CONVENIOS
     if truncado:
         convs = convs[:MAX_EXPORT_CONVENIOS]
-    # PAGAMENTO (ultimo desembolso) + EMPENHO por convenio — a MESMA informacao
-    # que o RM ja mostra para o estadual, da MESMA fonte (`transparencia_mg_empenhos`,
-    # Portal da Transparencia de MG). Reusa as funcoes do rm_builder para nao
-    # duplicar a regra (uma consulta so p/ o municipio, nao N+1). `pagamentos` prova
-    # a medicao; `dt_empenho` (a mais recente) e a data de empenho. Tabela ausente
-    # ou tenant nao-MG => mapa vazio e as colunas saem "-".
+    # PAGAMENTO (ultimo desembolso) + EMPENHO por convenio — as MESMAS fontes do
+    # RM para o estadual: `transparencia_mg_empenhos` (Portal da Transparencia de
+    # MG, com data/OB) e, para a DATA DO EMPENHO onde o Joomla nao tem o convenio,
+    # `segov_convenios_empenhos` (dado aberto da SEGOV, 15/09/2026). Reusa as
+    # funcoes do rm_builder para nao duplicar a regra (uma consulta so p/ o
+    # municipio, nao N+1). `pagamentos` prova a medicao; `dt_empenho` (a mais
+    # recente) e a data de empenho. Tabela ausente ou tenant nao-MG => mapa vazio
+    # e as colunas saem "-".
     mg_por_conv: dict[int, dict] = {}
     try:
         from services.rm_builder import _mg_pagamentos, _desembolso_ops_obs
@@ -266,6 +268,21 @@ async def export_convenios_pdf(
                 _pgs.setdefault(_cid, []).append(_pg)
             if _dte and (_cid not in _emp or _dte > _emp[_cid]):
                 _emp[_cid] = _dte
+        # DATA DO EMPENHO pela SEGOV onde o Joomla nao tem o convenio. Em
+        # producao o Joomla da 403 na VPS e `_emp` sai vazio, enquanto o RM ja
+        # imprime "NE 310/2026 — empenhado em 05/03/2026" da SEGOV — os dois
+        # papeis do mesmo dia divergiam ("Data de empenho: -" aqui). SO a data
+        # do empenho: o CSV nao tem data de pagamento, e `dt_pagamento` segue
+        # "-" com honestidade. Try proprio: tenant sem a tabela segue.
+        try:
+            for _cid, _dte in (await db.execute(text(
+                "SELECT convenio_id, max(dt_empenho) FROM segov_convenios_empenhos "
+                "WHERE municipio_id = :mid AND convenio_id IS NOT NULL GROUP BY convenio_id"
+            ), {"mid": municipio_id})).all():
+                if _dte and _cid not in _emp:
+                    _emp[_cid] = _dte
+        except Exception:
+            pass
         for _cid in set(_pgs) | set(_emp):
             _des = _desembolso_ops_obs(_mg_pagamentos(_pgs.get(_cid))) if _pgs.get(_cid) else {}
             # dt_ultimo_desembolso vem em dd/mm/aaaa (string) — vira date p/ o

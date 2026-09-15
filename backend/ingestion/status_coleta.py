@@ -70,3 +70,28 @@ def por_falhas(gravados: int, falhas: int, rotulo: str = "item") -> tuple[str, s
     if falhas:
         return "partial", f"{falhas} {rotulo}(s) sem dado"
     return "success", None
+
+
+def segov_pagamentos(arquivos_ok: int, arquivos_total: int,
+                     siafis_nossos: int, siafis_casados: int) -> tuple[str, str | None]:
+    """Empenhos/pagamentos estaduais pelo CSV da SEGOV (segov_pagamentos.py).
+
+    Zero NÃO é cego: sem recurso no `package_show` => o CKAN mudou de layout
+    (error); nenhum CSV baixado => WAF/rede (error); havia convênios NOSSOS com
+    SIAFI e nenhum casou => a chave do CSV mudou (partial); parte do lote falhou
+    => partial com a conta. Tenant sem convênio com SIAFI é sucesso legítimo —
+    não há o que casar.
+
+    ⚠️ SEM PISO DE COBERTURA, de propósito: os CSVs cobrem só 2022 em diante,
+    e um tenant cheio de convênios de 2015-2021 casa POUCO sem que nada esteja
+    errado. Cobertura baixa não é sinal; ZERO com convênios nossos é. O coletor
+    loga "N de M casaram" para quem quiser olhar."""
+    if arquivos_total == 0:
+        return "error", "package_show sem recursos 'Pagamentos'/'Restos a Pagar' (layout do CKAN mudou?)"
+    if arquivos_ok == 0:
+        return "error", f"nenhum dos {arquivos_total} CSVs baixou (WAF/rede)"
+    if siafis_nossos and siafis_casados == 0:
+        return "partial", f"{siafis_nossos} convenios com SIAFI e 0 casaram o CSV (chave mudou?)"
+    if arquivos_ok < arquivos_total:
+        return "partial", f"{arquivos_total - arquivos_ok} de {arquivos_total} CSVs falharam"
+    return "success", None

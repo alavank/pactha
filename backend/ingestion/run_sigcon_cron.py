@@ -43,6 +43,14 @@ if __name__ == "__main__":
         backfill()
     except Exception as e:
         logging.getLogger("run_sigcon_cron").warning(f"ckan backfill falhou: {e}")
+    # Empenhos/pagamentos do Estado pelo CSV da SEGOV (dado aberto, chave SIAFI).
+    # Logo DEPOIS do backfill de proposito: e ele quem promove o nr_siafi que a
+    # juncao usa. Auto-limitado a 1x/dia dentro do proprio ingest().
+    try:
+        from ingestion.segov_pagamentos import ingest as _segov_ingest
+        _segov_ingest()
+    except Exception as e:
+        logging.getLogger("run_sigcon_cron").warning(f"segov pagamentos falhou: {e}")
     # O orcamento interno do scraper (SIGCON_BUDGET_SECONDS, default 2700) foi
     # dimensionado para caber no teto externo do cron (timeout -k 30 3000)
     # CONTADO DO INICIO DO PROCESSO. Com dados abertos + backfill na frente,

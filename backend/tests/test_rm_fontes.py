@@ -33,7 +33,10 @@ def test_o_catalogo_tem_exatamente_as_fontes_QUE_O_BUILDER_CARIMBA():
 
 def test_toda_chamada_de_add_item_carimba_uma_fonte():
     src = inspect.getsource(rm_builder.montar_conteudo)
-    chamadas = re.findall(r"^\s+add_item\(", src, re.M)
+    # `add_item` devolve se o item ENTROU (15/09/2026), e a voluntaria guarda
+    # isso (`_entrou = add_item(`) para so marcar o termo do SIMEC como "ja
+    # exibido" depois. A chamada com atribuicao e chamada do mesmo jeito.
+    chamadas = re.findall(r"^\s+(?:\w+\s*=\s*)?add_item\(", src, re.M)
     carimbos = _carimbos_do_builder(src)
     assert len(chamadas) == len(carimbos), (
         "ha `add_item` sem `fonte`: esse item entra no RM e NENHUM filtro o alcanca")

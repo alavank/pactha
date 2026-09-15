@@ -152,15 +152,20 @@ def test_a_coluna_nova_e_a_ULTIMA_do_select():
     # coluna nova no FIM, indices ja lidos preservados.
     # 15/09/2026: `ops_obs_aberto` (o desembolso do dump) entrou DEPOIS dela, como
     # row[32]. `notas_empenho_aberto` segue em row[31].
-    assert colunas[-1] == "ops_obs_aberto", \
+    # 15/09/2026 (mesmo dia, PR seguinte): `numero_processo` — a chave que casa a
+    # voluntaria com o Termo de Compromisso do SIMEC/PAR (a creche 932836/2021) —
+    # entrou DEPOIS de `ops_obs_aberto`, como row[33]. `ops_obs_aberto` segue em
+    # row[32]. Mesma disciplina, decima coluna pendurada no fim.
+    assert colunas[-1] == "numero_processo", \
         f"a ultima coluna virou {colunas[-1]!r} — quem entrar depois vai no FIM"
+    assert colunas.index("ops_obs_aberto") == 32, "ops_obs_aberto saiu de row[32]"
     assert colunas.index("notas_empenho_aberto") == 31, "notas_empenho_aberto saiu de row[31]"
     assert colunas.index("situacao_projeto_basico") == 30, "situacao_projeto_basico saiu de row[30]"
     assert colunas.index("valor_empenhado") == 29, \
         f"valor_empenhado saiu de row[29] (esta em row[{colunas.index('valor_empenhado')}])"
     assert colunas.index("modalidade") == 28, "modalidade deixou de ser row[28]"
     assert colunas.index("ops_obs") == 22, "ops_obs (o raspado) saiu de row[22]"
-    assert len(colunas) == 33, f"o SELECT tem {len(colunas)} colunas, esperava 33"
+    assert len(colunas) == 34, f"o SELECT tem {len(colunas)} colunas, esperava 34"
 
 
 def test_o_item_usa_as_duas_fontes_e_nao_so_a_listagem():

@@ -197,6 +197,13 @@ FRESCOR_HORAS_POR_UF = {
         # tenants de MG (freitas 05:45, trust 06:30, montesiao 06:45 UTC),
         # medido em 09/09/2026. 18h < 24h fazia o alarme tocar toda tarde.
         "sigcon_scraper": 30,
+        # Empenhos/pagamentos estaduais pelo CSV da SEGOV (15/09/2026). Pendurado
+        # no cron `sigcon` (diario, ver acima) com auto-throttle de 20h no
+        # proprio ingest(): cadencia REAL diaria, 30h = um dia + folga. So MG:
+        # o ingest() sai antes de baixar em tenant sem municipio mineiro e nao
+        # grava log — por isso mora AQUI, e nao no catalogo nacional.
+        # ⚠️ Entra no MESMO PR que a fonte (a regra do `siconv_licitacao`).
+        "segov_pagamentos": 30,
         "cagec": 30,                 # 4x/dia -> 6h; 30h = quase cinco janelas
         # ⚠️ ESTA LINHA ERA A QUE VALIA, e ninguem via. O acordofes roda dentro
         # do run_all() do cron `sigcon` — 1x/dia — e o conserto de 09/09 subiu o

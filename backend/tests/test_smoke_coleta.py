@@ -27,6 +27,7 @@ COLETORES = {
     "ingestion.cauc_ingest": "ingest",
     "ingestion.acordofes_ingest": "ingest",
     "ingestion.sigcon_ckan_backfill": "backfill",
+    "ingestion.segov_pagamentos": "ingest",
     "ingestion.consulta_popular_rs": "ingest",
     "ingestion.cofin_ses_go": "ingest",
     "ingestion.siconv_federal_ingest": "ingest",
@@ -61,6 +62,7 @@ def test_smoke_status_coleta_contrato():
         st.cauc(60, 60), st.cauc(0, 60),
         st.acordofes(100, 10), st.acordofes(0, 0),
         st.sigcon_ckan(50, 40, True), st.sigcon_ckan(50, 0, True),
+        st.segov_pagamentos(10, 10, 50, 40), st.segov_pagamentos(0, 0, 50, 0),
         st.siconv_federal(1_000_000, 900_000), st.siconv_federal(0, 10),
         st.por_falhas(10, 0, "x"), st.por_falhas(10, 3, "x"),
     ]
