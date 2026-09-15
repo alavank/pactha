@@ -32,6 +32,9 @@ out/
 !docs/dados-abertos-transferegov/modelo_dados_api-especiais.zip
 !docs/dados-abertos-transferegov/modelo_dados_api_parcerias.zip
 !docs/dados-abertos-transferegov/modelo_dados_api_faf.zip
+# As pastas EXTRAIDAS desses zips (~110 MB de HTML do SchemaSpy) ficam fora: o
+# zip versionado, com o SHA-256 no README, e a fonte. Extrair e para consultar.
+docs/dados-abertos-transferegov/modelo_dados_*/
 
 # Despejo de consulta a portal (JSON solto na raiz), gerado durante
 # investigacao e sem lugar no repo. `mg27.json` (65KB do ConsultaFNS) chegou a
@@ -47,3 +50,13 @@ extension/tokens.local.js
 
 # Auditoria de seguranca (venv do gerador do relatorio)
 docs/auditoria-seguranca/.venv/
+# ⚠️ O QUE A COLETA DA AUDITORIA DEVOLVE NAO ENTRA. Os JSON/MD "sanitizados"
+# trazem, para CADA env dos seis tenants, os 3 primeiros e os 3 ultimos
+# caracteres do valor + 12 hex do sha256 ("eb2...853 (len=64; sha256=...)").
+# Para segredo longo e aleatorio nao e exploravel; para senha curta, e ataque de
+# dicionario offline. As paginas PNG sao o relatorio renderizado (o PDF ja cai
+# no `*.pdf`). E o arquivo de onde os scripts leem o COOLIFY_TOKEN.
+docs/auditoria-seguranca/prompt-auditoria-seguranca-pactha.md
+docs/auditoria-seguranca/coolify-auditoria-sanitizada.json
+docs/auditoria-seguranca/dados/coolify-*
+docs/auditoria-seguranca/dados/paginas/

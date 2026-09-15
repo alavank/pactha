@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "data": "2026-08-30", "commit": "66e113b01659bf76d19304d4542e40d3a8a55005", "branch": "main",
+    "escopo_pastas": ["backend/", "frontend/", "extension/", "scripts/", "docs/", "Dockerfiles", "docker-compose.yml", ".github/workflows", ".env.example", "histórico git (991 commits)"],
+    "ignoradas": ["desing-inspiration-console/", "node_modules", ".next", "dist", "__pycache__", "painel/ (deprecado; só busca por segredos)"],
+    "instancias": ["freitas", "trust", "montesiao-mg", "santamaria-rs", "production (vazio)"],
+    "coolify": "v4.3.14 em http://54.232.208.118:8000 — token somente leitura (read + read:sensitive), apenas GET",
+    "nota_metodologica": ["STUB de teste do layout."],
+    "ferramentas": "grep/ripgrep, git log -p --all, python",
+    "fora_de_escopo": "rate limiting, dependências, prompt injection"
+  },
+  "resumo_executivo": ["STUB."],
+  "achados": [
+    {"id": "A01", "categoria": "1a", "severidade": "critica", "titulo": "Stub crítica", "local": "backend/x.py:10", "trecho": "x", "descricao": "Descrição stub.", "explorabilidade": "", "condicoes": "só assessoria", "instancias_afetadas": "todas (código comum)", "recomendacao": "", "acao_pos_correcao": "", "criterios_aceite": [], "issue": "1"},
+    {"id": "A02", "categoria": "3", "severidade": "alta", "titulo": "Stub alta", "local": "backend/routers/rm.py:120-130", "trecho": "x", "descricao": "Descrição stub um pouco mais longa para testar quebra de linha na tabela de achados detalhados por categoria.", "explorabilidade": "", "condicoes": "", "instancias_afetadas": "freitas, trust", "recomendacao": "", "acao_pos_correcao": "", "criterios_aceite": [], "issue": "2"},
+    {"id": "A03", "categoria": "inst", "severidade": "media", "titulo": "Stub média", "local": "trust-api:CORS_ORIGIN_REGEX", "trecho": "x", "descricao": "Descrição.", "explorabilidade": "", "condicoes": "", "instancias_afetadas": "trust", "recomendacao": "", "acao_pos_correcao": "", "criterios_aceite": [], "issue": "3"},
+    {"id": "A04", "categoria": "4", "severidade": "baixa", "titulo": "Stub baixa", "local": "scripts/x.sh:3", "trecho": "x", "descricao": "Descrição.", "explorabilidade": "", "condicoes": "", "instancias_afetadas": "todas", "recomendacao": "", "acao_pos_correcao": "", "criterios_aceite": [], "issue": ""},
+    {"id": "A05", "categoria": "5", "severidade": "informativa", "titulo": "Stub info", "local": "frontend/src/app/x.tsx:1", "trecho": "x", "descricao": "Descrição.", "explorabilidade": "", "condicoes": "", "instancias_afetadas": "todas", "recomendacao": "", "acao_pos_correcao": "", "criterios_aceite": [], "issue": ""}
+  ],
+  "pontos_fortes": [{"categoria": "1a", "descricao": "JWT_SECRET distinto nas 4 instâncias", "evidencia": "coolify-comparacao-envs.json → matriz_fingerprints.JWT_SECRET"}],
+  "pontos_fracos": ["Stub ponto fraco."],
+  "categorias_sem_achado": {"2": "Nenhum achado; ver pontos fortes.", "6": "Nenhuma injeção explorável encontrada — cobertura registrada como ponto forte."},
+  "matriz_instancias": {"nota": ["Stub nota."], "linhas": [
+    {"cliente": "freitas", "resources": {"status": "ok", "texto": "api, frontend, worker, db"}, "banco_proprio": {"status": "ok", "texto": "tox59…t02a"}, "segredos_unicos": {"status": "atencao", "texto": "ADMIN_PASSWORD compartilhada"}, "db_exposta": {"status": "ok", "texto": "não"}, "dominio_tls": {"status": "ok", "texto": "https + redirect"}, "cors_cookie": {"status": "falha", "texto": "chrome-extension://.*"}, "commit": {"status": "atencao", "texto": "api c9498f0 / worker c9498f0 / front cbcd3ab"}}
+  ], "observacoes": ["Stub."]},
+  "recomendacoes": [{"prioridade": "P1", "titulo": "Stub", "detalhe": "Detalhe.", "tipo": "código", "instancias": "todas", "achados": ["A01"]}],
+  "cobertura": {"texto": ["Stub."], "routers": [{"arquivo": "backend/routers/rm.py", "handlers": 12, "situacao": "todos com exige(); posse validada"}], "verificacoes_corretas": ["Stub."], "nao_verificado": ["Stub."]},
+  "issues": [{"n": 1, "titulo": "[Segurança] Stub", "labels": ["security", "severity:critical"], "achados": ["A01"], "markdown": "# [Segurança] Stub\n\n**Labels sugeridas:** security, severity:critical\n\n## Problema\nTexto.\n\n## Evidência\n- `backend/x.py:10`\n  ```python\n  x = 1\n  ```\n\n## Critérios de aceite\n- [ ] item"}]
+}
