@@ -35,8 +35,9 @@
 -- ---------------------------------------------------------------------
 -- 0. REGISTRO DE BACKFILL — o "ja rodou" que este runner nao tem.
 -- ---------------------------------------------------------------------
--- `services/startup.py` roda TODO arquivo da lista a CADA boot e engole
--- erro; nao existe registro de migration aplicada. Para DDL idempotente
+-- `services/startup.py` roda o arquivo de novo sempre que ele e editado (ate
+-- 15/09/2026, a CADA boot: nao havia registro de migration aplicada) e engole
+-- erro. Para DDL idempotente
 -- (`IF NOT EXISTS`) isso e inofensivo. Para BACKFILL nao e: um
 -- `INSERT ... ON CONFLICT DO NOTHING` de permissao que rode a cada boot
 -- DEVOLVE o acesso que o administrador REVOGOU no dia anterior. E defeito
@@ -244,35 +245,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS somente_leitura BOOLEAN NOT NULL DEFA
 
 
 -- ---------------------------------------------------------------------
--- 4. SEMENTE DO super_admin — os QUATRO e-mails, e so eles.
+-- 4. SEMENTE DO super_admin — MUDOU-SE para `semeia_super_admin.sql`
+-- (15/09/2026), logo abaixo na lista. Ela e a unica parte deste arquivo que
+-- precisa rodar em TODO boot, e desde o registro de migrations aplicadas
+-- (`services/startup.py`) isso e declarado por arquivo — marcar este inteiro
+-- faria o `ALTER TABLE users` daqui pedir lock em todo start.
 -- ---------------------------------------------------------------------
--- Espelha `services/auth.py::SUPER_ADMIN_EMAILS` (e a copia em
--- setup_db.py::seed_data). `admin@pactha.com.br` saiu da lista em
--- 02/08/2026 e NAO entra aqui: o e-mail era generico e adivinhavel, entao
--- qualquer admin do cliente que o recriasse na tela de Usuarios ganhava
--- poder de dono.
---
--- Roda a CADA boot, de proposito — ao contrario dos backfills acima. Sao
--- as contas donas da plataforma e a lista continua no codigo como reforco
--- (`is_super_admin` le a coluna E a lista), entao re-semear aqui nao
--- desfaz decisao de ninguem: apenas mantem o dado igual ao codigo. Cobre
--- tambem o caso de uma dessas contas ser criada num tenant DEPOIS deste
--- boot. Conceder super_admin a QUALQUER OUTRO usuario e decisao de
--- runtime, e esta migration nunca encosta nela.
---
--- `AND NOT super_admin` e a guarda contra reescrever a mesma linha em todo
--- start (mesma razao do `AND NOT kiosk` em add_users_kiosk.sql).
--- `lower(btrim(email))` porque a comparacao no codigo tambem e feita em
--- minusculas e sem espaco.
-UPDATE users
-   SET super_admin = TRUE
- WHERE lower(btrim(email)) IN (
-        'super-admin@alavank.com.br',
-        'alavank.tecnologia@gmail.com',
-        'matheus@alavank.com.br',
-        'tiagomiller@alavank.com.br'
-       )
-   AND NOT super_admin;
 
 
 -- ---------------------------------------------------------------------

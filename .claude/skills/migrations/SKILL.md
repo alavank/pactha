@@ -19,10 +19,27 @@ boot** (`services/startup.py::run_migrations`, called from `main.py`'s `lifespan
    comments around `add_siconv_federal.sql`.
 
 2. **Must be idempotent** (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING` / guarded `ALTER`). It
-   runs against **6 live tenant databases**, and re-runs on every boot — including a
-   **fresh** one: Santa Maria (08/2026) and Nova Palma (01/09/2026) were created from
-   scratch, and the second exposed an ORDERING bug (a file altering a table created later in
-   `MIGRATION_FILES`), now guarded by `tests/test_migrations_ordem_tabela.py`.
+   runs against **6 live tenant databases**, re-runs **whenever you edit the file**, and a
+   **fresh** database runs the whole list: Santa Maria (08/2026) and Nova Palma
+   (01/09/2026) were created from scratch, and the second exposed an ORDERING bug (a file
+   altering a table created later in `MIGRATION_FILES`), now guarded by
+   `tests/test_migrations_ordem_tabela.py`.
+
+   **Applied migrations are recorded (since 15/09/2026).** `migrations_aplicadas` keeps
+   each file's SHA-256, and a boot runs only files that are new or changed. The schema base
+   (`setup_db.SCHEMA_BASE_SQL`) is recorded the same way. A normal boot runs no DDL at all.
+   - **Recurring work** (self-healing cleanup, a seed that depends on another table
+     changing) opts in with the line `-- migration: a-cada-boot` in the file. It must
+     carry **no DDL**, and `tests/test_migrations_registradas.py` enforces that. Today three
+     files carry it; see that test.
+   - **A failure is not recorded:** the file retries on the next boot, and the log says
+     `falhou`.
+   - **Force a rerun by hand:** `DELETE FROM migrations_aplicadas WHERE arquivo = '<file>';`
+   - Health line in the boot log: `Startup migrations: N/N em dia (X executadas agora,
+     Y ja registradas)`.
+   - Older migration comments that mention the old "runs everything on every boot" runner
+     were rewritten on 15/09/2026. The guards they explain still matter, for the reasons
+     above.
 
    A one-shot data backfill guards itself with a row in `migration_backfills`, so it runs
    once per database — see `add_permissoes_por_acao.sql` and `add_permissoes_por_tela.sql`.
@@ -51,14 +68,17 @@ boot** (`services/startup.py::run_migrations`, called from `main.py`'s `lifespan
 
 6. ⚠️ **"Idempotent" is not "lock-free".** `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`,
    `CREATE INDEX IF NOT EXISTS` and `DROP ... CASCADE` take their lock **before** finding
-   there is nothing to do. Every boot, they wait on any collector holding a long transaction
-   on that table. Coolify's healthcheck gives up after about 1 min and rolls back the
-   container. This hit api-freitas on 15/09/2026 while `sigcon` was running.
+   there is nothing to do, and wait on any collector holding a long transaction on that
+   table. Coolify's healthcheck gives up after about 1 min and rolls back the container.
+   This hit api-freitas on 15/09/2026 while `sigcon` was running. The registry (rule 2)
+   removed it from normal boots, but **the boot that carries a NEW or EDITED migration still
+   takes that lock**.
+   - Deploy a DDL migration outside the collection window (after 10:00 UTC).
    - A table dropped by `drop_lean_tables.sql` must **never** be recreated — not in
-     `setup_db.py`, not as a model, not in a migration. The recreate/drop cycle made every
-     boot lock `parlamentares`/`municipios`/`convenios_estadual`/`users`. Guarded by
+     `setup_db.py`, not as a model, not in a migration. Guarded by
      `tests/test_boot_nao_recria_tabela_morta.py`.
-   - Prefer DDL on tables the collectors don't keep open.
+   - Same family: a migration that creates an index a later one drops. That was
+     `add_obrasgov.sql` until 15/09/2026, and `add_rm_anos.sql` guards itself.
 
 ## Before writing one
 

@@ -43,9 +43,10 @@ CREATE INDEX IF NOT EXISTS ix_bi_tela_links_owner ON bi_tela_links(owner_id);
 -- prefeitura era exclusivo de admin e continua sendo uma decisao explicita.
 -- (Admin nao aparece aqui porque passa por todas as telas por definicao.)
 --
--- ATENCAO ao NOT EXISTS: o runner (services/startup.py) NAO tem registro de
--- migration aplicada -- ele roda TODOS os arquivos a cada boot. Sem esta
--- guarda, o backfill rodaria de novo a cada restart e devolveria a permissao a
+-- ATENCAO ao NOT EXISTS: este arquivo roda de novo sempre que for editado (o
+-- runner compara o checksum em `migrations_aplicadas`; ate 15/09/2026 rodava
+-- TODOS os arquivos a cada boot). Sem esta
+-- guarda, o backfill rodaria de novo nessa hora e devolveria a permissao a
 -- quem o admin tivesse revogado. Com ela, so roda enquanto ninguem tiver
 -- 'bi_tela'. (Se um dia revogarem de TODO mundo, o proximo boot reconcede uma
 -- vez -- caso raro e preferivel a permissao voltando sozinha toda semana.)

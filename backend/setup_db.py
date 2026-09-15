@@ -17,9 +17,12 @@ db_url = settings.DATABASE_URL_SYNC or settings.DATABASE_URL.replace("+asyncpg",
 engine = create_engine(db_url)
 
 
-def create_tables():
-    with engine.connect() as conn:
-        conn.execute(text("""
+# O schema base inteiro, como TEXTO de modulo — e nao embutido na funcao — porque
+# o boot (`services/startup.py`) guarda o checksum dele em `migrations_aplicadas`
+# e so o executa de novo quando ele muda. Rodar a cada boot custava lock: o
+# `CREATE INDEX IF NOT EXISTS` em `convenios_estadual` pede ShareLock antes de
+# descobrir que o indice existe, e espera qualquer coletor que esteja gravando.
+SCHEMA_BASE_SQL = """
         CREATE TABLE IF NOT EXISTS municipios (
             id SERIAL PRIMARY KEY,
             nome VARCHAR(200) NOT NULL,
@@ -140,7 +143,12 @@ def create_tables():
         CREATE INDEX IF NOT EXISTS idx_convenios_est_municipio ON convenios_estadual(municipio_id);
         CREATE INDEX IF NOT EXISTS idx_convenios_est_situacao ON convenios_estadual(situacao);
         CREATE INDEX IF NOT EXISTS idx_convenios_est_vigencia ON convenios_estadual(dt_vigencia_atual);
-        """))
+        """
+
+
+def create_tables():
+    with engine.connect() as conn:
+        conn.execute(text(SCHEMA_BASE_SQL))
         conn.commit()
         print("Tabelas criadas com sucesso!")
 

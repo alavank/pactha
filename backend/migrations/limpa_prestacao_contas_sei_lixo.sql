@@ -14,6 +14,10 @@
 -- exibindo "Nº SEI: Cancelar Histórico Status" na tela e no relatorio para
 -- sempre, mesmo com o coletor consertado.
 --
+-- migration: a-cada-boot
+-- (a marca acima faz o runner rodar este arquivo em TODO boot, mesmo ja
+-- registrado em `migrations_aplicadas` — ver `services/startup.py`)
+--
 -- ⚠️ RODA A CADA BOOT, e isso esta certo: e IDEMPOTENTE (depois da 1a vez
 -- nenhuma linha casa) e AUTOCURATIVA (se um valor sem numero reaparecer por
 -- qualquer caminho, o proximo boot o remove).

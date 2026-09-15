@@ -6,8 +6,9 @@
 --
 -- ⚠️ O NOME DA TABELA NAO PODE SER `oportunidades` NEM `programas_federais`.
 -- As duas existiram e foram derrubadas no refactor lean de 05/2026 — e o
--- `drop_lean_tables.sql` continua na lista de migrations, rodando A CADA BOOT.
--- Reusar qualquer um dos dois nomes faria a tabela ser DROPADA em todo deploy,
+-- `drop_lean_tables.sql` continua na lista de migrations (roda em banco novo e
+-- sempre que for editado; ate 15/09/2026, a cada boot).
+-- Reusar qualquer um dos dois nomes faria a tabela ser DROPADA nessas horas,
 -- recriada vazia logo em seguida, e o defeito so apareceria como "o radar
 -- esvaziou sozinho de novo" — sem erro em lugar nenhum.
 --

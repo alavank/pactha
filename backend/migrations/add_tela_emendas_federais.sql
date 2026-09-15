@@ -33,7 +33,8 @@
 --      tem não necessariamente acompanha instrumento federal, e herdar dela
 --      concederia a gente que não pediu.
 --
--- ATENÇÃO ao NOT EXISTS: o runner roda TODOS os arquivos a cada boot. Sem a
+-- ATENÇÃO ao NOT EXISTS: o arquivo roda de novo sempre que é editado (até
+-- 15/09/2026 o runner rodava TODOS os arquivos a cada boot). Sem a
 -- guarda, o backfill devolveria o acesso a quem um admin tivesse revogado. Com
 -- ela, só roda enquanto NINGUÉM tiver — concessão única, revogação respeitada
 -- dali em diante.

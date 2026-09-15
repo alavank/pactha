@@ -25,8 +25,9 @@ DROP INDEX IF EXISTS ux_rm_mun_data_escopo;
 
 -- ⚠️⚠️ O CREATE ABAIXO SÓ RODA SE A IDENTIDADE NOVA AINDA NÃO EXISTIR.
 --
--- Este arquivo roda a CADA BOOT (o runner de services/startup.py não guarda "já
--- aplicada"), e `IF NOT EXISTS` só protege enquanto o índice EXISTE. Depois que
+-- Este arquivo rodava a CADA BOOT (até 15/09/2026 o runner de services/startup.py
+-- não guardava "já aplicada"; hoje roda de novo quando é editado, e banco novo
+-- roda tudo), e `IF NOT EXISTS` só protege enquanto o índice EXISTE. Depois que
 -- `drop_rm_unique_anos.sql` o derruba, este CREATE volta a tentar recriá-lo — e
 -- no primeiro dia em que um RM FILTRADO por consultas conviver com o COMPLETO do
 -- mesmo período, ele passa a falhar com "could not create unique index ... is

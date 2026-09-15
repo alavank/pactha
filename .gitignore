@@ -37,6 +37,8 @@ out/
 docs/dados-abertos-transferegov/modelo_dados_*/
 # A mesma extracao, copiada para junto dos PDFs da migracao para as APIs (43 MB).
 docs/migracao-apis-transferegov/modelo_dados_*/
+# O dicionario dos CSVs de Discricionarias e Legais (SICONV, 25 MB), mesma logica.
+docs/migracao-apis-transferegov/ModeloDados*/
 
 # Despejo de consulta a portal (JSON solto na raiz), gerado durante
 # investigacao e sem lugar no repo. `mg27.json` (65KB do ConsultaFNS) chegou a

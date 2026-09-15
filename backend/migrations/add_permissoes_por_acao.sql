@@ -21,7 +21,8 @@
 -- entao `commit()`): ou entra tudo, ou nao entra nada — nunca "tabela nova
 -- sem as permissoes dentro".
 --
--- ⚠️ E O RUNNER RODA TUDO A CADA BOOT, E ENGOLE ERRO. Para DDL idempotente
+-- ⚠️ E O RUNNER RODA O ARQUIVO DE NOVO SEMPRE QUE ELE E EDITADO (ate
+-- 15/09/2026, a cada boot), E ENGOLE ERRO. Para DDL idempotente
 -- isso e inofensivo; para BACKFILL nao e — um `INSERT ... ON CONFLICT DO
 -- NOTHING` de permissao que rode a cada boot DEVOLVE o acesso que o
 -- administrador REVOGOU ontem. O registro `migration_backfills` (criado

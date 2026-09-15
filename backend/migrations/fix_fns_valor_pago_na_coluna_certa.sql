@@ -17,6 +17,10 @@
 -- coleta. Este arquivo repara o que ja esta gravado, lendo do proprio
 -- `raw_data` da linha — nao ha dado novo aqui, so o que o FNS ja devolveu.
 --
+-- migration: a-cada-boot
+-- (a marca acima faz o runner rodar este arquivo em TODO boot, mesmo ja
+-- registrado em `migrations_aplicadas` — ver `services/startup.py`)
+--
 -- ⚠️ IDEMPOTENTE E AUTOCURATIVO, roda a cada boot. O `IS DISTINCT FROM` faz o
 -- UPDATE nao tocar em nada quando ja esta certo, e o `jsonb_typeof = 'number'`
 -- impede que um raw_data com texto no lugar do numero derrube o cast — e com
