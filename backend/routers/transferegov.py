@@ -28,6 +28,7 @@ import httpx
 import unicodedata
 from services import authz
 from services.natureza import SQL_SO_PREFEITURA
+from services.voluntarias_dump import ops_obs_preferido, sem_cpf, sinais_do_resumo
 from services.registro_rotas import declarado, exige
 
 router = APIRouter(prefix="/api/transferegov", tags=["transferegov"])
@@ -643,7 +644,11 @@ async def voluntarias(
                clausula_suspensiva_motivo, parlamentar,
                situacao_contratacao_detalhe, processo_execucao_qtd,
                -- NO FIM de proposito: o dicionario abaixo le por INDICE.
-               natureza_juridica, municipal
+               natureza_juridica, municipal,
+               -- 15/09/2026: SO o resumo da arvore dos dumps (row[25]), e nao
+               -- a arvore: ela chega a 1 MB numa proposta, e a lista traz
+               -- centenas. Os selos saem de `sinais_do_resumo`.
+               arvore->'_resumo'
         FROM transferegov_propostas
         WHERE {' AND '.join(where)}
         ORDER BY numero_proposta DESC
@@ -668,6 +673,10 @@ async def voluntarias(
         # ⚠️ NULO conta como prefeitura (a fonte nao disse): o selo "nao e da
         # prefeitura" so aparece quando a fonte AFIRMA outra natureza.
         "municipal": row[24] is not False,
+        # Selos do dump (vigencia prorrogada, dias sem desembolso, prazo da
+        # prestacao de contas, % fisico). None = arvore ainda nao colhida ou
+        # proposta sem convenio. Contados HOJE: ver `sinais_do_resumo`.
+        "sinais": sinais_do_resumo(row[25]),
     } for row in r.fetchall()]
 
     # Filtro de vigencia (presets: dias para vencer) — vindo dos KPIs ou do filtro
@@ -793,13 +802,20 @@ async def voluntarias_detalhe(
                -- INDICE e inserir no meio desloca tudo em silencio.
                situacao_projeto_basico,
                -- 15/09/2026, depois dela pelo mesmo motivo: quem recebe.
-               natureza_juridica, municipal
+               natureza_juridica, municipal,
+               -- 15/09/2026: a ARVORE dos dumps de Discricionarias (row[37..40]),
+               -- no fim pela mesma razao de todas as de cima.
+               arvore, arvore_atualizado_em, ops_obs_aberto, notas_empenho_aberto
         FROM transferegov_propostas
         WHERE municipio_id = :mun AND numero_proposta = :num
     """), {"mun": municipio_id, "num": numero_proposta})
     row = r.first()
     if not row:
         raise HTTPException(404, "Proposta não encontrada")
+    # ⭐ O desembolso vem do DUMP quando ha (ver `ops_obs_preferido`), completado
+    # com NS/OP/situacao da raspagem onde o numero da OB bate. A aba OPs/OBs e o
+    # RM passam a dizer a mesma coisa.
+    _ops, _ops_fonte = ops_obs_preferido(row[39], row[28])
     return {
         "numero_proposta": row[0], "situacao": row[1], "orgao": row[2],
         "proponente": row[3], "identificacao": row[4], "codigo_instrumento": row[5],
@@ -819,7 +835,9 @@ async def voluntarias_detalhe(
         "historico_comunicacoes": row[25] or [],
         "documentos_quadro_resumo": row[26] or [],
         "historico_atualizado_em": row[27].isoformat() if row[27] else None,
-        "ops_obs": row[28] or None,
+        "ops_obs": _ops,
+        # "dump" | "portal" | None — a tela diz de onde veio.
+        "ops_obs_fonte": _ops_fonte,
         "obras": row[29] or None,
         # lista de licitacoes COM situacao (Concluído / Em execução ...)
         "processo_execucao": row[30] or [],
@@ -844,7 +862,148 @@ async def voluntarias_detalhe(
         # e a prefeitura — ver `services/natureza.py`. NULO conta como prefeitura.
         "natureza_juridica": row[35],
         "municipal": row[36] is not False,
+        # A ARVORE do dump (15/09/2026): convenio, emendas, aditivos,
+        # prorrogacoes, plano de trabalho, obras, prestacao de contas e o
+        # `_resumo`. Linhas CRUAS da fonte, pelos nomes das colunas do CSV — a
+        # tela rotula. As listas GRANDES (pagamentos, licitacoes, liquidacoes)
+        # nao estao aqui: vem paginadas de `/voluntarias-arvore/{tipo}`.
+        # Sem CPF de pessoa fisica (`sem_cpf`). None = ainda nao colhida.
+        "arvore": sem_cpf(row[37]) if row[37] else None,
+        "arvore_atualizado_em": row[38].isoformat() if row[38] else None,
+        # As NEs do dump. A tela as mostra quando a listagem raspada NUNCA foi
+        # consultada (coluna nula) — a MESMA ordem do RM
+        # (`_ne = row[25] if row[25] is not None else row[31]`). Por isso a tela
+        # precisa saber a diferenca entre "nula" e "vazia", que o `or []` de
+        # `notas_empenho` acima apaga.
+        "notas_empenho_aberto": row[40] if row[40] is not None else None,
+        "notas_empenho_consultadas": row[33] is not None,
     }
+
+
+# As listas GRANDES da arvore dos dumps (15/09/2026): tabela, coluna de data
+# (texto dd/mm/aaaa da fonte), colunas devolvidas e onde a busca procura.
+_FILHOS = {
+    "pagamentos": ("tg_pagamentos", "data_pagamento",
+                   "nr_mov_fin, data_pagamento, fornecedor_doc, fornecedor_nome, tipo, "
+                   "valor, dados->>'NR_DL', dados->>'DESC_DL', favorecidos",
+                   ("fornecedor_nome", "fornecedor_doc")),
+    "licitacoes": ("tg_licitacoes", "data_publicacao",
+                   "id_licitacao, data_publicacao, numero, modalidade, status, valor, "
+                   "dados, contratos, itens",
+                   ("numero", "modalidade", "status")),
+    "liquidacoes": ("tg_documentos_liquidacao", "data_emissao",
+                    "id_dl, data_emissao, numero, descricao, razao_social, valor, status, itens",
+                    ("numero", "razao_social", "descricao")),
+}
+
+
+def _filho(tipo: str, row) -> dict:
+    if tipo == "pagamentos":
+        return {"nr_mov_fin": row[0], "data": row[1], "fornecedor_doc": row[2],
+                "fornecedor_nome": row[3], "tipo": row[4],
+                "valor": float(row[5]) if row[5] is not None else None,
+                "nr_dl": row[6], "desc_dl": row[7], "favorecidos": row[8] or []}
+    if tipo == "licitacoes":
+        return {"id": row[0], "data": row[1], "numero": row[2], "modalidade": row[3],
+                "status": row[4], "valor": float(row[5]) if row[5] is not None else None,
+                "dados": row[6] or {}, "contratos": row[7] or [], "itens": row[8] or []}
+    return {"id": row[0], "data": row[1], "numero": row[2], "descricao": row[3],
+            "razao_social": row[4], "valor": float(row[5]) if row[5] is not None else None,
+            "status": row[6], "itens": row[7] or []}
+
+
+@router.get("/voluntarias-arvore/{tipo}",
+            dependencies=[declarado(*_CATEGORIA_PERMISSOES)])
+async def voluntarias_arvore_lista(
+    tipo: str,
+    numero_proposta: str = Query(...),
+    municipio_id: int = Query(...),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    busca: Optional[str] = Query(None, description="fornecedor, número, modalidade..."),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Pagamentos, licitações ou documentos de liquidação de UMA proposta,
+    PAGINADOS (15/09/2026 — os dumps de Discricionárias).
+
+    Paginado porque o tamanho é real: medido até 12.868 pagamentos num único
+    convênio. O mesmo gate do detalhe (qualquer uma das quatro telas), e o
+    município da LINHA — nada de id solto.
+
+    ⚠️ PROPOSTA QUE NÃO É DA PREFEITURA vem com `so_resumo` e sem itens — a
+    decisão do dono (opção B) foi guardar só as contas delas. A tela explica em
+    vez de mostrar uma lista vazia como se não houvesse pagamento."""
+    if tipo not in _FILHOS:
+        raise HTTPException(404, "Tipo desconhecido")
+    ensure_municipio_access(current, municipio_id)
+    if not any(authz.pode(current, chave) for chave in _CATEGORIA_PERMISSOES):
+        authz.exigir(current, _CATEGORIA_PERMISSOES[0])
+    r = await db.execute(text(
+        "SELECT id_proposta_siconv, municipal, arvore->'_resumo' FROM transferegov_propostas "
+        "WHERE municipio_id = :mun AND numero_proposta = :num"),
+        {"mun": municipio_id, "num": numero_proposta})
+    prop = r.first()
+    if not prop:
+        raise HTTPException(404, "Proposta não encontrada")
+    resumo = prop[2] or {}
+    base = {"tipo": tipo, "offset": offset, "limit": limit,
+            "so_resumo": bool(resumo.get("so_resumo")) or prop[1] is False,
+            "resumo": {k: resumo.get(k) for k in ("n_pagamentos", "pago_fornecedores",
+                                                  "n_fornecedores", "n_licitacoes",
+                                                  "n_liquidacoes")}}
+    if not prop[0] or base["so_resumo"]:
+        return {**base, "items": [], "total": 0, "soma": None}
+    tabela, col_data, cols, onde_busca = _FILHOS[tipo]
+    where = ["municipio_id = :mun", "id_proposta = :idp"]
+    params: dict = {"mun": municipio_id, "idp": str(prop[0])}
+    if busca and busca.strip():
+        where.append("(" + " OR ".join(f"{c} ILIKE :b" for c in onde_busca) + ")")
+        params["b"] = f"%{busca.strip()}%"
+    w = " AND ".join(where)
+    tot = (await db.execute(text(f"SELECT count(*), sum(valor) FROM {tabela} WHERE {w}"),
+                            params)).first()
+    # A data e TEXTO da fonte (dd/mm/aaaa). Ordenar como texto poria 31/01
+    # depois de 01/12; o CASE converte so o que tem o formato, sem erro.
+    ordem = (f"CASE WHEN {col_data} ~ '^[0-9]{{2}}/[0-9]{{2}}/[0-9]{{4}}' "
+             f"THEN to_date(left({col_data}, 10), 'DD/MM/YYYY') END DESC NULLS LAST")
+    rows = (await db.execute(text(
+        f"SELECT {cols} FROM {tabela} WHERE {w} ORDER BY {ordem}, id DESC "
+        f"OFFSET :off LIMIT :lim"), {**params, "off": offset, "lim": limit})).fetchall()
+    return {**base, "items": [_filho(tipo, x) for x in rows], "total": int(tot[0] or 0),
+            "soma": float(tot[1]) if tot[1] is not None else None}
+
+
+@router.get("/canceladas", dependencies=[exige("transferegov_rejeitadas.ver")])
+async def canceladas(
+    municipio_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """As propostas CANCELADAS (`siconv_proposta_cancelada.zip`, 15/09/2026).
+
+    Vêm num arquivo PRÓPRIO, que o PACTHA nunca leu, e a regra de categoria das
+    telas não conhece o status "Cancelados" — por isso tabela e rota próprias,
+    mostradas na tela de Rejeitadas. Com a marca de quem não é a prefeitura,
+    como toda lista de voluntárias."""
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "transferegov_rejeitadas")
+    r = await db.execute(text("""
+        SELECT numero_proposta, proponente, natureza_juridica, municipal, objeto, orgao,
+               valor_global, dados->>'DIA_PROPOSTA', dados->>'SIT_PROPOSTA',
+               dados->>'MODALIDADE'
+          FROM tg_propostas_canceladas
+         WHERE municipio_id = :mun
+         ORDER BY numero_proposta DESC
+    """), {"mun": municipio_id})
+    items = [{
+        "numero_proposta": x[0], "proponente": x[1], "natureza_juridica": x[2],
+        "municipal": x[3] is not False, "objeto": x[4], "orgao": x[5],
+        "valor_global": float(x[6]) if x[6] is not None else None,
+        "dt_proposta": x[7], "situacao": x[8], "modalidade": x[9],
+    } for x in r.fetchall()]
+    return {"items": items, "total": len(items),
+            "fora_da_prefeitura": sum(1 for i in items if not i["municipal"])}
 
 
 @router.get("/plano-acao/{plano_acao_id}",

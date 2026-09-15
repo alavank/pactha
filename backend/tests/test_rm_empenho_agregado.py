@@ -150,13 +150,17 @@ def test_a_coluna_nova_e_a_ULTIMA_do_select():
     # 04/09/2026: `notas_empenho_aberto` foi pendurada DEPOIS de
     # `situacao_projeto_basico` (o fallback de NE do dado aberto). Mesma disciplina:
     # coluna nova no FIM, indices ja lidos preservados.
-    assert colunas[-1] == "notas_empenho_aberto", \
+    # 15/09/2026: `ops_obs_aberto` (o desembolso do dump) entrou DEPOIS dela, como
+    # row[32]. `notas_empenho_aberto` segue em row[31].
+    assert colunas[-1] == "ops_obs_aberto", \
         f"a ultima coluna virou {colunas[-1]!r} — quem entrar depois vai no FIM"
+    assert colunas.index("notas_empenho_aberto") == 31, "notas_empenho_aberto saiu de row[31]"
     assert colunas.index("situacao_projeto_basico") == 30, "situacao_projeto_basico saiu de row[30]"
     assert colunas.index("valor_empenhado") == 29, \
         f"valor_empenhado saiu de row[29] (esta em row[{colunas.index('valor_empenhado')}])"
     assert colunas.index("modalidade") == 28, "modalidade deixou de ser row[28]"
-    assert len(colunas) == 32, f"o SELECT tem {len(colunas)} colunas, esperava 32"
+    assert colunas.index("ops_obs") == 22, "ops_obs (o raspado) saiu de row[22]"
+    assert len(colunas) == 33, f"o SELECT tem {len(colunas)} colunas, esperava 33"
 
 
 def test_o_item_usa_as_duas_fontes_e_nao_so_a_listagem():

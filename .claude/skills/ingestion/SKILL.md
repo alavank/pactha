@@ -195,6 +195,22 @@ Reads 50 of the zips and hangs everything on the proposals **already in the DB**
 - **Pago > desembolsado is normal:** payments include the contrapartida.
 - **Cost measured** on a Trust-size carteira (7.639 proposals): 1 min download, 3 min scan,
   **1,5 GB peak memory**. The tenants run one at a time, 30 min apart.
+- **Option B (owner, 15/09/2026):** for a proposal that is NOT the prefeitura's
+  (`municipal IS FALSE`), the collector stores only the `_resumo` counts and sums, not the
+  rows of the three big tables.
+  - In the test carteira, 98% of those rows were state convênios seated in the capital.
+  - `coleta(..., so_resumo=)` and `Coleta.agregados` feed the `_resumo` from every
+    proposal.
+  - The table swap's "nothing matched" guard counts what matched in the dump, so old
+    rows still get cleaned.
+- **Reading rules live in `services/voluntarias_dump.py`** (screen and RM share them):
+  - `ops_obs_preferido`: the dump wins; NS/OP/situação come from the scraped block only
+    where the OB number matches exactly, and the two lists are never summed.
+  - `sinais_do_resumo`: list badges, counted TODAY and only with proof. Prestação vencida
+    only when `SIT_CONVENIO` shows it was not delivered.
+  - `sem_cpf`: the dump publishes CPF in two files; it never goes to the browser.
+  - NEs keep the RM order (scraped first, dump only when the scraped column is null)
+    until PR 4 turns the scraping off.
 
 ## Authenticated sources
 

@@ -24,6 +24,12 @@ import {
   Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 import { PainelFiltros, type FiltroAtivo } from "@/components/ui/filtros";
+// A ÁRVORE dos dumps de Discricionárias (15/09/2026): as abas novas do modal,
+// os selos da lista e as canceladas moram num arquivo próprio.
+import {
+  AbaExecucao, AbaLicitacoes, AbaLinhaTempo, AbaPlano, AbaPrazos, BlocoCanceladas,
+  FonteDaArvore, ObrasDoDump, SelosDoDump, abasDaArvore, type Arvore, type SinaisDump,
+} from "@/components/VoluntariaArvore";
 
 /** O ANO de uma proposta.
  *
@@ -110,11 +116,25 @@ function pacOrigem(det?: Record<string, string | string[]>): string {
  *  com TG_NES desligado nunca consulta, e "consultei e não tem" fica igual a
  *  "nunca consultei". Mesma doutrina do RM (rm_builder._empenhado_rotulo). */
 function empenhadoDe(det?: Detalhe | null): string {
-  const nes = det?.notas_empenho;
+  const nes = nesEfetivas(det);
   if (Array.isArray(nes) && nes.some((n) => !n.minuta_apenas && (n.numero || "").trim())) {
     return "Sim";
   }
   return "";
+}
+
+/** A listagem de NEs a mostrar — a MESMA ordem do RM
+ *  (`rm_builder`: `_ne = row[25] if row[25] is not None else row[31]`): a
+ *  RASPADA da tela logada quando ela foi consultada (mesmo vazia: ali vazio é
+ *  "consultei e não há"), e a do DADO ABERTO (`siconv_empenho`) só quando a
+ *  raspada nunca foi lida. Mostrar uma na tela e outra no RM seria a mesma
+ *  proposta com dois empenhos diferentes. */
+function nesEfetivas(det?: Detalhe | null): Detalhe["notas_empenho"] {
+  if (!det) return null;
+  if (det.notas_empenho_consultadas === false && Array.isArray(det.notas_empenho_aberto)) {
+    return det.notas_empenho_aberto;
+  }
+  return det.notas_empenho;
 }
 
 function campo(rotulo: string, valor: unknown, extra?: Partial<Campo>): Campo {
@@ -160,6 +180,10 @@ interface Proposta {
    *  fonte conta como prefeitura (vem `true`). */
   natureza_juridica?: string | null;
   municipal?: boolean;
+  /** Selos do dump de Discricionárias (vigência prorrogada, dias sem
+   *  desembolso, prazo da prestação de contas, % físico). Nulo = sem árvore
+   *  colhida ou sem convênio. */
+  sinais?: SinaisDump | null;
   /** Lista das licitações/processos COM situação (Concluído / Em execução ...). */
   processo_execucao?: Array<{
     numero?: string | null; modalidade?: string | null;
@@ -265,7 +289,16 @@ interface Obras {
 interface Detalhe extends Proposta {
   detalhe?: Record<string, string | string[]>;
   ops_obs?: OpsObs | null;
+  /** "dump" = `siconv_desembolso` do dado aberto (completado com NS/OP da
+   *  raspagem onde a OB bate); "portal" = só a raspagem. */
+  ops_obs_fonte?: "dump" | "portal" | null;
   obras?: Obras | null;
+  /** A árvore dos dumps de Discricionárias (15/09/2026). */
+  arvore?: Arvore | null;
+  arvore_atualizado_em?: string | null;
+  notas_empenho_aberto?: Proposta["notas_empenho"];
+  /** false = a listagem raspada de NEs nunca foi consultada (coluna nula). */
+  notas_empenho_consultadas?: boolean;
 }
 
 const PORTAL_BASE = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do?modulo=Principal&path=/MostraPrincipalConsultarProposta.do&Usr=guest&Pwd=guest";
@@ -347,7 +380,8 @@ export default function TransfereGovPropostas({
 
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
   // Aba ativa do modal de detalhe (evita rolagem gigante com 50+ eventos)
-  const [aba, setAba] = useState<"dados" | "opsobs" | "obras" | "historico" | "docs">("dados");
+  const [aba, setAba] = useState<"dados" | "execucao" | "opsobs" | "prazos" | "plano" | "licitacoes"
+    | "obras" | "linha" | "historico" | "docs">("dados");
   const [loadingDet, setLoadingDet] = useState(false);
 
   const buildParams = useCallback((): Record<string, string | string[]> => {
@@ -809,6 +843,10 @@ export default function TransfereGovPropostas({
                           não é da prefeitura
                         </Selo>
                       )}
+                      {/* Do dump de Discricionárias: prestação de contas
+                          vencendo, dias sem desembolso, vigência prorrogada,
+                          % da obra, TCE. Cada selo só sai com prova no dado. */}
+                      <SelosDoDump s={p.sinais} />
                       {p.orgao && <span className="truncate">{p.orgao}</span>}
                       {p.parlamentar && <span className="truncate">· {p.parlamentar}</span>}
                       <span className="font-mono">
@@ -844,6 +882,11 @@ export default function TransfereGovPropostas({
         )}
       </div>
 
+      {/* As CANCELADAS vêm num arquivo próprio do dado aberto, que o PACTHA
+          nunca tinha lido, e a regra de categoria não conhece o status — por
+          isso um bloco aqui, e não linhas misturadas na lista acima. */}
+      {categoria === "rejeitadas" && <BlocoCanceladas municipioId={municipioId} />}
+
       {/* Modal detalhe */}
       {(detalhe !== null || loadingDet) && (() => {
         const nHist = (detalhe?.historico_comunicacoes || []).length;
@@ -860,10 +903,19 @@ export default function TransfereGovPropostas({
           || ((_oo.valor_desembolsado ?? 0) > 0)
           || ((_oo.valor_a_desembolsar ?? 0) > 0)
           || (_oo.obs || []).length));
+        // As abas da ÁRVORE dos dumps (15/09/2026) acendem pelo que o dado
+        // aberto trouxe, sem depender da sessão do portal.
+        const arv = detalhe?.arvore || null;
+        const da = abasDaArvore(arv);
         const abas: Array<{ valor: typeof aba; label: string; on: boolean }> = [
           { valor: "dados", label: "Dados", on: true },
+          { valor: "execucao", label: "Execução financeira", on: da.execucao },
           { valor: "opsobs", label: "OPs/OBs", on: temOpsObs },
-          { valor: "obras", label: `Obras${nLotes ? ` (${nLotes})` : ""}`, on: nLotes > 0 },
+          { valor: "prazos", label: "Prazos e aditivos", on: da.prazos },
+          { valor: "plano", label: "Plano de trabalho", on: da.plano },
+          { valor: "licitacoes", label: `Licitações${da.nLicitacoes ? ` (${da.nLicitacoes})` : ""}`, on: da.licitacoes },
+          { valor: "obras", label: `Obras${nLotes ? ` (${nLotes})` : ""}`, on: nLotes > 0 || da.obraDump },
+          { valor: "linha", label: "Linha do tempo", on: da.linha },
           { valor: "historico", label: `Histórico${nHist ? ` (${nHist})` : ""}`, on: nHist > 0 },
           { valor: "docs", label: `Documentos${nDocs ? ` (${nDocs})` : ""}`, on: nDocs > 0 },
         ];
@@ -961,13 +1013,20 @@ export default function TransfereGovPropostas({
                         ⚠️ A MINUTA fica visível mas SEPARADA, com selo próprio e
                         sem entrar no total: ela vem com R$ 1,00 e sem número, e
                         somá-la poria um real no relatório como se fosse recurso. */}
-                    {Array.isArray(detalhe.notas_empenho) && detalhe.notas_empenho.length > 0 && (
+                    {(() => {
+                      /* A listagem EFETIVA (`nesEfetivas`): a raspada quando foi
+                         consultada, a do dado aberto quando nunca foi — a mesma
+                         ordem do RM. O título diz de onde veio. */
+                      const nes = nesEfetivas(detalhe);
+                      if (!Array.isArray(nes) || nes.length === 0) return null;
+                      const doDump = nes === detalhe.notas_empenho_aberto;
+                      return (
                       <Aviso
                         tom="ok"
-                        titulo={`Notas de Empenho: ${
-                          detalhe.notas_empenho.filter((n) => !n.minuta_apenas).length
+                        titulo={`Notas de Empenho${doDump ? " (dado aberto)" : ""}: ${
+                          nes.filter((n) => !n.minuta_apenas).length
                         } · ${moeda(
-                          detalhe.notas_empenho
+                          nes
                             .filter((n) => !n.minuta_apenas)
                             .reduce((s, n) => s + (n.valor || 0), 0)
                         )} empenhado`}
@@ -981,7 +1040,7 @@ export default function TransfereGovPropostas({
                             { label: "Situação" }, { label: "Emissão" },
                           ]}
                         >
-                          {detalhe.notas_empenho.map((n, i) => (
+                          {nes.map((n, i) => (
                             <GradeLinha key={i} cols={COLS_NE}>
                               <GradeCel tom="id">{n.numero || "—"}</GradeCel>
                               <GradeCel>{n.minuta || "—"}</GradeCel>
@@ -997,7 +1056,8 @@ export default function TransfereGovPropostas({
                           ))}
                         </Grade>
                       </Aviso>
-                    )}
+                      );
+                    })()}
                     {/* PROJETO BÁSICO / TERMO DE REFERÊNCIA — o Motivo da cláusula diz
                         QUAL documento trava; este diz em que PÉ ele está no portal
                         (ex.: "Em Análise"). Só é coletado para convênio em cláusula
@@ -1161,11 +1221,42 @@ export default function TransfereGovPropostas({
                 )}
               </>)}
 
+              {/* ── A ÁRVORE DOS DUMPS (15/09/2026) ─────────────────────────
+                  Cada aba lê `detalhe.arvore` (e as listas grandes, paginadas,
+                  de `/transferegov/voluntarias-arvore/{tipo}`). Nada disto
+                  depende da sessão do portal. */}
+              {ativa === "execucao" && arv && (<>
+                <AbaExecucao arvore={arv} numero={detalhe.numero_proposta} municipioId={String(municipioId)} />
+                <FonteDaArvore arvore={arv} atualizadoEm={detalhe.arvore_atualizado_em} />
+              </>)}
+              {ativa === "prazos" && arv && (<>
+                <AbaPrazos arvore={arv} />
+                <FonteDaArvore arvore={arv} atualizadoEm={detalhe.arvore_atualizado_em} />
+              </>)}
+              {ativa === "plano" && arv && (<>
+                <AbaPlano arvore={arv} />
+                <FonteDaArvore arvore={arv} atualizadoEm={detalhe.arvore_atualizado_em} />
+              </>)}
+              {ativa === "licitacoes" && (
+                <AbaLicitacoes numero={detalhe.numero_proposta} municipioId={String(municipioId)} />
+              )}
+              {ativa === "linha" && arv && (<>
+                <AbaLinhaTempo arvore={arv} />
+                <FonteDaArvore arvore={arv} atualizadoEm={detalhe.arvore_atualizado_em} />
+              </>)}
+
               {/* OPs/OBs — Execução Concedente → Listagem de Repasses */}
               {ativa === "opsobs" && detalhe.ops_obs && (
                 <Secao
                   icon={Banknote}
                   titulo="OPs/OBs — Repasses e Desembolsos"
+                  /* DE ONDE VEIO: desde 15/09/2026 o desembolso sai do dado
+                     aberto (`siconv_desembolso`), que não depende da sessão do
+                     portal; NS, OP e situação da ordem vêm da tela logada só
+                     onde ela foi lida. As colunas "-" são essa ausência. */
+                  sub={detalhe.ops_obs_fonte === "dump"
+                    ? "dado aberto do TransfereGov · NS/OP e situação só quando a tela do portal foi lida"
+                    : "tela do portal (Execução Concedente)"}
                   campos={[
                     { rotulo: "Valor Total de Repasse", valor: moeda(detalhe.ops_obs.valor_total_repasse) },
                     { rotulo: "Valor Desembolsado", valor: moeda(detalhe.ops_obs.valor_desembolsado), tom: "ok" },
@@ -1375,6 +1466,10 @@ export default function TransfereGovPropostas({
                   </div>
                 </Secao>
               )}
+              {/* A obra no DADO ABERTO: resumo físico-financeiro, medições,
+                  coordenadas e o elo com o Obras.gov — soma-se ao que a
+                  raspagem trouxe acima (ART/RT e documentos seguem de lá). */}
+              {ativa === "obras" && arv && da.obraDump && <ObrasDoDump arvore={arv} />}
 
               {/* Histórico de Comunicações (TransfereGov mandatárias) — SITUAÇÃO e
                   CONSIDERAÇÕES em destaque: é o andamento real da análise. */}

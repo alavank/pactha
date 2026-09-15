@@ -99,6 +99,8 @@ NAO_SOMAM = {
     ("routers/control.py", "*"): "Central: conta o banco inteiro, é operação",
     ("routers/freshness.py", "*"): "frescor da fonte: quando e quanto chegou",
     ("routers/transferegov.py", "voluntarias_detalhe"): "UMA proposta, pelo número",
+    ("routers/transferegov.py", "voluntarias_arvore_lista"): "UMA proposta, pelo número "
+        "(pagamentos/licitações/liquidações paginados)",
     ("routers/transferegov.py", "listar_pac"): "elo PAC→voluntária, por número; não soma",
     ("main.py", "*"): "status de ingestão",
 }
@@ -179,7 +181,7 @@ def _linha(num, natureza, municipal):
     base = [num, "Em execução", "Órgão", "Proponente", None, "1", "900001", "Convênio",
             None, None, "Objeto", "Programa", "01/01/2025", "31/12/2030", None, None,
             None, "Normal", None, None, None, None, 1]
-    return tuple(base + [natureza, municipal])
+    return tuple(base + [natureza, municipal, None])     # None: sem árvore colhida
 
 
 def _lista(db, **kw):

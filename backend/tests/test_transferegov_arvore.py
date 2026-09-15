@@ -284,7 +284,8 @@ class _Conn:
 
 def test_grava_pula_arvore_e_tabelas_quando_o_convenio_falha(monkeypatch):
     chamadas = []
-    monkeypatch.setattr(ta, "_troca_tabela", lambda conn, secao, linhas, mids: chamadas.append(secao) or {})
+    monkeypatch.setattr(ta, "_troca_tabela",
+                        lambda conn, secao, linhas, mids, **kw: chamadas.append(secao) or {})
     c = _coleta(falhar={"siconv_convenio"})
     g = ta.grava(_Conn(), c, _propostas())
     assert "arvore" not in g
@@ -294,6 +295,46 @@ def test_grava_pula_arvore_e_tabelas_quando_o_convenio_falha(monkeypatch):
 def test_troca_recusa_apagar_quando_nada_casou_e_a_tabela_tem_linhas():
     with pytest.raises(ta.FalhaArquivo, match="nada apagado"):
         ta._troca_tabela(_Conn(contagem=12), "pagamentos", [], [MID])
+    with pytest.raises(ta.FalhaArquivo, match="nada apagado"):
+        ta._troca_tabela(_Conn(contagem=12), "pagamentos", [], [MID], casadas=0)
+
+
+# ---------------------------------------------------------------------------
+# Opção B (decisão do dono, 15/09/2026): o que não é da prefeitura guarda só o
+# RESUMO — as contas, e não as linhas.
+# ---------------------------------------------------------------------------
+def test_o_que_nao_e_da_prefeitura_guarda_so_o_resumo():
+    cheia = _coleta()
+    so = ta.coleta(_propostas(), {NOVA_PALMA: MID}, ler=_ler(), so_resumo={"1531858"})
+    # As linhas dela saem das três tabelas...
+    for tabela in ("licitacoes", "pagamentos", "liquidacoes"):
+        assert not [x for x in getattr(so, tabela) if x["id_proposta"] == "1531858"]
+        assert [x for x in getattr(cheia, tabela) if x["id_proposta"] == "1531858"]
+    # ...e as das outras ficam iguais.
+    assert len(so.pagamentos) == len(cheia.pagamentos) - 4
+    # O RESUMO é o mesmo, número a número — sai dos agregados, não das linhas.
+    r_so, r_cheia = so.arvores["1531858"]["_resumo"], cheia.arvores["1531858"]["_resumo"]
+    assert r_so.pop("so_resumo") is True and r_cheia.pop("so_resumo") is False
+    assert r_so == r_cheia
+    # A árvore pequena continua: vigência, aditivos, empenhos, desembolsos.
+    assert so.arvores["1531858"]["aditivos"] and so.ops_obs["1531858"]
+
+
+def test_so_resumo_nao_apaga_como_se_nada_tivesse_casado(monkeypatch):
+    """Tudo o que casou pode ser de quem não é prefeitura: aí não há linha a
+    guardar, e a guarda de "nada casou" NÃO pode travar a limpeza das linhas
+    velhas (as de antes da opção B)."""
+    import psycopg2.extras
+    monkeypatch.setattr(psycopg2.extras, "execute_values", lambda *a, **k: [])
+    trocas = {}
+    monkeypatch.setattr(ta, "_troca_tabela",
+                        lambda conn, secao, linhas, mids, casadas=None: trocas.setdefault(
+                            secao, (len(linhas), casadas)) and {} or {})
+    todas = set(_propostas())
+    c = ta.coleta(_propostas(), {NOVA_PALMA: MID}, ler=_ler(), so_resumo=todas)
+    g = ta.grava(_Conn(), c, _propostas())
+    assert trocas["pagamentos"] == (0, 17) and trocas["licitacoes"] == (0, 5)
+    assert g["pagamentos"]["so_resumo"] == 17
 
 
 def test_o_sql_so_reescreve_o_que_mudou():
