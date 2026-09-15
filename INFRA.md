@@ -587,6 +587,18 @@ depois de uma busca). Onde o portal fica e as armadilhas dele:
 > - Ela roda depois da listagem, na fila dos mais velhos primeiro, com o que sobra do
 >   teto da tarefa.
 
+**`faf-planos`** (Fundo a Fundo do Transferegov.br · 07/09/2026; API inteira desde
+15/09/2026): Scheduled Task **nos 6 workers**, no PLANO de `scripts/agenda_noturna.py`.
+- **Horários (UTC):** freitas 07:00, trust 07:20, montesião 08:05, santa maria 08:15,
+  nova palma 08:45, bgk 08:55.
+- **Comando:** `flock /tmp/faf_planos.lock timeout -k 30 3300 env FAF_TETO_TAREFA_S=3150`
+  (`CMD_FAF`); coluna `timeout` do Coolify em **3420** (interno + 120). `httpx` puro, sem
+  login.
+- A rodada: listagem + beneficiários de programa + catálogo, depois a árvore de cada
+  plano com as contas (extrato e subtransações), fila dos mais velhos. Medido: ~0,18 s
+  por consulta; 175 planos na Freitas. Freitas e Trust saíram de 09:00/09:30 porque, com
+  até 55 min, passariam das 10:00 UTC.
+
 **`cadin-rs`** (CADIN/RS + CFIL/RS · 07/09/2026): Scheduled Task **só nos workers do
 RS** — desde 13/09/2026 às 19h BRT (santamaria `10 22`, novapalma `40 22`, bgk `47 22`
 UTC), dentro do horário do portal (até 22h30 BRT); estava às 02h BRT. Lock próprio (`/tmp/cadin_rs.lock`), `httpx` + `pypdf`, sem navegador. Certidão

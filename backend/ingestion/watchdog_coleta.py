@@ -175,6 +175,11 @@ FRESCOR_HORAS_NACIONAL = {
     # inteira: a rodada grava UMA linha somando listagem, emendas indicadas e
     # arvore da proposta. NACIONAL: a carteira entra pelo IBGE do municipio.
     "parcerias": 30,
+    # FUNDO A FUNDO (task `faf-planos`, 1x/dia, auto-limite de 20h no ingest).
+    # No Frescor desde 07/09/2026 e fora DAQUI — a mesma lacuna das duas acima.
+    # Entrou em 15/09/2026, no PR da API inteira: UMA linha somando listagem,
+    # beneficiarios de programa e arvore do plano (com as contas). NACIONAL.
+    "faf_planos": 30,
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio

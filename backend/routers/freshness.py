@@ -279,6 +279,7 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
 _FONTE_ATUALIZACAO = {
     "transferegov_te": "transferegov_especiais",
     "parcerias": "transferegov_parcerias",
+    "faf_planos": "transferegov_fundoafundo",
 }
 
 

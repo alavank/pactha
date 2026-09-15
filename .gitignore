@@ -35,6 +35,8 @@ out/
 # As pastas EXTRAIDAS desses zips (~110 MB de HTML do SchemaSpy) ficam fora: o
 # zip versionado, com o SHA-256 no README, e a fonte. Extrair e para consultar.
 docs/dados-abertos-transferegov/modelo_dados_*/
+# A mesma extracao, copiada para junto dos PDFs da migracao para as APIs (43 MB).
+docs/migracao-apis-transferegov/modelo_dados_*/
 
 # Despejo de consulta a portal (JSON solto na raiz), gerado durante
 # investigacao e sem lugar no repo. `mg27.json` (65KB do ConsultaFNS) chegou a

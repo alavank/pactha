@@ -51,12 +51,12 @@ Os três zips seguem o mesmo gerador (SchemaSpy), mas **sem** a pasta intermedi�
 o `index.html` já fica na raiz do zip.
 
 - `modelo_dados_api-especiais.zip` → extrair e abrir `index.html` na raiz. 18 tabelas
-  documentadas (módulo `/especiais` da API — ver `docs/AUDITORIA_COLETA.md` §B.6.1 para o
-  plano de migração de `transferegov_te.py`).
+  documentadas — módulo `/especiais`, coletado inteiro por `ingestion/transferegov_te.py`
+  (`CONTINUAR.md` §1.23).
 - `modelo_dados_api_parcerias.zip` → idem, `index.html` na raiz. 27 tabelas — módulo
-  `/parcerias`, fonte ainda não coletada pelo PACTHA.
+  `/parcerias`, coletado inteiro por `ingestion/parcerias.py` (`CONTINUAR.md` §1.24).
 - `modelo_dados_api_faf.zip` → idem, `index.html` na raiz. 25 tabelas — módulo `/fundoafundo`,
-  fonte ainda não coletada. ⚠️ O zip do MGI duplica a árvore inteira sob
+  coletado inteiro por `ingestion/faf_planos.py` (`CONTINUAR.md` §1.25). ⚠️ O zip do MGI duplica a árvore inteira sob
   `home/dandedf/dev/cgimo/apis/schemaspy/schemaspy-output/` (caminho absoluto da máquina que
   gerou o export, vazado no pacote) **além** da cópia na raiz — as duas são idênticas; use a
   da raiz e ignore a duplicata.
