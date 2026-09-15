@@ -369,43 +369,91 @@ def test_sismob_refresh_com_a_tela_roda_e_limpa_a_env(monkeypatch, envios, modo_
 
 
 # ---------------------------------------------------------------------------
-# GET /api/transferegov/plano-acao/{id} — antes: so login. Agora: tela.
+# GET /api/transferegov/plano-acao/{id} — tela `transferegov_especiais`, e o
+# detalhe INTEIRO do banco desde 14/09/2026 (API oficial, via coletor).
 # ---------------------------------------------------------------------------
-def test_plano_acao_em_aviso_responde_igual_e_sai_para_a_rede(monkeypatch, envios):
-    monkeypatch.setenv("AUTHZ_MODO", "aviso")
+class _DbDetalhe(FakeDb):
+    """A linha do plano para a consulta em `transferegov_te`; nada para a de
+    `fonte_atualizacao` (a data da fonte e opcional no contrato)."""
+
+    async def execute(self, stmt, params=None):
+        self.consultas.append((str(stmt), params))
+        return _Resultado(self.linha if "transferegov_te" in str(stmt) else None)
+
+
+_LINHA_TE = (1, {"id_plano_acao": 91573, "codigo_plano_acao": "09032026-091573"},
+             {"empenhos": [], "conta": {"saldo": None, "lancamentos": []}},
+             {"valor_desembolsado": 205066.16, "obs": [], "pendentes": []}, None)
+
+
+def _com_a_tela(municipios=frozenset({1})):
+    return Usuario(telas={"transferegov_especiais"}, municipios=set(municipios))
+
+
+@pytest.mark.parametrize("modo_env", ["aviso", "bloqueio"])
+def test_plano_acao_le_do_banco_e_nao_sai_para_a_rede(monkeypatch, envios, modo_env):
+    """⭐ ATE 14/09/2026 ERAM TRES REQUISICOES DE SAIDA POR CLIQUE (plano, resumo
+    e extrato na API interna da SPA, a da quota por IP). Tudo isso a API oficial
+    publica e o coletor ja guarda: o numero certo agora e ZERO, e este teste e o
+    que impede alguem de "enriquecer" o detalhe buscando algo ao vivo de novo."""
+    monkeypatch.setenv("AUTHZ_MODO", modo_env)
     saidas: list = []
     monkeypatch.setattr(httpx, "AsyncClient", _cliente_falso(saidas))
 
-    # `db` é dublê: `pagamentos` sai da COLUNA que o coletor preencheu, não da
-    # rede — é o ponto do desenho. Sem passar um, o handler recebe o objeto
-    # `Depends` cru, o `except` best-effort engole e o teste não mediria nada
-    # sobre a consulta.
-    resp = asyncio.run(transferegov.detalhe(plano_acao_id=99, db=FakeDb(),
-                                            current=sem_nada()))
-    # `pagamentos` entrou na resposta com os pagamentos da TE (documentos hábeis
-    # -> OP/OB e o histórico de eventos). Este `assert` trava a FORMA da resposta
-    # de propósito: a tela lê por chave, e chave que aparece ou some sem ninguém
-    # ver é como o front e o back divergem.
-    assert set(resp) == {"plano", "resumo", "extrato", "pagamentos"}
-    # ⚠️ CONTINUAM SENDO TRÊS. O `pagamentos` NÃO acrescentou requisição de saída:
-    # ele vem do banco. Este número é o que impede alguém de "melhorar" o
-    # endpoint buscando a lista de documentos hábeis ao vivo — seriam 1+N
-    # requisições por clique, contra a mesma fonte que já puniu o IP da VPS.
-    assert len(saidas) == 3                      # detalhe + resumo + extrato
-    assert envios[0]["detalhes"]["exigido"] == "transferegov"
-
-
-def test_plano_acao_em_bloqueio_nao_sai_para_a_rede(monkeypatch, envios):
-    """Sem gate, uma conta sem telas usava a API como proxy: tres requisicoes de
-    saida de 30s cada, por chamada."""
-    monkeypatch.setenv("AUTHZ_MODO", "bloqueio")
-    saidas: list = []
-    monkeypatch.setattr(httpx, "AsyncClient", _cliente_falso(saidas))
-
-    with pytest.raises(HTTPException) as e:
-        asyncio.run(transferegov.detalhe(plano_acao_id=99, current=sem_nada()))
-    assert e.value.status_code == 403
+    resp = asyncio.run(transferegov.detalhe(
+        plano_acao_id=91573, db=_DbDetalhe(_LINHA_TE), current=_com_a_tela()))
+    # Trava a FORMA da resposta: a tela le por chave, e chave que aparece ou
+    # some sem ninguem ver e como front e back divergem.
+    assert set(resp) == {"plano", "detalhe", "pagamentos",
+                         "detalhe_atualizado_em", "fonte_atualizada_em"}
+    assert resp["plano"]["id_plano_acao"] == 91573
+    assert resp["pagamentos"]["valor_desembolsado"] == 205066.16
     assert saidas == []
+    assert envios == []
+
+
+def test_plano_acao_cobra_a_tela_que_existe(monkeypatch, envios):
+    """O gate cobrava `transferegov`, que deixou de ser TELA em 05/09/2026: o
+    modal era negado a todo usuario com a tela nova. Em aviso, a linha da
+    trilha diz qual tela foi exigida."""
+    monkeypatch.setenv("AUTHZ_MODO", "aviso")
+    asyncio.run(transferegov.detalhe(
+        plano_acao_id=91573, db=_DbDetalhe(_LINHA_TE),
+        current=Usuario(telas=set(), municipios={1})))
+    assert envios[0]["detalhes"]["exigido"] == "transferegov_especiais"
+
+
+def test_plano_acao_em_bloqueio_nega_antes_do_banco(monkeypatch, envios):
+    monkeypatch.setenv("AUTHZ_MODO", "bloqueio")
+    db = _DbDetalhe(_LINHA_TE)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(transferegov.detalhe(plano_acao_id=91573, db=db, current=sem_nada()))
+    assert e.value.status_code == 403
+    assert e.value.detail == MSG_TELA
+    assert db.consultas == []
+
+
+@pytest.mark.parametrize("modo_env", ["aviso", "bloqueio"])
+def test_plano_acao_de_outro_municipio_e_negado(monkeypatch, envios, modo_env):
+    """⭐ AGORA HA DONO. Com o detalhe vindo da SPA, o id federal abria plano de
+    qualquer municipio do Brasil a quem tivesse a tela. Vindo da tabela, a
+    linha tem `municipio_id` — e a checagem de municipio e a ANTIGA, que nega
+    nos dois modos."""
+    monkeypatch.setenv("AUTHZ_MODO", modo_env)
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(transferegov.detalhe(
+            plano_acao_id=91573, db=_DbDetalhe(_LINHA_TE),
+            current=_com_a_tela(municipios={5})))
+    assert e.value.status_code == 403
+    assert e.value.detail == MSG_MUNICIPIO
+
+
+def test_plano_acao_fora_da_base_e_404(monkeypatch, envios):
+    monkeypatch.setenv("AUTHZ_MODO", "bloqueio")
+    with pytest.raises(HTTPException) as e:
+        asyncio.run(transferegov.detalhe(
+            plano_acao_id=1, db=_DbDetalhe(None), current=_com_a_tela()))
+    assert e.value.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -546,6 +594,7 @@ def test_admin_passa_em_todos_os_gates_novos(monkeypatch, envios, modo_env):
     assert asyncio.run(cauc.refresh(current=admin))["ok"] is True
     assert asyncio.run(acordofes.refresh(current=admin))["ok"] is True
     assert asyncio.run(sismob.refresh(current=admin))["ok"] is True
-    assert asyncio.run(transferegov.detalhe(plano_acao_id=1, current=admin))
+    assert asyncio.run(transferegov.detalhe(plano_acao_id=1, db=_DbDetalhe(_LINHA_TE),
+                                            current=admin))
     assert asyncio.run(transferegov.sessao_status(db=FakeDb(), user=admin))
     assert envios == []                          # admin nao gera ruido na trilha

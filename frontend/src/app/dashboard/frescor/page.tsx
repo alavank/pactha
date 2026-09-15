@@ -22,6 +22,11 @@ interface Fonte {
   ultima_tentativa?: string | null;
   ultimo_status?: string | null;
   falhando?: boolean;
+  /** Quando a PRÓPRIA FONTE se atualizou (`/data-atualizacao` das APIs
+   *  oficiais do TransfereGov, 14/09/2026). É outra coisa que as duas datas
+   *  acima: o coletor pode rodar todo dia e regravar o mesmo dado de uma
+   *  fonte que parou — só esta data denuncia isso. `null` = a fonte não publica. */
+  fonte_atualizada_em?: string | null;
 }
 
 const STATUS_TOM: Record<string, { tom: "neutro" | "ok" | "atencao" | "critico"; label: string }> = {
@@ -213,6 +218,11 @@ export default function FrescorPage() {
                           campos={[
                             { rotulo: "Último dado", valor: fmtDt(f.ultimo_dado) },
                             { rotulo: "Última coleta com sucesso", valor: fmtDt(f.ultima_coleta) },
+                            /* Só nas fontes que publicam a própria data. */
+                            ...(f.fonte_atualizada_em
+                              ? [{ rotulo: "Fonte atualizada em", valor: fmtDt(f.fonte_atualizada_em),
+                                   title: "Data informada pela própria fonte, e não a hora da nossa coleta" }]
+                              : []),
                             /* Só aparece quando a última tentativa NÃO deu certo.
                                Na linha saudável seria ruído: tentativa e sucesso
                                são o mesmo instante. */

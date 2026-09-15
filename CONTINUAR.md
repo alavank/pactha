@@ -1328,11 +1328,23 @@ do teto atual de 1.450 s. Por isso as tasks do Coolify **não precisaram mudar**
 backlog. A rodada grava **uma** linha no `ingestion_log`, somando listagem e árvore
 (`status_da_rodada`).
 
-**Próximo passo (PR B):**
-- O modal da tela `dashboard/transferegov` ainda consulta a SPA ao vivo. Ele passa a ler
-  `detalhe` e ganha abas para plano de trabalho, conta e relatório de gestão.
-- O gate do detalhe ainda cobra a tela `transferegov`, que saiu do catálogo em 05/09.
-- As ferramentas de TE do `routers/ai.py` importam funções que não existem mais.
+**A tela (PR B, mesmo dia):**
+- **O modal de `dashboard/transferegov` lê tudo do banco**, sem nenhuma requisição de
+  saída. Antes eram três chamadas à SPA por clique.
+  - Abas: Dados Básicos (com executores e finalidades), **Plano de Trabalho** (vigência,
+    pareceres com texto, metas, histórico), Dados Orçamentários (empenhos e o programa),
+    Pagamentos, **Conta e Extrato** (saldo, favorecido, devoluções), **Relatório de
+    Gestão** (com *Quem recebeu*) e Histórico.
+- **A listagem ganhou selos** (devolução, análise pendente) e dois campos (saldo em
+  conta, fim da execução), lidos do `detalhe` em SQL.
+- **Gate do detalhe corrigido.** Ele cobrava a tela `transferegov`, que deixou de existir
+  em 05/09: só o super-admin abria o modal. Agora cobra `transferegov_especiais` **e o
+  município**, porque a linha tem dono. Antes, o id federal abria plano de qualquer
+  município.
+- **Ferramentas de TE do chat consertadas.** `routers/ai.py` importava `_fetch_listagem`
+  e `_norm`, que saíram do router em 06/09, então toda pergunta sobre emenda Pix dava
+  erro. Agora elas leem `transferegov_te`. `tests/test_ai_importa_o_que_existe.py` pega
+  a próxima vez.
 
 ## 2. ESTADO ATUAL (2026-09-04)
 
