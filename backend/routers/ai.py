@@ -135,8 +135,9 @@ FONTES DE DADOS:
   transferencias especiais indicadas por EMENDA PARLAMENTAR INDIVIDUAL, pagas
   direto ao municipio (Ministerio da Fazenda). Cada Plano de Acao tem o codigo +
   AUTOR da emenda (o parlamentar), politica publica, situacao e valores
-  (custeio/investimento). Use `query_plano_acao`. Fonte AO VIVO (API nacional),
-  nao fica no banco. **CRITICO: a maioria das emendas de DEPUTADO/SENADOR FEDERAL
+  (custeio/investimento), e tambem quanto a Uniao ja desembolsou, o saldo da
+  conta, devolucoes e o fim da execucao. Use `query_plano_acao`. Fonte: API
+  oficial do TransfereGov, coletada toda noite. **CRITICO: a maioria das emendas de DEPUTADO/SENADOR FEDERAL
   chega por AQUI, e NAO nas Voluntarias SICONV.** Em qualquer pergunta sobre
   emendas de parlamentar federal, SEMPRE consulte esta fonte.
 - **Regularidade (CAUC federal + CAGEC estadual/MG)**: se o municipio esta apto a
@@ -325,7 +326,7 @@ TOOLS = [
     },
     {
         "name": "query_plano_acao",
-        "description": "Planos de Acao / Transferencia Especial (RP9, 'emenda Pix', FEDERAL) do municipio — transferencias indicadas por emenda parlamentar individual, pagas direto ao municipio. Consulta AO VIVO a API nacional (nao esta no banco). Retorna, por plano: codigo, AUTOR da emenda (parlamentar), politica publica, situacao e valores (custeio/investimento/total). MUITAS emendas de deputado federal vem por aqui — use sempre que a pergunta envolver emenda de parlamentar federal. Filtro opcional por parlamentar/situacao.",
+        "description": "Planos de Acao / Transferencia Especial (RP9, 'emenda Pix', FEDERAL) do municipio — transferencias indicadas por emenda parlamentar individual, pagas direto ao municipio. Le a base coletada toda noite da API oficial do TransfereGov. Retorna, por plano: codigo, AUTOR da emenda (parlamentar), politica publica, situacao, valores (custeio/investimento/total) e a execucao (desembolsado pela Uniao, saldo em conta, devolucoes, fim da execucao). MUITAS emendas de deputado federal vem por aqui — use sempre que a pergunta envolver emenda de parlamentar federal. Filtro opcional por parlamentar/situacao.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -836,8 +837,7 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
             f"  Valor: {_fmt_money(r[7])} | Status: {r[9] or '-'}"
         )
 
-    # 4) Planos de Acao / Transferencia Especial (RP9) — AO VIVO, por municipio
-    from routers.transferegov import _norm as _tgnorm
+    # 4) Planos de Acao / Transferencia Especial (RP9) — do banco (transferegov_te)
     nome_norm = _tgnorm(nome)
     muns_sql = "SELECT id, nome, uf FROM municipios WHERE active = true"
     params_m: dict = {}
@@ -852,13 +852,13 @@ async def _tool_search_by_parlamentar(db: AsyncSession, inp: dict) -> str:
     pa_erro = None
     for m in muns:
         try:
-            for p in await _planos_acao_municipio(m):
+            for p in await _planos_acao_municipio(db, m):
                 if p["autor"] and nome_norm in _tgnorm(p["autor"]):
                     pa_rows.append((m, p))
         except Exception as e:  # fonte ao vivo pode cair; nao derruba as outras
             pa_erro = f"{type(e).__name__}: {str(e)[:80]}"
     if pa_erro and not pa_rows:
-        out.append(f"\n### Transferencia Especial / Plano de Acao (RP9): fonte ao vivo indisponivel ({pa_erro})")
+        out.append(f"\n### Transferencia Especial / Plano de Acao (RP9): consulta falhou ({pa_erro})")
     else:
         pa_rows.sort(key=lambda t: t[1]["vtot"], reverse=True)
         out.append(f"\n### Transferencia Especial / Plano de Acao (RP9): {len(pa_rows)} resultado(s)")
@@ -1087,30 +1087,58 @@ async def _tool_ranking_parlamentares(db: AsyncSession, inp: dict) -> str:
     return "\n".join(out)
 
 
-async def _planos_acao_municipio(mun) -> list[dict]:
-    """Busca AO VIVO os Planos de Acao (Transferencia Especial/RP9) do municipio
-    na API nacional (reusa o fetch com cache do router transferegov). Filtra por
-    nome do municipio e ja extrai o parlamentar autor do codigo da emenda."""
-    from routers.transferegov import _fetch_listagem, _norm as _tgnorm
-    items = await _fetch_listagem(mun.uf)
-    mn = _tgnorm(mun.nome)
+def _tgnorm(s) -> str:
+    """Maiusculas e sem acento, para casar nome de parlamentar/situacao."""
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", str(s or "").upper())
+                   if not unicodedata.combining(c)).strip()
+
+
+async def _planos_acao_municipio(db: AsyncSession, mun) -> list[dict]:
+    """Os Planos de Acao (Transferencia Especial/RP9) do municipio, DO BANCO.
+
+    ⚠️ ATE 14/09/2026 ISTO ESTAVA QUEBRADO EM SILENCIO: importava
+    `_fetch_listagem` e `_norm` de `routers.transferegov`, que sairam de la em
+    06/09 junto com a listagem da SPA. Toda pergunta sobre emenda Pix respondia
+    "Erro ao consultar a API", e o `search_by_parlamentar` dizia "fonte ao vivo
+    indisponivel" — exatamente na fonte por onde chega a maioria das emendas de
+    deputado federal.
+
+    Agora le `transferegov_te`, a mesma tabela da tela e do RM (API oficial,
+    casada por CNPJ — nao mais por substring de nome), e acrescenta o que a
+    arvore do plano trouxe: desembolsado, saldo em conta, devolucoes e fim da
+    execucao.
+    """
+    rows = (await db.execute(text(
+        "SELECT codigo, emenda, parlamentar, situacao, situacao_trabalho, objeto, "
+        "       raw_data->>'codigo_descricao_areas_politicas_publicas_plano_acao', "
+        "       valor_custeio, valor_investimento, valor_total, "
+        "       (pagamentos->>'valor_desembolsado')::numeric, "
+        "       detalhe->'conta'->'saldo'->>'saldo_final_gestao_financeira', "
+        "       detalhe->'conta'->'saldo'->>'data_saldo_conta', "
+        "       (SELECT sum((d->>'vl_total_devolucao')::numeric) "
+        "          FROM jsonb_array_elements(coalesce(detalhe->'devolucoes', '[]'::jsonb)) d), "
+        "       detalhe->'planos_trabalho'->0->>'data_fim_execucao_plano_trabalho' "
+        "  FROM transferegov_te WHERE municipio_id = :m"), {"m": mun.id})).fetchall()
     out = []
-    for it in items:
-        ben = _tgnorm(it.get("beneficiarioNome") or "")
-        if not (mn in ben or ben.endswith(mn)):
-            continue
-        code, autor = _parse_emenda_autor(it.get("codigoEmendaFormatado") or "")
+    for r in rows:
+        code, autor = _parse_emenda_autor(r[1] or "")
         out.append({
-            "codigo": it.get("planoAcaoCodigo"),
-            "autor": autor,
-            "emenda": code,
-            "situacao": it.get("planoAcaoSituacao") or "",
-            "pt": it.get("planoTrabalhoSituacao") or "",
-            "politicas": it.get("politicasPublicas") or "",
-            "objeto": it.get("objetoDescricao") or "",
-            "vcust": float(it.get("valorCusteio") or 0),
-            "vinv": float(it.get("valorInvestimento") or 0),
-            "vtot": float(it.get("valorTotal") or 0),
+            "codigo": r[0],
+            "autor": r[2] or autor,
+            "emenda": code or r[1],
+            "situacao": r[3] or "",
+            "pt": r[4] or "",
+            "objeto": r[5] or "",
+            "politicas": r[6] or "",
+            "vcust": float(r[7] or 0),
+            "vinv": float(r[8] or 0),
+            "vtot": float(r[9] or 0),
+            "desembolsado": float(r[10]) if r[10] is not None else None,
+            "saldo": float(r[11]) if r[11] is not None else None,
+            "saldo_em": r[12],
+            "devolvido": float(r[13]) if r[13] else None,
+            "fim_execucao": r[14],
         })
     return out
 
@@ -1120,12 +1148,7 @@ async def _tool_query_plano_acao(db: AsyncSession, inp: dict) -> str:
     mun = (await db.execute(select(Municipio).where(Municipio.id == mun_id))).scalar_one_or_none()
     if not mun:
         return f"Erro: municipio_id={mun_id} nao encontrado."
-    try:
-        planos = await _planos_acao_municipio(mun)
-    except Exception as e:
-        return (f"Erro ao consultar a API de Transferencia Especial (Plano de Acao): "
-                f"{type(e).__name__}: {str(e)[:150]}. A fonte e ao vivo; tente de novo em instantes.")
-    from routers.transferegov import _norm as _tgnorm
+    planos = await _planos_acao_municipio(db, mun)
     parl = _tgnorm(inp.get("parlamentar") or "")
     situ = _tgnorm(inp.get("situacao") or "")
     rows = [
@@ -1145,6 +1168,15 @@ async def _tool_query_plano_acao(db: AsyncSession, inp: dict) -> str:
         obj = (r["objeto"] or r["politicas"] or "-")[:180]
         autor = r["autor"] or "(sem emenda nominal / institucional)"
         pt = f" | Plano de Trabalho: {r['pt']}" if r["pt"] else ""
+        extras = []
+        if r["desembolsado"] is not None:
+            extras.append(f"desembolsado pela Uniao {_fmt_money(r['desembolsado'])}")
+        if r["saldo"] is not None:
+            extras.append(f"saldo em conta {_fmt_money(r['saldo'])} em {r['saldo_em'] or '?'}")
+        if r["devolvido"]:
+            extras.append(f"DEVOLVIDO {_fmt_money(r['devolvido'])}")
+        if r["fim_execucao"]:
+            extras.append(f"fim da execucao {r['fim_execucao']}")
         out.append(
             f"- Plano {r['codigo']} | Emenda {r['emenda'] or '-'}\n"
             f"  Parlamentar: {autor}\n"
@@ -1152,6 +1184,7 @@ async def _tool_query_plano_acao(db: AsyncSession, inp: dict) -> str:
             f"  Situacao: {r['situacao'] or '-'}{pt}\n"
             f"  Valores: total {_fmt_money(r['vtot'])} "
             f"(custeio {_fmt_money(r['vcust'])} / investimento {_fmt_money(r['vinv'])})"
+            + (f"\n  Execucao: {' | '.join(extras)}" if extras else "")
         )
     return "\n".join(out)
 

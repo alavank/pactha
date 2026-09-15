@@ -1,19 +1,19 @@
 """TransfereGov - Plano de Acao (Transferencia Especial Federal) e Voluntarias.
 
-TRES ORIGENS, cada uma no seu lugar (06/09/2026):
+DUAS ORIGENS, e nenhuma delas e mais a API interna da SPA (14/09/2026):
 
-  `/buscar`     -> tabela `transferegov_te`, alimentada por
-                   `ingestion/transferegov_te.py` a partir da API PUBLICA
-                   OFICIAL (`api-publica.transferegov.gestao.gov.br/especiais`).
+  `/buscar` e `/plano-acao/{id}` (detalhe) -> tabela `transferegov_te`,
+                   alimentada por `ingestion/transferegov_te.py` a partir da API
+                   PUBLICA OFICIAL (`api-publica.transferegov.gestao.gov.br/
+                   especiais`) — a listagem nas colunas, a arvore do plano em
+                   `detalhe`, os pagamentos em `pagamentos`.
   `/por-cnpj`   -> a mesma API oficial, AO VIVO, filtrando por CNPJ na fonte.
-  `/plano-acao/{id}` (detalhe) -> ainda a API interna da SPA
-                   (`especiais.transferegov.sistema.gov.br/...`), que e a unica
-                   com o relatorio de gestao e o extrato do plano.
 
-⚠️ A LISTAGEM DA SPA SAIU DAQUI. Ela nao filtrava por municipio nem por CNPJ no
-servidor: era baixar o estado (5 MB) ou o Brasil (~58 mil planos) e peneirar em
-memoria, contra uma fonte que devolve 403 depois de ~10 paginas. O que restou
-dela neste arquivo sao os endpoints de DETALHE por id, que nao paginam nada.
+⚠️ A SPA SAIU DAQUI POR INTEIRO. Primeiro a listagem (06/09: ela nao filtrava
+por municipio nem por CNPJ no servidor), depois o detalhe (14/09: TRES
+requisicoes de saida por CLIQUE, contra a API cuja quota por IP ja deixou a VPS
+bloqueada por >6h). O que o detalhe mostrava da SPA — plano, resumo do relatorio
+de gestao e extrato — a oficial publica, e o coletor ja guarda.
 """
 import os
 from typing import Optional
@@ -30,13 +30,6 @@ from services import authz
 from services.registro_rotas import declarado, exige
 
 router = APIRouter(prefix="/api/transferegov", tags=["transferegov"])
-
-API_BASE = "https://especiais.transferegov.sistema.gov.br/maisbrasil-transferencia-especial-backend/api"
-HEADERS = {
-    "Accept": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36",
-    "Referer": "https://especiais.transferegov.sistema.gov.br/transferencia-especial/plano-acao/consulta",
-}
 
 # API PUBLICA OFICIAL das Transferencias Especiais (Comunicado no 23/2026 do
 # MGI). ⚠️ `api-publica`, e nao `api` — o host sem o prefixo e o que bloqueia.
@@ -192,10 +185,23 @@ async def buscar(
         where.append("coalesce(objeto, '') ILIKE :obj")
         params["obj"] = f"%{objeto}%"
 
+    # Os MARCADORES da listagem saem da arvore do plano (`detalhe`) em SQL, e
+    # nao trazendo a arvore inteira: ela tem ~8 KB por plano, e a listagem so
+    # precisa de cinco valores dela. `detalhe` NULO (coletor ainda nao passou)
+    # da NULL em todos — a tela mostra "—", nunca "sem saldo".
     rows = (await db.execute(text(
         "SELECT plano_acao_id, codigo, programa_codigo, situacao, situacao_trabalho, "
         "       beneficiario_nome, beneficiario_cnpj, uf, emenda, valor_custeio, "
-        "       valor_investimento, valor_total, objeto, raw_data "
+        "       valor_investimento, valor_total, objeto, raw_data, "
+        "       detalhe->'conta'->'saldo'->>'saldo_final_gestao_financeira', "
+        "       detalhe->'conta'->'saldo'->>'data_saldo_conta', "
+        "       (SELECT sum((d->>'vl_total_devolucao')::numeric) "
+        "          FROM jsonb_array_elements(coalesce(detalhe->'devolucoes', '[]'::jsonb)) d), "
+        "       detalhe->'planos_trabalho'->0->>'data_fim_execucao_plano_trabalho', "
+        "       (SELECT string_agg(DISTINCT o->>'nome_orgao_analise_pendente_pt', '; ') "
+        "          FROM jsonb_array_elements(coalesce(detalhe->'planos_trabalho', '[]'::jsonb)) pt, "
+        "               jsonb_array_elements(coalesce(pt->'orgaos_pendentes', '[]'::jsonb)) o), "
+        "       detalhe IS NOT NULL "
         f"  FROM transferegov_te WHERE {' AND '.join(where)} "
         " ORDER BY plano_acao_id DESC"
     ), params)).all()
@@ -203,6 +209,7 @@ async def buscar(
     items = []
     for r in rows:
         raw = r[13] if isinstance(r[13], dict) else {}
+        devolvido = r[16]
         items.append({
             "id": r[0],
             "codigo": r[1],
@@ -235,6 +242,19 @@ async def buscar(
             # servi-la com este nome.
             "dt_atualizacao_plano_acao": None,
             "dt_atualizacao_plano_trabalho": None,
+            # ⭐ DA ARVORE DO PLANO (API oficial, 14/09/2026). Todos None quando
+            # `detalhe_coletado` e False — "nao medido", nunca "zero".
+            "detalhe_coletado": bool(r[19]),
+            "saldo_conta": float(r[14]) if r[14] is not None else None,
+            "saldo_conta_em": r[15],
+            # Soma de TODAS as devolucoes do plano. Devolucao e o sinal de que
+            # algo deu errado (saldo nao usado, glosa) e ate aqui era invisivel.
+            "valor_devolvido": float(devolvido) if devolvido else None,
+            "fim_execucao": r[17],
+            # Orgaos com analise pendente no plano de trabalho ("quem esta
+            # segurando"). A base nacional dessa rota tinha 0 linhas em
+            # 14/09/2026 — o campo existe para o dia em que tiver.
+            "analise_pendente": r[18] or None,
         })
 
     return {
@@ -807,64 +827,57 @@ async def voluntarias_detalhe(
 async def detalhe(plano_acao_id: int,
                   db: AsyncSession = Depends(get_db),
                   current: User = Depends(get_current_user)):
-    """Detalhe completo de um Plano de Acao + relatorio de gestao + extrato +
-    PAGAMENTOS (documentos habeis -> OP/OB e o historico de eventos)."""
-    # Antes bastava estar LOGADO. Cada chamada dispara TRES requisicoes de saida
-    # ao TransfereGov com timeout de 30s cada: sem gate, uma conta sem nenhuma
-    # tela usava a API como proxy de rede e prendia workers do servidor.
-    #
-    # So a TELA: `plano_acao_id` e identificador FEDERAL (nao ha coluna de
-    # municipio nossa para casar com ele), e o dado vem da API PUBLICA do
-    # TransfereGov — exigir municipio aqui pediria um parametro que o endpoint
-    # nao tem e que a fonte nao devolve de forma confiavel.
-    authz.exigir_tela(current, "transferegov")
-    async with httpx.AsyncClient(timeout=30, verify=False) as cli:
-        # Detalhe basico
-        try:
-            r_plano = await cli.get(f"{API_BASE}/public/plano-acao/{plano_acao_id}", headers=HEADERS)
-            r_plano.raise_for_status()
-            plano = r_plano.json()
-        except httpx.HTTPError as e:
-            raise HTTPException(502, f"TransfereGov plano: {e}")
-        # Resumo (vem com dados de execucao)
-        resumo = None
-        try:
-            r_res = await cli.get(f"{API_BASE}/public/relatorio-gestao/resumo/plano-acao/{plano_acao_id}", headers=HEADERS)
-            if r_res.status_code == 200:
-                resumo = r_res.json()
-        except Exception:
-            pass
-        # Extrato bancario
-        extrato = None
-        try:
-            r_ext = await cli.get(f"{API_BASE}/public/relatorio-gestao/extrato",
-                                  params={"planoAcaoId": plano_acao_id}, headers=HEADERS)
-            if r_ext.status_code == 200:
-                extrato = r_ext.json()
-        except Exception:
-            pass
-        # PAGAMENTOS: saem da COLUNA que o coletor ja preencheu
-        # (ingestion/transferegov_te.run_pagamentos), NAO da API.
-        #
-        # Custo de rede ZERO no caminho comum, de proposito: este endpoint ja
-        # dispara TRES requisicoes de saida por clique, e a lista de documentos
-        # habeis mais o detalhe de cada OP acrescentariam 1+N — num host de 2
-        # vCPU, e com a mesma fonte que ja puniu o IP da VPS por horas
-        # (INFRA.md §5). A tela passa a mostrar EXATAMENTE o mesmo dado que o RM
-        # congela, que e o que o dono quer comparar.
-        #
-        # None (e nao {}) quando o coletor ainda nao passou por este plano: a
-        # tela distingue "nao coletado" de "nao ha pagamento" — a mesma
-        # disciplina do RM.
-        pagamentos = None
-        try:
-            pagamentos = (await db.execute(text(
-                "SELECT pagamentos FROM transferegov_te WHERE plano_acao_id = :p"
-            ), {"p": plano_acao_id})).scalar_one_or_none()
-        except Exception as ex:
-            logger.warning(f"pagamentos TE {plano_acao_id}: {str(ex)[:120]}")
-        return {"plano": plano, "resumo": resumo, "extrato": extrato,
-                "pagamentos": pagamentos}
+    """Detalhe completo de um Plano de Acao, INTEIRO DO BANCO: o plano (API
+    oficial), a arvore do plano e os pagamentos — nenhuma requisicao de saida.
+
+    ⭐ ATE 14/09/2026 CADA CLIQUE DISPARAVA TRES REQUISICOES a API interna da
+    SPA (plano, resumo do relatorio de gestao, extrato), com timeout de 30s
+    cada, contra a fonte cuja quota por IP ja deixou a VPS bloqueada por >6h
+    (INFRA.md §5). Tudo isso a API oficial publica, e o coletor ja guarda:
+      `plano`     -> `raw_data`, o registro de `planos-acao-especiais` (chaves
+                     snake_case da fonte) + `_beneficiario`
+      `detalhe`   -> a arvore do plano (`ingestion/transferegov_te.
+                     arvore_do_plano`): plano de trabalho, executores, empenhos,
+                     conta e extrato, relatorios de gestao (com QUEM RECEBEU),
+                     devolucoes, historico, programa
+      `pagamentos`-> DH -> OP/OB, o MESMO JSON que o RM congela
+    A tela passa a mostrar exatamente o dado que o RM le.
+
+    ⚠️ `detalhe` e `pagamentos` NULOS significam "o coletor ainda nao passou
+    por este plano", nunca "o plano nao tem nada" — a tela diz a diferenca.
+    """
+    # ⚠️ A TELA E `transferegov_especiais`. Ate 14/09/2026 este gate cobrava
+    # `transferegov`, que deixou de ser TELA em 05/09 (virou so a acao
+    # «Atualizar dados», ver services/telas_catalog.py) — ou seja, negava o
+    # modal a todo usuario que recebeu a tela nova, que e exatamente quem abre
+    # esta tela. So o super-admin passava.
+    authz.exigir_tela(current, "transferegov_especiais")
+    row = (await db.execute(text(
+        "SELECT municipio_id, raw_data, detalhe, pagamentos, detalhe_atualizado_em "
+        "  FROM transferegov_te WHERE plano_acao_id = :p"
+    ), {"p": plano_acao_id})).first()
+    if not row:
+        raise HTTPException(404, "Plano de ação não encontrado nesta base")
+    # ⭐ AGORA HA MUNICIPIO para conferir. Com o detalhe vindo da SPA, o
+    # `plano_acao_id` era so um id federal e o endpoint abria plano de QUALQUER
+    # municipio do Brasil a quem tivesse a tela. Vindo da tabela, a linha tem
+    # dono: quem so ve Araujos nao abre plano de Nova Serrana pelo id.
+    if row[0] is not None:
+        ensure_municipio_access(current, row[0])
+    fonte_em = None
+    try:
+        fonte_em = (await db.execute(text(
+            "SELECT data_fonte FROM fonte_atualizacao WHERE fonte = 'transferegov_especiais'"
+        ))).scalar_one_or_none()
+    except Exception:
+        await db.rollback()      # tabela ainda nao migrada: o detalhe segue sem a data
+    return {
+        "plano": row[1] if isinstance(row[1], dict) else None,
+        "detalhe": row[2] if isinstance(row[2], dict) else None,
+        "pagamentos": row[3] if isinstance(row[3], dict) else None,
+        "detalhe_atualizado_em": row[4].isoformat() if row[4] else None,
+        "fonte_atualizada_em": fonte_em.isoformat() if fonte_em else None,
+    }
 
 
 # ============================================================================
