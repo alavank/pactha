@@ -555,9 +555,18 @@ depois de uma busca). Onde o portal fica e as armadilhas dele:
 `backend/ingestion/cagec_scraper.py`.
 
 **`parcerias`** (Gestão de Parcerias do Transferegov.br · 07/09/2026): Scheduled Task
-**nos 5 workers**, escada de 30 min — freitas 06:00, trust 06:30, montesião 07:00,
-santa maria 07:30, **nova palma 08:30** UTC, com `timeout -k 30 1500`. Lock próprio
-(`/tmp/parcerias.lock`): é `httpx` puro, sem login e sem navegador.
+**nos 6 workers**, escada de 30 min:
+- **Horários (UTC):** freitas 06:00, trust 06:30, montesião 07:00, santa maria 07:30,
+  **nova palma 08:30**, bgk 08:37.
+- **Comando:** `timeout -k 30 1500`. Lock próprio (`/tmp/parcerias.lock`): é `httpx`
+  puro, sem login e sem navegador.
+- ⚠️ **Coluna `timeout` do Coolify em 1620 desde 15/09/2026.** Estava em **300** nos seis,
+  abaixo da regra de ouro acima. A Trust (706 propostas, a listagem sozinha passa de
+  300 s) morria todo dia sem log desde pelo menos 10/09.
+- A mesma varredura achou `faf-planos`, `siconfi` e `obrasgov` fora da regra: 15 tasks,
+  todas corrigidas para interno + 120.
+- O teto interno da rodada é `PARCERIAS_TETO_TAREFA_S` (padrão 1400, casado com o kill
+  de 1500). Quem subir o kill sobe essa env no mesmo comando.
 
 > ⭐ **É onde a emenda de saúde do município vive.** O módulo processa as transferências
 > de 2024 em diante — 144 dos 176 programas publicados são Fundo a Fundo da Saúde — e
@@ -569,11 +578,14 @@ santa maria 07:30, **nova palma 08:30** UTC, com `timeout -k 30 1500`. Lock pró
 > não da prefeitura (`88488358000156`): um coletor que casasse por `municipios.cnpj`
 > não acharia nenhuma. O `cd_ibge_recebedor` filtra no servidor e o vínculo vem pronto.
 >
-> ⚠️ **A execução financeira ficou de fora por custo medido.** Os tenants têm 547
-> (freitas) e 706 (trust) propostas; buscar os 8 filhos de cada uma custaria 27 e 35
-> min, contra ~420s e ~530s do núcleo. O `/extrato-bancario` sozinho tem **1.275.217
-> registros** (6.377 páginas) — varrer a fonte inteira, o que funciona no Obras.gov,
-> aqui é inviável.
+> ⭐ **A execução financeira ENTROU em 15/09/2026** (árvore da proposta em
+> `parcerias_propostas.detalhe`). O custo que a deixou de fora era o de varrer o extrato
+> **nacional** (1,3 mi de linhas). Filtrado por conta, o extrato de uma parceria tem
+> poucas linhas.
+> - A árvore inteira mediu 12,8 requisições por proposta.
+> - Local foram 0,9 s por proposta, e 104 propostas couberam em 91 s.
+> - Ela roda depois da listagem, na fila dos mais velhos primeiro, com o que sobra do
+>   teto da tarefa.
 
 **`cadin-rs`** (CADIN/RS + CFIL/RS · 07/09/2026): Scheduled Task **só nos workers do
 RS** — desde 13/09/2026 às 19h BRT (santamaria `10 22`, novapalma `40 22`, bgk `47 22`

@@ -94,12 +94,14 @@ def test_o_upsert_grava_a_coluna_nova():
     assert re.search(r"valor_repassado\s*=\s*COALESCE\(EXCLUDED\.valor_repassado", src)
 
 
-def test_o_arquivo_DEPRECADO_nao_foi_confundido_com_o_coletor():
-    """⚠️ `fns_scraper.py` diz 'DEPRECADO — NAO USE' na primeira linha e nao e
-    executado por job nenhum. Consertar la nao teria efeito — este teste existe
-    porque eu ja tinha apontado o arquivo errado no relatorio da auditoria."""
-    dep = _fonte(os.path.join(RAIZ, "ingestion", "fns_scraper.py"))
-    assert "DEPRECADO" in dep[:200]
+def test_o_arquivo_DEPRECADO_nao_volta():
+    """⚠️ `fns_scraper.py` era um coletor morto (gravava numa tabela que nao
+    existe, dependia de cookie de sessao gov.br) que ja tinha sido confundido com
+    o coletor de verdade num relatorio de auditoria. Saiu em 15/09/2026: o FNS e
+    coletado por `run_fns_local.py`, pela API publica do ConsultaFNS, sem login.
+    Se ele reaparecer, a confusao volta junto."""
+    assert not os.path.exists(os.path.join(RAIZ, "ingestion", "fns_scraper.py"))
+    assert os.path.exists(COLETOR)
 
 
 # --- a migration -----------------------------------------------------------

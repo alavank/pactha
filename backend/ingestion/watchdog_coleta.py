@@ -169,6 +169,12 @@ FRESCOR_HORAS_NACIONAL = {
     # 30h = 1x/dia + folga, o mesmo numero das outras diarias. NACIONAL: a
     # carteira entra pelo CNPJ do municipio.
     "transferegov_te": 30,
+    # GESTAO DE PARCERIAS (task `parcerias`, 1x/dia, com auto-limite de 20h no
+    # proprio ingest). Estava no Frescor desde 07/09/2026 e fora DAQUI — mesma
+    # lacuna da TE. Entrou em 15/09/2026, no PR que levou a coleta para a API
+    # inteira: a rodada grava UMA linha somando listagem, emendas indicadas e
+    # arvore da proposta. NACIONAL: a carteira entra pelo IBGE do municipio.
+    "parcerias": 30,
 }
 
 # Fontes que so existem para certas UFs. A chave e a UF do TENANT (ha municipio

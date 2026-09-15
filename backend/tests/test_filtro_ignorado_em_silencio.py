@@ -93,6 +93,7 @@ def test_sem_teto_nada_muda():
 # (módulo, função que busca, chave do filtro, nome legível)
 VINCULOS = [
     (parcerias, "buscar", "cd_ibge_recebedor", "propostas por IBGE"),
+    (parcerias, "buscar", "sg_uf_beneficiario_emenda", "emendas indicadas por UF"),
     (faf_planos, "buscar", "codigo_ibge_municipio_ente_beneficiario_programa",
      "beneficiários por IBGE"),
     (faf_planos, "buscar", "cnpj_ente_recebedor_plano_acao", "planos por CNPJ"),

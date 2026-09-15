@@ -33,6 +33,7 @@ CADENCIA_MEDIDA = {
     "siconfi": (24, "task `siconfi`, 1x/dia"),
     "transferegov_te": (24, "task `transferegov-te`, 1x/dia nos seis workers "
                             "(escada de 30 min entre tenants, medida em 14/09/2026)"),
+    "parcerias": (24, "task `parcerias`, 1x/dia, com auto-limite de 20h no ingest()"),
 }
 
 CADENCIA_MEDIDA_POR_UF = {
