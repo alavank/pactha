@@ -181,7 +181,7 @@ def test_estadual_com_OB_da_cge_mostra_data_e_numero_e_complementa_o_atraso_do_d
     assert it["situacao_atual"].endswith("Desembolsado: R$ 801.000,00")
     assert it["valor_desembolsado"] == 801000.0
     assert it["desembolsos"][0]["numero_ob"] == "1674" and it["desembolsos"][0]["data"] == "14/05/2026"
-    assert "pago após o último dump da CGE" in it["desembolsos"][1]["situacao"]
+    assert it["desembolsos"][1]["situacao"] == "pago segundo a SEGOV — OB sem nº/data no dump da CGE"
     assert it["desembolsos"][1]["valor"] == 800964.3
     # a SEGOV continua dando NEs e valor empenhado; o total pago dela NAO
     # sobrescreve o da CGE por baixo dos panos (so pela linha rotulada)

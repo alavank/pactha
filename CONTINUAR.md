@@ -1645,14 +1645,32 @@ Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#
      ⚠️ Não medido da VPS (chave SSH não está nesta máquina) — inferido do host compartilhado com o
      backfill; `scripts/reconhecimento_fontes_vps.sh` tem as URLs se alguém quiser a formalidade.
      **Validação nos dumps reais (15/09/2026, funções do coletor sobre pg2026/rp2026 × dumps de 12/09):**
-     pg2026 4.888 NEs resolvidas (125 ambíguas, 104 sem candidato) → 4.792 com OB; **NE a NE, soma das
-     OBs da CGE = `valor_pago_financeiro` da SEGOV em 4.866/4.888 (99,5 %)**; as 22 diferenças são o
-     **atraso do dump** (CGE até 10/09 vs SEGOV 15/09 — ex.: SEGOV R$ 801 mil pagos, CGE só uma OB de
-     R$ 35,70 de maio). rp2026: 144 resolvidas, **144/144 iguais**. Pequi 7/7, OB a OB. Consequência:
-     por alguns dias a SEGOV pode dizer "pago" mais que a lista de OBs da CGE — `_complemento_segov`
-     põe a diferença na caixa como **linha própria** ("pago após o último dump da CGE — nº e data da OB
-     ainda não publicados") e sobe o total junto; cabeçalho, lista e marcador ficam consistentes, e a
-     linha some sozinha quando a OB chega no dump seguinte.
+     pg2026 4.888 NEs resolvidas (125 ambíguas, 104 sem candidato; cobertura por valor 91,9 %) → 4.792
+     com OB; **NE a NE, soma das OBs da CGE = `valor_pago_financeiro` da SEGOV em 4.866/4.888**.
+     rp2026: 144 resolvidas, **144/144 iguais**. Pequi 7/7, OB a OB.
+     ⚠️ **As 22 que não batiam eram NEs ERRADAS, não atraso** — eu tinha escrito "atraso do dump"; a
+     revisão adversarial da Fase 2 (3 lentes) provou pelo CNPJ de `dm_favorecido` que o resolver
+     aceitava um **candidato único por (nº, data) sem conferir valor nem favorecido**, e o nº de NE é
+     sequencial **por unidade executora**: a NE 981 de 13/05 de uma pessoa física (R$ 35,70) casava
+     com a NE 981 de PM Catugi (R$ 801 mil) — OB de terceiro gravada no convênio da prefeitura.
+     Corrigido antes de subir: a varredura do `ft` traz `id_favorecido` e a soma EMPENHO+REFORCO+
+     ANULACAO dos candidatos; `dm_favorecido` (25 MB) dá o CNPJ; **favorecido igual aceita** (mesmo com
+     valor diferente — empenho estimado com reforço), **diferente rejeita** (`favorecido_diverge`),
+     desconhecido só com valor igual. Mais da mesma revisão: `pg` antes de `rp` sempre (a ordem do
+     SELECT decidia se as OBs do exercício entravam); NE de origem do RP por (nº, data original,
+     **unidade executora**) e a dimensão do ano de origem sempre carregada (38 % dos RP são de NE
+     mais velha que o ano anterior e sumiam nas rodadas normais); um índice de dimensão por vez
+     (400 mil linhas ≈ 340 MB cada); bloco existente **preservado** quando o exercício não é
+     re-varrido; recurso ausente no CKAN conta como falha; exceção no meio vira `error` no log;
+     `data_ultimo_desembolso` não avança com estorno; rótulo curto "OB emitida (SIAFI-MG) — sem
+     confirmação bancária" (48 c., cabe na linha). O que resta de diferença legítima SEGOV × CGE é o
+     atraso do dump (2–5 dias) e a NE não resolvida: `_complemento_segov` põe a diferença na caixa
+     como **linha própria** com rótulo de fato, não de causa ("pago segundo a SEGOV — OB sem nº/data
+     no dump da CGE"), e sobe o total junto.
+     **Re-medido com o resolver corrigido (mesmos dumps):** pg2026 **4.990 casadas (97,5 %), 23
+     rejeitadas por favorecido diferente, 104 sem candidato, 0 ambíguas** (a conferência resolveu as
+     125 que empatavam); cobertura por valor pago **96,7 %**; NE a NE **4.989/4.990 iguais**. rp2026
+     **158/160 casados, 158/158 iguais**.
    - `ingestion/segov_pagamentos.py` → tabela `segov_convenios_empenhos` (só linhas que casaram
      com um convênio nosso por SIAFI; `ON DELETE SET NULL` por causa do
      `fix_duplicatas_chave_natural.sql`; IDs de recurso resolvidos por `package_show` a cada carga).

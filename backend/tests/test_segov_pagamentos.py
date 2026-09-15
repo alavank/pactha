@@ -379,7 +379,8 @@ def test_o_atraso_do_dump_da_cge_entra_como_linha_propria_e_nao_troca_o_total():
     assert len(c["desembolsos"]) == 2 and c["desembolsos"][0]["numero_ob"] == "1674"
     extra = c["desembolsos"][1]
     assert extra["valor"] == 800964.3 and extra["data"] == "" and extra["numero_ob"] == ""
-    assert "pago após o último dump da CGE" in extra["situacao"]
+    assert extra["situacao"] == "pago segundo a SEGOV — OB sem nº/data no dump da CGE", \
+        "o rotulo descreve o fato, nao a causa (atraso OU NE nao resolvida)"
     # iguais, CGE mais fresca (estorno) ou sem SEGOV: nada a complementar
     assert _complemento_segov({"valor_pago": 35.7}, mg, des) == {}
     assert _complemento_segov({"valor_pago": 10.0}, mg, des) == {}

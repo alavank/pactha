@@ -856,17 +856,21 @@ def _complemento_segov(sg: dict, mg_pg: dict, mg_des: dict) -> dict:
     """O que a SEGOV diz que foi pago ALEM do que as OBs da CGE ja mostram.
 
     Medido em 15/09/2026 nos dumps reais: NE a NE, a soma das OBs da CGE bate
-    com o `valor_pago` da SEGOV em 4.866 de 4.888 — e as 22 que nao batem sao o
-    ATRASO do dump (a CGE publica com dados de 2 a 5 dias antes; a SEGOV, do
-    dia). Nesses dias o item dizia "Desembolsado: R$ 35,70" com a SEGOV
-    registrando R$ 801 mil pagos — o marcador ficava para tras da fonte mais
-    fresca da MESMA contabilidade.
+    com o `valor_pago` da SEGOV em 4.866 de 4.888. (As 22 que nao batiam eram
+    NEs ERRADAS do resolver antigo — candidato unico aceito sem conferir o
+    favorecido —, corrigidas no coletor; nao eram atraso.) O que RESTA de
+    diferenca legitima e o atraso do dump da CGE, que publica com dados de 2 a
+    5 dias antes enquanto a SEGOV e do dia, e a NE que o coletor nao conseguiu
+    resolver (ambigua/sem candidato: 229 de 5.117). Nos dois casos a SEGOV diz
+    "pago" mais do que as OBs listadas, e o marcador ficava para tras.
 
     ⚠️ NAO se troca o total por um numero de outra origem: a diferenca entra
     na caixa como uma LINHA PROPRIA, rotulada, sem data nem nº de OB (que a
     SEGOV nao tem), e o total sobe junto — cabecalho, lista e marcador seguem
-    consistentes entre si, e o leitor ve de onde veio cada parcela. Quando a
-    OB chegar no dump seguinte, a linha some sozinha (a diferenca vira zero).
+    consistentes entre si, e o leitor ve de onde veio cada parcela. O rotulo
+    descreve o FATO (pago segundo a SEGOV, OB sem nº/data no dump), nao a
+    causa — o codigo nao distingue atraso de NE nao resolvida, e afirmar a
+    causa seria afirmar o nao medido. Quando a OB chegar, a linha some sozinha.
 
     Vazio quando: nao ha SEGOV; a CGE/Joomla nao respondeu ou esta incerta
     (`_incerto` — ai o RM cala, como sempre); ou a SEGOV nao diz mais que a
@@ -883,8 +887,7 @@ def _complemento_segov(sg: dict, mg_pg: dict, mg_des: dict) -> dict:
         "data": "",
         "valor": diff,
         "numero_ob": "",
-        "situacao": ("pago após o último dump da CGE (SEGOV) — nº e data da OB "
-                     "ainda não publicados"),
+        "situacao": "pago segundo a SEGOV — OB sem nº/data no dump da CGE",
     })
     return {"valor_desembolsado": round(pago_cge + diff, 2), "desembolsos": lanc}
 

@@ -240,8 +240,12 @@ def montar_pagamentos(linhas: list[dict]) -> dict:
                 desconhecido += float(v)
         if conf is None:
             tem_desconhecido = True
-        if conf is True:
-            # A data do ULTIMO desembolso e a da ultima OP QUE PAGOU.
+        # A data do ULTIMO desembolso e a da ultima OP QUE PAGOU. `v > 0`
+        # (15/09/2026): o estorno do dado aberto da CGE e confirmado e NEGATIVO
+        # — sem esta guarda a data do estorno virava "ultimo desembolso" (e
+        # "Data de pagamento" no export) de um dinheiro que nao ficou. As
+        # linhas do portal nunca sao negativas, entao nada muda para elas.
+        if conf is True and v is not None and float(v) > 0:
             ultima = l.get("data") or ultima
         obs.append({
             "data_emissao_ob": l.get("data"),

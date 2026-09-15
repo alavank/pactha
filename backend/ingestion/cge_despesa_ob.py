@@ -9,30 +9,49 @@ dimensional que alimenta a consulta Despesa do Portal" (notes do package_show)
 — a MESMA base, publicada como CSV no MESMO CKAN que `sigcon_ckan_backfill`
 ja le da VPS toda noite. Provado em 15/09/2026: a OB que o coletor Joomla mediu
 em Pequi ("25/03/2026, OB 1939, R$ 938.793,55", transparencia_mg.py:351) esta
-identica em `ft_despesa_2026` (id_empenho 15264190, cd_documento 1939), e os
-ids de empenho/favorecido sao os mesmos que o Joomla usa (`data-idEmpenho`).
+identica em `ft_despesa_2026` (id_empenho 15264190, cd_documento 1939); o id
+de empenho e o mesmo que o Joomla usa (`data-idEmpenho`) — provado em 1 NE de
+1 municipio (Pequi); a generalizacao e hipotese.
 
 ARQUIVOS (todos `;`, UTF-8 com BOM, gzip):
   despesa/ft_despesa_{ano}      uma linha por DOCUMENTO: id_empenho, id_tempo,
                                 id_tipo_documento, tp_operacao (2 normal, 1 estorno
                                 com vr_pago negativo), cd_documento (= nº da OB nas
-                                linhas de tipo "OP ..."), vr_pago, id_favorecido
+                                linhas de tipo "OP ..."), vr_pago, vr_empenhado
+                                (nas linhas EMPENHO/REFORCO/ANULACAO), id_favorecido
   despesa/dm_empenho_desp_{ano} id_empenho, nr_empenho, dt_empenho, unidade_executora,
                                 tipo_empenho, vr_empenho
+  despesa/dm_favorecido         id_favorecido -> CNPJ (PJ vem inteiro, sem zeros a esquerda)
   despesa/dm_tempo_diario       id_tempo -> data (a data da OB e chave substituta)
   despesa|restos/dm_tipo_documento  id -> nome ("OP PAGA", "OP PENDENTE", ...)
   restos_pagar/ft_restos_pagar_{ano}  OBs de restos a pagar: dt_documento direto,
                                 cd_documento, vr_pago, id_empenho (OUTRO espaco de id)
   restos_pagar/dm_empenho_resto_{ano} id_empenho (do RP), nr_empenho, dt_original
-                                (a data da NE de origem), vr_empenho
+                                (a data da NE de origem), unidade_executora, vr_empenho
 
-JUNCAO com as NEs que a SEGOV nos deu (`segov_convenios_empenhos`), sem CNPJ:
-  pg: (nr_empenho, dt_empenho) em dm_empenho_desp_{ano}; empate desfeito por
-      vr_empenho == valor empenhado. Medido no Estado inteiro (pg2026, 5.117
-      linhas): 4.888 unicas (95,5%), 14 ambiguas, 215 sem candidato.
-  rp: (nr_empenho, dt_original) em dm_empenho_resto_{ano}; medido em rp2026:
-      143/160 unicas, 17 ambiguas. As OBs do RP sao penduradas na NE DE ORIGEM
-      (o id do dataset `despesa` do ano original), que e a linha que o RM le.
+JUNCAO com as NEs que a SEGOV nos deu (`segov_convenios_empenhos`):
+  ⚠️ O Nº DA NE E SEQUENCIAL POR UNIDADE EXECUTORA, e a SEGOV so da a UO. Por
+  (nr_empenho, dt_empenho) em dm_empenho_desp_{ano}, 1.764 das 5.117 NEs do
+  pg2026 tem mais de um candidato — e 22 tem UM candidato que e OUTRA NE (a NE
+  981 de 13/05/2026 de uma pessoa fisica, R$ 35,70, no lugar da NE 981 de PM
+  Catugi, R$ 801 mil). A revisao adversarial pegou isso antes de subir: aceitar
+  o candidato unico sem conferir gravaria OB de terceiros no convenio da
+  prefeitura. Por isso a escolha CONFERE O FAVORECIDO: o `id_favorecido` das
+  linhas do proprio ft, traduzido pelo `dm_favorecido` para CNPJ, tem de ser o
+  credor da SEGOV. Favorecido igual aceita (mesmo com valor diferente — empenho
+  ESTIMADO com reforco); favorecido diferente rejeita; favorecido desconhecido
+  so com valor igual (vr_empenho, ou a soma das linhas EMPENHO/REFORCO/ANULACAO
+  do ft). Medido no pg2026 (5.117 NEs) com ESTE resolver, 15/09/2026: 4.990
+  casadas (97,5%), 23 rejeitadas por favorecido diferente, 104 sem candidato,
+  ZERO ambiguas — a conferencia de favorecido/soma resolveu as 125 que antes
+  empatavam; cobertura por valor pago 96,7%. E, NE a NE, a soma das OBs bate
+  com o `valor_pago` da SEGOV em 4.989 das 4.990 (a que sobra tem uma segunda
+  OB ainda fora do dump). O resolver anterior (sem favorecido) casava 4.888 e
+  22 delas eram de OUTRO credor.
+  Restos a pagar: o RP e resolvido em dm_empenho_resto_{ano} por (nr,
+  dt_original) + favorecido, e a NE DE ORIGEM (onde a OB e pendurada, no id do
+  `despesa`) por (nr, dt_original, unidade_executora) — chave exata, sem valor.
+  Medido no rp2026 (160): 158 casados, 2 ambiguos, 158/158 iguais a SEGOV.
   Ambiguo NAO escolhe — registra e cala (a doutrina de casar_convenio).
 
 O QUE NAO VEM: a SITUACAO BANCARIA ("Acatada pelo banco"). O dicionario do
@@ -43,20 +62,28 @@ juntar a OB. DECISAO DO DONO (15/09/2026, opcao 1): a OB emitida CONTA como
 desembolso — "Desembolsado: R$ X" no RM e cada OB na caixa (nº · data · valor)
 com o rotulo `SIT_OB`, que diz o que falta. `pagamento_confirmado` reconhece
 esse rotulo (transparencia_mg.py). O estorno (tp_operacao=1, negativo) entra
-com o mesmo rotulo + "estorno" e SOMA NEGATIVO: o total liquido e o que vale.
+com o mesmo prefixo + "estorno" e SOMA NEGATIVO: o total liquido e o que vale.
 
-ONDE GRAVA: em `transparencia_mg_empenhos`, com o MESMO id_empenho do portal —
-por isso o RM (`_mg_pagamentos`) e o export dos Estaduais (`export_pdf.py`)
-passam a mostrar data/OB sem nenhuma mudanca de leitura. O bloco `pagamentos`
-leva `_fonte = "cge_despesa_ob"`, e o upsert so SOBRESCREVE um bloco que e
-nosso ou nulo: se o Joomla um dia voltar a responder e gravar o bloco dele
-(que tem a situacao bancaria), ele vence e nao e apagado.
+ONDE GRAVA: em `transparencia_mg_empenhos`, com o id_empenho do `despesa` — o
+RM (`_mg_pagamentos`) e o export dos Estaduais (`export_pdf.py`) passam a
+mostrar data/OB sem nenhuma mudanca de leitura. O bloco `pagamentos` leva
+`_fonte = "cge_despesa_ob"`, e o upsert so SOBRESCREVE um bloco que e nosso ou
+nulo: se o Joomla um dia responder e gravar o bloco dele (com a situacao
+bancaria), ele vence. ⚠️ Honestidade: isso so vale para linha que o Joomla ja
+leu antes de nos — a nossa nasce com `detalhe_lido_em` carimbado e nao entra na
+fila dele (a fila e cara, 2 GET por empenho, e o Joomla esta fora do ar). Numa
+linha do Joomla ainda nao lida o upsert NAO toca em `detalhe_lido_em`.
 
-ESCOPO POR RODADA: ano corrente e anterior; TODOS os anos das nossas NEs na
-primeira rodada (nenhum bloco nosso na tabela) ou com CGE_OB_BACKFILL=1.
-Auto-limitado a 1x/dia (CGE_OB_MIN_INTERVAL_H=20). So tenant com municipio de
-MG. Pendurado no cron do SIGCON logo depois do segov_pagamentos (que produz as
-NEs que este coletor resolve).
+ESCOPO POR RODADA: OBs do exercicio (ft_despesa, ~40 MB gz por ano) so do ano
+corrente e do anterior; restos a pagar (pequenos) idem; a DIMENSAO de empenhos
+(dm, 4-10 MB) de todo ano de ORIGEM de RP na janela, porque e nela que a OB do
+RP e pendurada — sem isso 38% dos RP (NE mais velha que o ano anterior) nunca
+ganhariam OB depois da primeira rodada. Primeira rodada (nenhum success/partial
+no ingestion_log) ou CGE_OB_BACKFILL=1: todos os anos das nossas NEs — medido
+para NEs 2022-2026: ~400 MB de download; rodada normal ~120 MB. Um indice de
+dimensao por vez na memoria (o de 2026 tem 400 mil linhas). Quando o exercicio
+de uma NE NAO e re-varrido (origem fora da janela), as OBs ja gravadas dela
+sao PRESERVADAS e so as de RP sao refeitas.
 
 Env opcionais: CGE_OB_MIN_INTERVAL_H (20) | CGE_OB_FORCE=1 | CGE_OB_ENABLED=0 |
 CGE_OB_BACKFILL=1 (todos os anos nesta rodada).
@@ -94,18 +121,23 @@ PKG_DESPESA = "https://dados.mg.gov.br/api/3/action/package_show?id=despesa"
 PKG_RESTOS = "https://dados.mg.gov.br/api/3/action/package_show?id=restos_pagar"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131 Safari/537.36"
 
-# O rotulo que o RM imprime na caixa de desembolso e que `pagamento_confirmado`
-# reconhece. Diz o que E (OB emitida no SIAFI-MG) e o que FALTA (o banco).
-SIT_OB = "OB emitida (SIAFI-MG, dado aberto) — confirmação bancária indisponível"
-SIT_OB_ESTORNO = "OB emitida (SIAFI-MG, dado aberto) — estorno"
+# O rotulo que o RM imprime em CADA OB da caixa de desembolso e que
+# `pagamento_confirmado` reconhece pelo prefixo "ob emitida". Curto de
+# proposito: com 70 caracteres a linha quebrava e deixava "indisponivel" orfao
+# 12 vezes na mesma caixa (medido no PDF). Diz o que E e o que FALTA.
+SIT_OB = "OB emitida (SIAFI-MG) — sem confirmação bancária"
+SIT_OB_ESTORNO = "OB emitida (SIAFI-MG) — estorno"
 
-# Tipos de documento que SAO ordem de pagamento, pelo NOME (o id e substituto e
-# pode mudar entre cargas): "OP PAGA", "OP PENDENTE" e as variantes "SEM
-# DOCUMENTO DE ORIGEM". "OP PAGAMENTO DOCUMENTO FOLHA" e folha, fica de fora.
+# Tipos de documento pelo NOME (o id e substituto e pode mudar entre cargas).
+# OB = "OP PAGA"/"OP PENDENTE" e as variantes "SEM DOCUMENTO DE ORIGEM"; "OP
+# PAGAMENTO DOCUMENTO FOLHA" e folha, fica de fora.
 _RE_OP = re.compile(r"^OP (PAGA|PENDENTE)( SEM DOCUMENTO DE ORIGEM)?$", re.I)
-# Restos a pagar: "PAGAMENTO RESTO A PAGAR (NAO )?PROCESSADO" e
-# "PAGAMENTO PENDENTE DE RPP/RPNP" (medido: cd_evento 701004, vr_pago > 0).
+# Restos a pagar: "PAGAMENTO RESTO A PAGAR (NAO )?PROCESSADO" e "PAGAMENTO
+# PENDENTE DE RPP/RPNP" (medido: cd_evento 701004, vr_pago > 0).
 _RE_RP = re.compile(r"^PAGAMENTO (PENDENTE DE RP|RESTO A PAGAR)", re.I)
+# As linhas que compoem o VALOR EMPENHADO da NE no ft (para desempate por soma:
+# empenho estimado + reforcos - anulacoes == valor da SEGOV).
+_RE_EMP = re.compile(r"^(EMPENHO|REFORCO|ANULACAO)$", re.I)
 
 
 # --------------------------------------------------------------- utilidades --
@@ -143,6 +175,14 @@ def _br(iso) -> str:
         return s
 
 
+def _iso(dt) -> str:
+    return dt.strftime("%Y-%m-%d") if hasattr(dt, "strftime") else str(dt or "")[:10]
+
+
+def _digitos(v) -> str:
+    return re.sub(r"\D", "", str(v or ""))
+
+
 def _baixar(url: str) -> bytes:
     with httpx.Client(timeout=600, follow_redirects=True, verify=False,
                       headers={"User-Agent": UA}) as cli:
@@ -152,7 +192,9 @@ def _baixar(url: str) -> bytes:
 
 
 def _linhas(gz_bytes: bytes):
-    """Itera um csv.gz da CGE como dicts (cabecalho sem BOM)."""
+    """Itera um csv.gz da CGE como dicts (cabecalho sem BOM). Vazio -> nada."""
+    if not gz_bytes:
+        return
     with gzip.open(io.BytesIO(gz_bytes), "rt", encoding="utf-8-sig", errors="replace") as f:
         rd = csv.DictReader(f, delimiter=";")
         rd.fieldnames = [str(c or "").strip().lstrip("﻿") for c in (rd.fieldnames or [])]
@@ -173,7 +215,7 @@ def url_recurso(pacote: dict, sufixo: str) -> str | None:
 
 
 def ler_tipos(gz: bytes) -> dict:
-    """{id_tipo_documento: nome}."""
+    """{id_tipo_documento: NOME}."""
     return {r["id_tipo_documento"].strip(): (r.get("nome") or "").strip().upper()
             for r in _linhas(gz) if r.get("id_tipo_documento")}
 
@@ -194,77 +236,193 @@ def ler_tempo(gz: bytes) -> dict:
 
 
 def indexar_empenhos(gz: bytes, campo_data: str = "dt_empenho") -> dict:
-    """{(nr_empenho, data 'aaaa-mm-dd'): [linha, ...]} de dm_empenho_desp_{ano}
-    (campo_data='dt_empenho') ou dm_empenho_resto_{ano} (campo_data='dt_original')."""
+    """{(nr_empenho, 'aaaa-mm-dd'): [(id, vr_empenho, unidade_executora, tipo, ano), ...]}
+    de dm_empenho_desp_{ano} (campo_data='dt_empenho') ou dm_empenho_resto_{ano}
+    (campo_data='dt_original'). TUPLAS, nao dicts: o indice de 2026 tem 400 mil
+    linhas e com o dict inteiro passava de 300 MB."""
     idx: dict = {}
     for r in _linhas(gz):
         k = ((r.get("nr_empenho") or "").strip(), (r.get(campo_data) or "").strip()[:10])
         if k[0] and k[1]:
-            idx.setdefault(k, []).append(r)
+            idx.setdefault(k, []).append((
+                (r.get("id_empenho") or "").strip(), _num(r.get("vr_empenho")),
+                (r.get("unidade_executora") or "").strip(),
+                (r.get("tipo_empenho") or "").strip(), (r.get("ano_exercicio") or "").strip()))
     return idx
 
 
-def resolver(idx: dict, nr_empenho, dt, valor) -> tuple[dict | None, str]:
-    """A linha da dimensao que E a nossa NE, ou (None, motivo).
-
-    (nr, data) primeiro; havendo mais de uma (o nº e sequencial por UNIDADE
-    EXECUTORA, e a SEGOV so da a UO), desempata por vr_empenho == valor. Se
-    ainda sobrar mais de uma, AMBIGUO: nao escolhe. Motivos: 'casado',
-    'ambiguo', 'nao_achou'."""
-    dts = dt.strftime("%Y-%m-%d") if hasattr(dt, "strftime") else str(dt or "")[:10]
-    c = idx.get((str(nr_empenho or "").strip(), dts), [])
-    if len(c) == 1:
-        return c[0], "casado"
-    if not c:
-        return None, "nao_achou"
-    v = _num(valor)
-    c2 = [x for x in c if v is not None and _num(x.get("vr_empenho")) == v]
-    if len(c2) == 1:
-        return c2[0], "casado"
-    return None, "ambiguo"
+def candidatos(idx: dict, nr_empenho, dt) -> list:
+    return list(idx.get((str(nr_empenho or "").strip(), _iso(dt)), []))
 
 
-def extrair_obs(gz_ft: bytes, ids_alvo: set, ids_tipo: set, tempo: dict | None) -> dict:
-    """{id_empenho: [ {data, numero, situacao, valor, id_favorecido}, ... ]} das
-    linhas de OB dos empenhos alvo. `tempo` None => a data esta em `dt_documento`
-    (restos a pagar); senao vem por `id_tempo`.
+def varrer_ft(gz_ft: bytes, ids_alvo: set, ids_ob: set, ids_emp: set, tempo: dict | None) -> dict:
+    """{id_empenho: {"fav": id_favorecido|None, "soma": float|None, "obs": [...]}}
+    para os ids alvo, numa passada. `ids_ob` = tipos de OB (OP, ou pagamento de
+    RP); `ids_emp` = tipos que compoem o empenhado (soma de vr_empenhado, para
+    desempate); `tempo` None => a data esta em `dt_documento` (restos a pagar).
 
-    Linha de OB = tipo em `ids_tipo` e vr_pago != 0. tp_operacao '1' e estorno:
-    o valor ja vem negativo no arquivo e entra assim — o liquido e o que vale."""
+    Linha de OB = tipo em `ids_ob` e vr_pago != 0. tp_operacao '1' e estorno:
+    o valor ja vem negativo e entra assim — o liquido e o que vale."""
     out: dict = {}
     for r in _linhas(gz_ft):
         ide = (r.get("id_empenho") or "").strip()
-        if ide not in ids_alvo or (r.get("id_tipo_documento") or "").strip() not in ids_tipo:
+        if ide not in ids_alvo:
             continue
-        v = _num(r.get("vr_pago"))
-        if not v:
-            continue
-        estorno = (r.get("tp_operacao") or "").strip() == "1" or v < 0
-        if tempo is not None:
-            data = tempo.get((r.get("id_tempo") or "").strip(), "")
-        else:
-            data = _br(r.get("dt_documento"))
-        out.setdefault(ide, []).append({
-            "data": data,
-            "numero": (r.get("cd_documento") or "").strip(),
-            "situacao": SIT_OB_ESTORNO if estorno else SIT_OB,
-            "valor": v,
-            "id_favorecido": (r.get("id_favorecido") or "").strip() or None,
-        })
+        d = out.setdefault(ide, {"fav": None, "soma": None, "obs": []})
+        fav = (r.get("id_favorecido") or "").strip()
+        if fav and not d["fav"]:
+            d["fav"] = fav
+        t = (r.get("id_tipo_documento") or "").strip()
+        if t in ids_emp:
+            ve = _num(r.get("vr_empenhado"))
+            if ve is not None:
+                d["soma"] = round(_num0(d["soma"]) + ve, 2)
+        if t in ids_ob:
+            v = _num(r.get("vr_pago"))
+            if not v:
+                continue
+            estorno = (r.get("tp_operacao") or "").strip() == "1" or v < 0
+            if tempo is not None:
+                data = tempo.get((r.get("id_tempo") or "").strip(), "")
+            else:
+                data = _br(r.get("dt_documento"))
+            d["obs"].append({"data": data, "numero": (r.get("cd_documento") or "").strip(),
+                             "situacao": SIT_OB_ESTORNO if estorno else SIT_OB, "valor": v})
     return out
+
+
+def ler_favorecidos(gz: bytes, ids_alvo: set) -> dict:
+    """{id_favorecido: digitos do documento} so para os ids alvo. Para PJ o CNPJ
+    vem inteiro (0 de 960 favorecidos nossos anonimizados, medido), sem zeros a
+    esquerda — a comparacao tira os zeros dos dois lados."""
+    out: dict = {}
+    if not ids_alvo:
+        return out
+    for r in _linhas(gz):
+        i = (r.get("id_favorecido") or "").strip()
+        if i in ids_alvo:
+            out[i] = _digitos(r.get("nr_documento_anonimizado"))
+    return out
+
+
+def _cnpj_bate(doc_fav, doc_credor) -> bool | None:
+    a, b = _digitos(doc_fav).lstrip("0"), _digitos(doc_credor).lstrip("0")
+    if not a or not b:
+        return None
+    return a == b
+
+
+def escolher(cands: list, valor, credor_doc, info: dict, cnpj_por_fav: dict) -> tuple:
+    """A NE certa entre os candidatos por (nr, data), ou (None, motivo).
+
+    Favorecido IGUAL ao credor da SEGOV aceita (mesmo com valor diferente:
+    empenho ESTIMADO ganha reforcos); favorecido DIFERENTE rejeita — e o caso
+    das 22 NEs erradas; favorecido DESCONHECIDO (sem linha no ft) so com valor
+    igual (vr_empenho ou a soma EMPENHO+REFORCO+ANULACAO do ft). Um aceito =
+    'casado'; nenhum = 'favorecido_diverge' (se algum foi rejeitado por
+    documento) ou 'nao_casou'; mais de um = 'ambiguo', e ambiguo nao escolhe."""
+    if not cands:
+        return None, "nao_achou"
+    aceitos, divergiu = [], False
+    for c in cands:
+        i = info.get(c[0]) or {}
+        fm = _cnpj_bate(cnpj_por_fav.get(i.get("fav") or ""), credor_doc)
+        if fm is False:
+            divergiu = True
+            continue
+        v = _num(valor)
+        vm = v is not None and (c[1] == v or i.get("soma") == v)
+        if fm is True or vm:
+            aceitos.append(c)
+    if len(aceitos) == 1:
+        return aceitos[0], "casado"
+    if not aceitos:
+        return None, ("favorecido_diverge" if divergiu else "nao_casou")
+    return None, "ambiguo"
+
+
+def escolher_rp(cands: list, credor_doc, info_rp: dict, cnpj_por_fav: dict) -> tuple:
+    """O RP certo entre os candidatos por (nr, dt_original): so o favorecido
+    decide (o CSV de restos nao traz o empenhado). Sem linha paga no ft nao ha
+    favorecido — e tambem nao ha OB a pendurar, entao nao faz falta."""
+    if not cands:
+        return None, "nao_achou"
+    aceitos = [c for c in cands
+               if _cnpj_bate(cnpj_por_fav.get((info_rp.get(c[0]) or {}).get("fav") or ""), credor_doc) is True]
+    if len(aceitos) == 1:
+        return aceitos[0], "casado"
+    return None, ("ambiguo" if len(aceitos) > 1 else "nao_casou")
+
+
+def origem_da_rp(cands_origem: list, unidade_executora: str) -> tuple:
+    """A NE de origem (id do `despesa`) de um RP: (nr, dt_original) ja filtrados,
+    a unidade executora do proprio RP fecha a chave. Unico sem filtro tambem
+    serve; ambiguo nao escolhe."""
+    if not cands_origem:
+        return None, "nao_achou"
+    ue = (unidade_executora or "").strip()
+    por_ue = [c for c in cands_origem if ue and c[2] == ue]
+    if len(por_ue) == 1:
+        return por_ue[0], "casado"
+    if not por_ue and len(cands_origem) == 1:
+        return cands_origem[0], "casado"
+    return None, "ambiguo"
 
 
 def montar_bloco(obs: list[dict]) -> dict:
     """O bloco `pagamentos` — o formato ops_obs de `montar_pagamentos`, marcado
-    com a nossa fonte. `_mg_pagamentos` ignora chaves que nao conhece."""
-    b = montar_pagamentos(sorted(obs, key=lambda o: _chave_data(o.get("data"))))
+    com a nossa fonte, sem OB repetida. `_mg_pagamentos` ignora chaves que nao
+    conhece."""
+    vistos, unicos = set(), []
+    for o in obs:
+        k = (o.get("numero"), o.get("data"), o.get("valor"), o.get("situacao"))
+        if k in vistos:
+            continue
+        vistos.add(k)
+        unicos.append(o)
+    b = montar_pagamentos(sorted(unicos, key=lambda o: _chave_data(o.get("data"))))
     b["_fonte"] = FONTE_BLOCO
     return b
+
+
+def obs_do_bloco(bloco) -> list[dict]:
+    """As OBs de um bloco ja gravado, no formato de entrada de `montar_bloco`."""
+    if isinstance(bloco, str):
+        try:
+            bloco = json.loads(bloco)
+        except ValueError:
+            return []
+    if not isinstance(bloco, dict):
+        return []
+    return [{"data": o.get("data_emissao_ob"), "numero": o.get("numero_ob"),
+             "situacao": o.get("situacao"), "valor": o.get("valor")}
+            for o in (bloco.get("obs") or []) if isinstance(o, dict)]
 
 
 def _chave_data(v) -> str:
     m = re.search(r"(\d{2})/(\d{2})/(\d{4})", str(v or ""))
     return (m.group(3) + m.group(2) + m.group(1)) if m else ""
+
+
+def anos_alvo(nes: list[dict], ja_rodou: bool, hoje: date | None = None,
+              backfill: bool = False) -> tuple[set, set, set]:
+    """(anos de ft_despesa a varrer, anos de restos a pagar a ler, anos de
+    dm_empenho_desp a indexar).
+
+    Rodada normal: ft e RP do ano corrente e do anterior. Primeira rodada
+    (nunca houve success/partial) ou CGE_OB_BACKFILL=1: todos os anos das
+    nossas NEs. A DIMENSAO de empenhos entra para todo ano de ft E para todo
+    ano de ORIGEM dos RP da rodada — e nela que a OB do RP e pendurada, e ela
+    e pequena; o que se poupa na janela e so o ft."""
+    hoje = hoje or date.today()
+    pg = {int(n["ano_arquivo"]) for n in nes if n["tipo"] == "pg"}
+    rp = {int(n["ano_arquivo"]) for n in nes if n["tipo"] == "rp"}
+    if not (backfill or not ja_rodou):
+        janela = {hoje.year, hoje.year - 1}
+        pg, rp = pg & janela, rp & janela
+    orig = {n["dt_empenho"].year for n in nes
+            if n["tipo"] == "rp" and int(n["ano_arquivo"]) in rp and hasattr(n.get("dt_empenho"), "year")}
+    return pg, rp, (pg | orig)
 
 
 # --------------------------------------------------------------------- banco --
@@ -310,7 +468,9 @@ ON CONFLICT (id_empenho) DO UPDATE SET
     vr_liquidado      = COALESCE(transparencia_mg_empenhos.vr_liquidado, EXCLUDED.vr_liquidado),
     cnpj_favorecido   = COALESCE(transparencia_mg_empenhos.cnpj_favorecido, EXCLUDED.cnpj_favorecido),
     id_favorecido     = COALESCE(transparencia_mg_empenhos.id_favorecido, EXCLUDED.id_favorecido),
-    detalhe_lido_em   = COALESCE(transparencia_mg_empenhos.detalhe_lido_em, NOW()),
+    -- ⚠️ NAO se toca no carimbo de leitura de uma linha que JA EXISTIA: se e
+    -- do Joomla e ainda nao foi lida, ela continua na fila dele.
+    detalhe_lido_em   = transparencia_mg_empenhos.detalhe_lido_em,
     updated_at        = NOW()
 """
 
@@ -333,22 +493,14 @@ def _pular(cur) -> str | None:
     return None
 
 
-def anos_alvo(nes: list[dict], anos_ja_carregados: set, hoje: date | None = None,
-              backfill: bool = False) -> tuple[set, set]:
-    """(anos de NE a resolver em `despesa`, anos de RP a ler em `restos_pagar`).
-
-    Rodada normal: ano corrente e anterior. Primeira rodada (nenhum bloco nosso
-    na tabela) ou CGE_OB_BACKFILL=1: todos os anos que as nossas NEs tocam.
-    A NE de origem de um RP entra nos anos de `despesa` porque e nela que a OB
-    do RP e pendurada."""
-    hoje = hoje or date.today()
-    pg = {int(n["ano_arquivo"]) for n in nes if n["tipo"] == "pg"}
-    rp = {int(n["ano_arquivo"]) for n in nes if n["tipo"] == "rp"}
-    orig = {n["dt_empenho"].year for n in nes if n["tipo"] == "rp" and hasattr(n.get("dt_empenho"), "year")}
-    if backfill or not anos_ja_carregados:
-        return (pg | orig), rp
-    janela = {hoje.year, hoje.year - 1}
-    return ((pg | orig) & janela), (rp & janela)
+def _log(cur, conn, status: str, n: int, erro: str | None) -> None:
+    try:
+        cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                    "error_message, finished_at) VALUES (%s, %s, %s, %s, NOW())",
+                    (SOURCE, status, n, erro))
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
 
 def ingest() -> int:
@@ -373,167 +525,214 @@ def ingest() -> int:
         if motivo:
             log.info(f"CGE OB: pulando — {motivo}")
             return 0
-        cur.execute("""
-            SELECT id, municipio_id, convenio_id, nr_siafi, ano_arquivo, tipo, numero_empenho,
-                   dt_empenho, vr_empenhado, vr_liquidado, credor_doc
-              FROM segov_convenios_empenhos
-             WHERE convenio_id IS NOT NULL AND dt_empenho IS NOT NULL
-        """)
-        nes = [dict(zip(("id", "municipio_id", "convenio_id", "nr_siafi", "ano_arquivo", "tipo",
-                         "numero_empenho", "dt_empenho", "vr_empenhado", "vr_liquidado",
-                         "credor_doc"), r)) for r in cur.fetchall()]
-        cur.execute("SELECT DISTINCT ano_exercicio FROM transparencia_mg_empenhos "
-                    "WHERE pagamentos->>'_fonte' = %s", (FONTE_BLOCO,))
-        ja = {r[0] for r in cur.fetchall() if r[0]}
-        backfill = (os.getenv("CGE_OB_BACKFILL", "0") or "0").strip() in ("1", "true", "yes")
-        anos_ne, anos_rp = anos_alvo(nes, ja, backfill=backfill)
-        if not nes:
-            log.info("CGE OB: nenhuma NE da SEGOV para resolver (segov_pagamentos ainda nao rodou?)")
-        arquivos_total = arquivos_ok = 0
         try:
-            pk_desp = json.loads(_baixar(PKG_DESPESA))
-            pk_rp = json.loads(_baixar(PKG_RESTOS)) if anos_rp else {}
-        except Exception as e:
-            log.error(f"package_show falhou: {str(e)[:120]}")
-            pk_desp, pk_rp = {}, {}
-
-        def _pega(pk, sufixo):
-            nonlocal arquivos_total, arquivos_ok
-            u = url_recurso(pk, sufixo)
-            if not u:
-                log.warning(f"recurso ausente no CKAN: {sufixo}")
-                return None
-            arquivos_total += 1
-            try:
-                b = _baixar(u)
-                arquivos_ok += 1
-                return b
-            except Exception as e:
-                log.warning(f"{sufixo}: download falhou: {str(e)[:100]}")
-                return None
-
-        tipos = ler_tipos(_pega(pk_desp, "/dm_tipo_documento.csv.gz") or b"") if pk_desp else {}
-        tempo = ler_tempo(_pega(pk_desp, "/dm_tempo_diario.csv.gz") or b"") if pk_desp else {}
-        ids_op, ids_rp = ids_por_regex(tipos, _RE_OP), ids_por_regex(tipos, _RE_RP)
-
-        # 1) NEs de exercicio (pg) e NEs de ORIGEM dos RP -> id do `despesa`
-        resolvidas: dict = {}      # id_empenho (despesa) -> dado da NE (nossa linha + dm)
-        chave_ne: dict = {}        # (municipio_id, nr_empenho, dt) -> id_empenho (p/ pendurar RP)
-        motivos = {"casado": 0, "ambiguo": 0, "nao_achou": 0}
-        dms: dict = {}
-        for ano in sorted(anos_ne):
-            gz = _pega(pk_desp, f"/dm_empenho_desp_{ano}.csv.gz")
-            if not gz:
-                continue
-            dms[ano] = indexar_empenhos(gz, "dt_empenho")
-        for n in nes:
-            ano = int(n["ano_arquivo"]) if n["tipo"] == "pg" else n["dt_empenho"].year
-            if ano not in dms:
-                continue
-            row, motivo = resolver(dms[ano], n["numero_empenho"], n["dt_empenho"], n["vr_empenhado"])
-            if n["tipo"] == "pg":
-                motivos[motivo] += 1
-            if not row:
-                continue
-            ide = row["id_empenho"].strip()
-            k = (n["municipio_id"], str(n["numero_empenho"]).strip(), n["dt_empenho"])
-            chave_ne[k] = ide
-            resolvidas.setdefault(ide, {"ne": n, "dm": row, "obs": []})
-
-        # 2) OBs do exercicio (ft_despesa_{ano}) para os ids resolvidos daquele ano
-        for ano in sorted(anos_ne):
-            alvo = {i for i, d in resolvidas.items() if d["ne"]["tipo"] == "pg"
-                    and int(d["ne"]["ano_arquivo"]) == ano}
-            if not alvo:
-                continue
-            gz = _pega(pk_desp, f"/ft_despesa_{ano}.csv.gz")
-            if not gz:
-                continue
-            for ide, obs in extrair_obs(gz, alvo, ids_op, tempo).items():
-                resolvidas[ide]["obs"].extend(obs)
-
-        # 3) OBs de restos a pagar: resolve no dm_empenho_resto (id do RP) e
-        #    pendura na NE de origem (id do despesa) pela (municipio, nr, dt_original)
-        rp_sem_origem = 0
-        for ano in sorted(anos_rp):
-            gz_dm = _pega(pk_rp, f"/dm_empenho_resto_{ano}.csv.gz")
-            gz_ft = _pega(pk_rp, f"/ft_restos_pagar_{ano}.csv.gz")
-            if not gz_dm or not gz_ft:
-                continue
-            idx_rp = indexar_empenhos(gz_dm, "dt_original")
-            id_rp_para_ne: dict = {}
-            for n in nes:
-                if n["tipo"] != "rp" or int(n["ano_arquivo"]) != ano:
-                    continue
-                row, _m = resolver(idx_rp, n["numero_empenho"], n["dt_empenho"], n["vr_liquidado"])
-                if not row:
-                    continue
-                ide_origem = chave_ne.get((n["municipio_id"], str(n["numero_empenho"]).strip(), n["dt_empenho"]))
-                if not ide_origem:
-                    rp_sem_origem += 1
-                    continue
-                id_rp_para_ne[row["id_empenho"].strip()] = ide_origem
-            if not id_rp_para_ne:
-                continue
-            for id_rp, obs in extrair_obs(gz_ft, set(id_rp_para_ne), ids_rp, None).items():
-                resolvidas[id_rp_para_ne[id_rp]]["obs"].extend(obs)
-
-        # 4) grava quem tem OB
-        grav = falhas = 0
-        for ide, d in resolvidas.items():
-            if not d["obs"]:
-                continue
-            n, dm = d["ne"], d["dm"]
-            bloco = montar_bloco(d["obs"])
-            cur.execute("SAVEPOINT sp_ob")
-            try:
-                cur.execute(_SQL_UPSERT, {
-                    "id_empenho": int(ide),
-                    "municipio_id": n["municipio_id"],
-                    "cnpj_favorecido": (re.sub(r"\D", "", str(n.get("credor_doc") or "")) or None),
-                    "id_favorecido": next((o.get("id_favorecido") for o in d["obs"] if o.get("id_favorecido")), None),
-                    "ano_exercicio": int(dm.get("ano_exercicio") or n["dt_empenho"].year),
-                    "nr_empenho": str(n["numero_empenho"]),
-                    "dt_empenho": n["dt_empenho"],
-                    "unidade_executora": (dm.get("unidade_executora") or None),
-                    "tipo_empenho": (dm.get("tipo_empenho") or None),
-                    "vr_empenho": _num(dm.get("vr_empenho")),
-                    "vr_liquidado": n.get("vr_liquidado"),
-                    "vr_pago": bloco.get("valor_desembolsado"),
-                    "convenio_id": n["convenio_id"],
-                    "convenio_ref": n.get("nr_siafi"),
-                    "pagamentos": json.dumps(bloco, ensure_ascii=False),
-                    "raw_data": json.dumps({"_source": SOURCE, "segov_id": n["id"],
-                                            "dm": dm, "qtd_obs": len(d["obs"])}, ensure_ascii=False),
-                    "fonte": FONTE_BLOCO,
-                })
-                cur.execute("RELEASE SAVEPOINT sp_ob")
-                grav += 1
-            except Exception as ex:
-                cur.execute("ROLLBACK TO SAVEPOINT sp_ob")
-                falhas += 1
-                if falhas <= 5:
-                    log.warning(f"id_empenho={ide} NE={n['numero_empenho']}: {str(ex)[:110]}")
-        conn.commit()
-
-        nes_pg = sum(1 for n in nes if n["tipo"] == "pg" and (int(n["ano_arquivo"]) in anos_ne))
-        status, erro = _st.cge_despesa_ob(arquivos_ok, arquivos_total, nes_pg, motivos["casado"])
-        if falhas and status == "success":
-            status, erro = "partial", f"{falhas} empenho(s) nao gravados (ver log)"
-        try:
-            cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
-                        "error_message, finished_at) VALUES (%s, %s, %s, %s, NOW())",
-                        (SOURCE, status, grav, erro))
-            conn.commit()
-        except Exception:
+            return _rodada(cur, conn)
+        except Exception as ex:
+            # ⚠️ Uma excecao fora do SAVEPOINT (parse, gzip truncado) perdia a
+            # rodada inteira SEM linha no ingestion_log — e o cron seguinte
+            # baixava tudo de novo. Agora vira 'error' com a mensagem.
             conn.rollback()
-        log.info(f"CGE OB: {grav} empenho(s) com OB gravados | NEs {motivos} | "
-                 f"RP sem NE de origem: {rp_sem_origem} | {arquivos_ok}/{arquivos_total} arquivos | "
-                 f"anos NE={sorted(anos_ne)} RP={sorted(anos_rp)} | status={status}")
-        return grav
+            log.exception("CGE OB: rodada abortada")
+            _log(cur, conn, "error", 0, f"rodada abortada: {str(ex)[:180]}")
+            return 0
     finally:
         cur.close()
         conn.close()
+
+
+def _rodada(cur, conn) -> int:
+    cur.execute("""
+        SELECT id, municipio_id, convenio_id, nr_siafi, ano_arquivo, tipo, numero_empenho,
+               dt_empenho, vr_empenhado, vr_liquidado, credor_doc
+          FROM segov_convenios_empenhos
+         WHERE convenio_id IS NOT NULL AND dt_empenho IS NOT NULL
+         ORDER BY tipo, ano_arquivo, numero_empenho
+    """)
+    cols = ("id", "municipio_id", "convenio_id", "nr_siafi", "ano_arquivo", "tipo",
+            "numero_empenho", "dt_empenho", "vr_empenhado", "vr_liquidado", "credor_doc")
+    # ⚠️ pg ANTES de rp, sempre — a linha pg e a que tem o empenhado e o ano do
+    # arquivo, e a mesma NE existe nas duas (pg do ano + rp do ano seguinte).
+    nes = sorted((dict(zip(cols, r)) for r in cur.fetchall()),
+                 key=lambda n: (0 if n["tipo"] == "pg" else 1, int(n["ano_arquivo"]), str(n["numero_empenho"])))
+    cur.execute("SELECT count(*) FROM ingestion_log WHERE source = %s AND status IN ('success', 'partial')",
+                (SOURCE,))
+    ja_rodou = (cur.fetchone() or [0])[0] > 0
+    backfill = (os.getenv("CGE_OB_BACKFILL", "0") or "0").strip() in ("1", "true", "yes")
+    anos_ft, anos_rp, anos_dm = anos_alvo(nes, ja_rodou, backfill=backfill)
+    if not nes:
+        log.info("CGE OB: nenhuma NE da SEGOV para resolver (segov_pagamentos ainda nao rodou?)")
+
+    arquivos = {"total": 0, "ok": 0}
+    try:
+        pk_desp = json.loads(_baixar(PKG_DESPESA))
+        pk_rp = json.loads(_baixar(PKG_RESTOS)) if anos_rp else {}
+    except Exception as e:
+        log.error(f"package_show falhou: {str(e)[:120]}")
+        pk_desp, pk_rp = {}, {}
+
+    def _pega(pk, sufixo) -> bytes | None:
+        # ⚠️ Recurso AUSENTE conta como arquivo pedido e nao obtido: sem isso
+        # um dm_tipo_documento sumido do CKAN dava rodada 'success' com zero OB.
+        arquivos["total"] += 1
+        u = url_recurso(pk, sufixo)
+        if not u:
+            log.warning(f"recurso ausente no CKAN: {sufixo}")
+            return None
+        try:
+            b = _baixar(u)
+            arquivos["ok"] += 1
+            return b
+        except Exception as e:
+            log.warning(f"{sufixo}: download falhou: {str(e)[:100]}")
+            return None
+
+    tipos = ler_tipos(_pega(pk_desp, "/dm_tipo_documento.csv.gz") or b"") if pk_desp else {}
+    tempo = ler_tempo(_pega(pk_desp, "/dm_tempo_diario.csv.gz") or b"") if pk_desp else {}
+    if nes and (not tipos or not tempo):
+        _log(cur, conn, "error", 0, "dm_tipo_documento/dm_tempo_diario vazios ou ausentes — sem como ler as OBs")
+        log.error("CGE OB: dimensoes basicas ausentes; rodada encerrada")
+        return 0
+    ids_op, ids_rp, ids_emp = (ids_por_regex(tipos, _RE_OP), ids_por_regex(tipos, _RE_RP),
+                               ids_por_regex(tipos, _RE_EMP))
+
+    # ---- passo 1: candidatos + varredura dos ft (um indice de cada vez) ----
+    cands_rp: dict = {}      # segov id (rp) -> candidatos em dm_empenho_resto
+    info_rp: dict = {}       # id do RP -> {fav, obs}
+    for Z in sorted(anos_rp):
+        gz_dm = _pega(pk_rp, f"/dm_empenho_resto_{Z}.csv.gz")
+        gz_ft = _pega(pk_rp, f"/ft_restos_pagar_{Z}.csv.gz")
+        if not gz_dm or not gz_ft:
+            continue
+        idx = indexar_empenhos(gz_dm, "dt_original")
+        ids: set = set()
+        for n in nes:
+            if n["tipo"] == "rp" and int(n["ano_arquivo"]) == Z:
+                cands_rp[n["id"]] = candidatos(idx, n["numero_empenho"], n["dt_empenho"])
+                ids.update(c[0] for c in cands_rp[n["id"]])
+        del idx
+        info_rp.update(varrer_ft(gz_ft, ids, ids_rp, set(), None))
+
+    cands_pg: dict = {}      # segov id (pg) -> candidatos em dm_empenho_desp
+    cands_orig: dict = {}    # segov id (rp) -> candidatos da NE DE ORIGEM em dm_empenho_desp
+    info: dict = {}          # id do despesa -> {fav, soma, obs}
+    varridos: set = set()    # anos cujo ft foi lido nesta rodada
+    for Y in sorted(anos_dm):
+        gz_dm = _pega(pk_desp, f"/dm_empenho_desp_{Y}.csv.gz")
+        if not gz_dm:
+            continue
+        idx = indexar_empenhos(gz_dm, "dt_empenho")
+        ids: set = set()
+        for n in nes:
+            if n["tipo"] == "pg" and int(n["ano_arquivo"]) == Y and Y in anos_ft:
+                cands_pg[n["id"]] = candidatos(idx, n["numero_empenho"], n["dt_empenho"])
+                ids.update(c[0] for c in cands_pg[n["id"]])
+            elif n["tipo"] == "rp" and int(n["ano_arquivo"]) in anos_rp and n["dt_empenho"].year == Y:
+                cands_orig[n["id"]] = candidatos(idx, n["numero_empenho"], n["dt_empenho"])
+                ids.update(c[0] for c in cands_orig[n["id"]])
+        del idx
+        if Y in anos_ft and ids:
+            gz_ft = _pega(pk_desp, f"/ft_despesa_{Y}.csv.gz")
+            if gz_ft:
+                info.update(varrer_ft(gz_ft, ids, ids_op, ids_emp, tempo))
+                varridos.add(Y)
+
+    favs = {d["fav"] for d in list(info.values()) + list(info_rp.values()) if d.get("fav")}
+    cnpj_por_fav = ler_favorecidos(_pega(pk_desp, "/dm_favorecido.csv.gz") or b"", favs) if favs else {}
+
+    # ---- passo 2: escolha (pg primeiro; o rp pendura na NE de origem) ----
+    resolvidas: dict = {}    # id do despesa -> {"ne", "dm", "obs", "exercicio_varrido"}
+    motivos = {"casado": 0, "ambiguo": 0, "nao_achou": 0, "nao_casou": 0, "favorecido_diverge": 0}
+    rp_stats = {"casado": 0, "sem_rp": 0, "sem_origem": 0}
+    for n in nes:
+        if n["tipo"] != "pg" or n["id"] not in cands_pg:
+            continue
+        c, m = escolher(cands_pg[n["id"]], n["vr_empenhado"], n["credor_doc"], info, cnpj_por_fav)
+        motivos[m] += 1
+        if not c:
+            continue
+        e = resolvidas.setdefault(c[0], {"ne": n, "dm": c, "obs": [], "exercicio_varrido": False})
+        if not e["exercicio_varrido"]:
+            e["obs"].extend((info.get(c[0]) or {}).get("obs") or [])
+            e["exercicio_varrido"] = True
+    for n in nes:
+        if n["tipo"] != "rp" or n["id"] not in cands_rp:
+            continue
+        c_rp, _m = escolher_rp(cands_rp[n["id"]], n["credor_doc"], info_rp, cnpj_por_fav)
+        if not c_rp:
+            rp_stats["sem_rp"] += 1
+            continue
+        o, _m2 = origem_da_rp(cands_orig.get(n["id"], []), c_rp[2])
+        if not o:
+            rp_stats["sem_origem"] += 1
+            continue
+        rp_stats["casado"] += 1
+        e = resolvidas.setdefault(o[0], {"ne": n, "dm": o, "obs": [], "exercicio_varrido": False})
+        if not e["exercicio_varrido"] and int(o[4] or 0) in varridos:
+            e["obs"].extend((info.get(o[0]) or {}).get("obs") or [])
+            e["exercicio_varrido"] = True
+        e["obs"].extend((info_rp.get(c_rp[0]) or {}).get("obs") or [])
+
+    # ---- passo 3: preserva as OBs ja gravadas de quem nao teve o exercicio re-varrido ----
+    pendentes = [i for i, d in resolvidas.items() if not d["exercicio_varrido"]]
+    if pendentes:
+        cur.execute("SELECT id_empenho, pagamentos FROM transparencia_mg_empenhos "
+                    "WHERE id_empenho = ANY(%s) AND pagamentos->>'_fonte' = %s",
+                    ([int(i) for i in pendentes], FONTE_BLOCO))
+        for ide, bloco in cur.fetchall():
+            resolvidas[str(ide)]["obs"].extend(obs_do_bloco(bloco))
+
+    # ---- passo 4: grava quem tem OB ----
+    grav = falhas = 0
+    for ide, d in resolvidas.items():
+        if not d["obs"]:
+            continue
+        n, dm = d["ne"], d["dm"]
+        bloco = montar_bloco(d["obs"])
+        cur.execute("SAVEPOINT sp_ob")
+        try:
+            cur.execute(_SQL_UPSERT, {
+                "id_empenho": int(ide),
+                "municipio_id": n["municipio_id"],
+                "cnpj_favorecido": (_digitos(n.get("credor_doc")) or None),
+                "id_favorecido": (info.get(ide) or {}).get("fav"),
+                "ano_exercicio": int(dm[4] or n["dt_empenho"].year),
+                "nr_empenho": str(n["numero_empenho"]),
+                "dt_empenho": n["dt_empenho"],
+                "unidade_executora": dm[2] or None,
+                "tipo_empenho": dm[3] or None,
+                "vr_empenho": dm[1],
+                "vr_liquidado": n.get("vr_liquidado"),
+                "vr_pago": bloco.get("valor_desembolsado"),
+                "convenio_id": n["convenio_id"],
+                "convenio_ref": n.get("nr_siafi"),
+                "pagamentos": json.dumps(bloco, ensure_ascii=False),
+                "raw_data": json.dumps({"_source": SOURCE, "segov_id": n["id"],
+                                        "dm": {"id_empenho": dm[0], "vr_empenho": dm[1],
+                                               "unidade_executora": dm[2], "tipo_empenho": dm[3],
+                                               "ano_exercicio": dm[4]},
+                                        "qtd_obs": len(bloco.get("obs") or [])}, ensure_ascii=False),
+                "fonte": FONTE_BLOCO,
+            })
+            cur.execute("RELEASE SAVEPOINT sp_ob")
+            grav += 1
+        except Exception as ex:
+            cur.execute("ROLLBACK TO SAVEPOINT sp_ob")
+            falhas += 1
+            if falhas <= 5:
+                log.warning(f"id_empenho={ide} NE={n['numero_empenho']}: {str(ex)[:110]}")
+    conn.commit()
+
+    nes_pg = sum(1 for n in nes if n["tipo"] == "pg" and int(n["ano_arquivo"]) in anos_ft)
+    nes_rp = sum(1 for n in nes if n["tipo"] == "rp" and int(n["ano_arquivo"]) in anos_rp)
+    status, erro = _st.cge_despesa_ob(arquivos["ok"], arquivos["total"], nes_pg, motivos["casado"],
+                                      nes_rp, rp_stats["casado"])
+    if falhas and status == "success":
+        status, erro = "partial", f"{falhas} empenho(s) nao gravados (ver log)"
+    _log(cur, conn, status, grav, erro)
+    log.info(f"CGE OB: {grav} empenho(s) com OB gravados | NEs {motivos} | RP {rp_stats} | "
+             f"{arquivos['ok']}/{arquivos['total']} arquivos | anos ft={sorted(anos_ft)} "
+             f"rp={sorted(anos_rp)} dm={sorted(anos_dm)} | status={status}")
+    return grav
 
 
 if __name__ == "__main__":
