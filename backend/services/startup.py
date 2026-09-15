@@ -611,6 +611,10 @@ MIGRATION_FILES = [
     # do valor de Goiania. So ADD COLUMN; `transferegov_propostas` vem do
     # setup_db, muito antes.
     "add_tg_natureza.sql",
+    # Voluntarias: a ARVORE da proposta pelos dumps (arvore JSONB,
+    # ops_obs_aberto) e as tabelas das listas grandes (licitacoes, pagamentos,
+    # documentos de liquidacao) e das canceladas. FK so para `municipios`.
+    "add_tg_arvore.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

@@ -128,6 +128,16 @@ CMD_FAF = ("flock -n -E 99 /tmp/faf_planos.lock timeout -k 30 3300 env FAF_TETO_
            f"python -u ingestion/faf_planos.py {SUFIXO}")
 TIMEOUT_FAF = 3420
 
+# VOLUNTARIAS — a ARVORE pelos dumps de Discricionarias (15/09/2026). Le 50 zips
+# (3,5 GB) e casa em memoria com as propostas que a base `transferegov` gravou —
+# por isso roda DEPOIS dela no mesmo worker. Medido numa carteira do tamanho da
+# Trust: 1 min de download, 3 min de varredura, 1,5 GB de memoria no pico. Kill
+# em 30 min; timeout do Coolify = kill + 120. Um tenant por vez, escada de 30
+# min, para os picos de memoria e de download nao se somarem.
+CMD_ARVORE = ("flock -n -E 99 /tmp/tg_arvore.lock timeout -k 30 1800 "
+              f"python -u ingestion/transferegov_arvore.py {SUFIXO}")
+TIMEOUT_ARVORE = 1920
+
 
 def troca_trava(de: str, para: str):
     """Transformacao do comando ATUAL: so troca a trava, o resto fica como esta."""
@@ -161,6 +171,9 @@ PLANO: dict[str, dict[str, dict]] = {
         "cagec":             {"frequency": "0 22,23 * * *", "command": CMD_CAGEC_FREITAS, "timeout": 3420},
         "transparencia-mg":  {"frequency": "20 1,7 * * *"},
         "faf-planos":        {"frequency": "0 7 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
+        # base `transferegov` 04:10, kill em 52 min -> 05:02
+        "transferegov-arvore": {"frequency": "40 5 * * *", "command": CMD_ARVORE,
+                                "timeout": TIMEOUT_ARVORE, "criar": True},
     },
     "trust": {
         "transferegov-lote": {"frequency": "5 0-4,6-9 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
@@ -169,6 +182,9 @@ PLANO: dict[str, dict[str, dict]] = {
         "queue-sigcon":      {"command": FILA_SIGCON},
         "cagec":             {"frequency": "30 22 * * *", "command": CAGEC_TRAVA},
         "faf-planos":        {"frequency": "20 7 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
+        # base 04:50 -> 05:42
+        "transferegov-arvore": {"frequency": "10 6 * * *", "command": CMD_ARVORE,
+                                "timeout": TIMEOUT_ARVORE, "criar": True},
     },
     "montesiao": {
         "transferegov-lote": {"frequency": "30 22 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
@@ -177,11 +193,17 @@ PLANO: dict[str, dict[str, dict]] = {
         "queue-sigcon":      {"command": FILA_SIGCON},
         "cagec":             {"frequency": "45 22 * * *", "command": CAGEC_TRAVA},
         "faf-planos":        {"frequency": "5 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
+        # base 05:05 -> 05:57
+        "transferegov-arvore": {"frequency": "40 6 * * *", "command": CMD_ARVORE,
+                                "timeout": TIMEOUT_ARVORE, "criar": True},
     },
     "santamaria": {
         "transferegov-lote": {"frequency": "0 22 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
         "transferegov":      {"command": TG_BASE},
         "faf-planos":        {"frequency": "15 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
+        # base 05:55 -> 06:47
+        "transferegov-arvore": {"frequency": "10 7 * * *", "command": CMD_ARVORE,
+                                "timeout": TIMEOUT_ARVORE, "criar": True},
         # FPE atende seg-sab 7h-22h30 BRT; CADIN idem ate 22h30. 19h BRT cabe nos dois.
         "fpe-rs":            {"frequency": "14 22 * * 1-6"},
         "cadin-rs":          {"frequency": "10 22 * * *"},
@@ -190,6 +212,9 @@ PLANO: dict[str, dict[str, dict]] = {
         "transferegov-lote": {"frequency": "0 23 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
         "transferegov":      {"command": TG_BASE},
         "faf-planos":        {"frequency": "45 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
+        # base 06:25, kill em 32 min -> 06:57
+        "transferegov-arvore": {"frequency": "40 7 * * *", "command": CMD_ARVORE,
+                                "timeout": TIMEOUT_ARVORE, "criar": True},
         "fpe-rs":            {"frequency": "44 22 * * 1-6"},
         "cadin-rs":          {"frequency": "40 22 * * *"},
     },
@@ -198,6 +223,9 @@ PLANO: dict[str, dict[str, dict]] = {
         # 06:00 e nao 06:32: com kill em 30 min, 06:05 encostava no slot 06:35 do lote.
         "transferegov":      {"frequency": "0 6 * * *", "command": TG_BASE},
         "faf-planos":        {"frequency": "55 8 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
+        # base 06:00 -> 06:32; ultimo da escada, termina ate 08:40
+        "transferegov-arvore": {"frequency": "10 8 * * *", "command": CMD_ARVORE,
+                                "timeout": TIMEOUT_ARVORE, "criar": True},
         "fpe-rs":            {"frequency": "51 22 * * 1-6"},
         "cadin-rs":          {"frequency": "47 22 * * *"},
     },

@@ -599,6 +599,21 @@ depois de uma busca). Onde o portal fica e as armadilhas dele:
   por consulta; 175 planos na Freitas. Freitas e Trust saíram de 09:00/09:30 porque, com
   até 55 min, passariam das 10:00 UTC.
 
+**`transferegov-arvore`** (Voluntárias pelos dumps de Discricionárias · 15/09/2026):
+Scheduled Task **nos 6 workers**, no PLANO de `scripts/agenda_noturna.py` (`CMD_ARVORE`).
+- **Horários (UTC):** freitas 05:40, trust 06:10, montesião 06:40, santa maria 07:10,
+  nova palma 07:40, bgk 08:10. Cada uma fica **depois da base `transferegov` do mesmo
+  worker**, que grava o `id_proposta_siconv` por onde a árvore casa. É uma escada de 30
+  min, para os picos não se somarem.
+- **Comando:** `flock /tmp/tg_arvore.lock timeout -k 30 1800`; coluna `timeout` do
+  Coolify em **1920** (kill + 120). `httpx` puro, sem login, auto-limite de 20 h
+  (`TG_ARVORE_FORCE=1` força).
+- **Medido** numa carteira do tamanho da Trust: 1 min de download (3,5 GB, com os zips acima
+  de 50 MB apagados depois de lidos), 3 min de varredura e **1,5 GB de memória no pico**.
+- A `empenho-aberto` (03:05–03:24 UTC) grava a mesma `notas_empenho_aberto` a partir do
+  mesmo `siconv_empenho.zip`. Com a árvore no ar, ela fica redundante (PR 4 da §1.26 do
+  CONTINUAR).
+
 **`cadin-rs`** (CADIN/RS + CFIL/RS · 07/09/2026): Scheduled Task **só nos workers do
 RS** — desde 13/09/2026 às 19h BRT (santamaria `10 22`, novapalma `40 22`, bgk `47 22`
 UTC), dentro do horário do portal (até 22h30 BRT); estava às 02h BRT. Lock próprio (`/tmp/cadin_rs.lock`), `httpx` + `pypdf`, sem navegador. Certidão

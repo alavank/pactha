@@ -68,7 +68,14 @@ SchemaSpy, não é divergência de dado.
 ## As 53 tabelas do modelo (nome → nº de colunas)
 
 Cada tabela corresponde ao dump `siconv_<nome>.zip` no host novo (exceto as três já prefixadas
-com `siconv_`). Os dumps que o PACTHA lê hoje estão marcados com ★.
+com `siconv_`). ★ marca os dumps que a camada base lê (`transferegov_opendata`, `transferegov_pac`,
+`programas_captacao`).
+
+**Desde 15/09/2026, `ingestion/transferegov_arvore.py` lê todas as tabelas sem ★** e as pendura
+em cada proposta (CONTINUAR §1.26). Ficam de fora só `programa_proponentes`, e três arquivos
+do host sem tabela no modelo: `prop_inst_indicadores_estados`, do estado,
+`app_parceriasgov_necessidades` e `_aprovadas`. As colunas lidas pelo nome estão em
+`ARQUIVOS`, conferidas contra o cabeçalho real em `tests/test_transferegov_arvore.py`.
 
 | Tabela | Colunas | | Tabela | Colunas |
 |---|---|---|---|---|
