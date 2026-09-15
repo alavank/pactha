@@ -1465,6 +1465,20 @@ devolvidos ao Tesouro por GRU. Tudo isso só se via logado como o ente.
 do Coolify 3420, nos seis workers (`scripts/agenda_noturna.py`). Freitas passou para 07:00
 UTC e Trust para 07:20 — com até 55 min, 09:00 e 09:30 passariam das 10:00 UTC.
 
+**A tela (PR B):**
+- **`dashboard/faf-planos` ganhou quatro cartões de execução, somados POR CONTA:** saldo
+  em conta (informado pelo banco), recebido da União por OB, pago a beneficiários e
+  devolvido à União. O cartão de saldo diz quantas contas são divididas entre planos.
+- **Selos por plano:** saldo, pago, "conta dividida com N planos" e a situação do último
+  relatório.
+- **O bloco "Programas que destinam recurso ao município"** mostra os que ainda não têm
+  plano, com "enviar até dd/mm" quando a janela do programa está aberta.
+- **Modal de detalhe** (`GET /api/faf-planos/plano/{id}`, inteiro do banco, gate de tela
+  + município da linha), com as abas Plano e Metas, Linha do tempo (histórico e termo
+  de adesão), Conta e Extrato (com quem recebeu), Prestação de contas (% físico por ação
+  e parecer), Pareceres e Programa e Empenhos.
+- A ferramenta MCP `fundo_a_fundo` passou a citar saldo, pago e devolvido.
+
 ## 2. ESTADO ATUAL (2026-09-04)
 
 **São CINCO tenants em produção**, todos do mesmo código, cada um com containers e banco próprios:
