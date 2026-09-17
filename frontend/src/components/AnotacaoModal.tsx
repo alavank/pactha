@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Plus, Trash2, Loader2, Paperclip, Download, FileText, Edit2, CalendarDays, X } from "lucide-react";
+import { Plus, Trash2, Loader2, Paperclip, Eye, FileText, Edit2, CalendarDays, X } from "lucide-react";
 import api from "@/lib/api";
 import { formatDataCurta as fmtData } from "@/lib/bi-format";
 import {
   Aviso, Bloco, BlocoHead, Modal, ModalCorpo, ModalHead, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 import AvisoEscopo from "@/components/AvisoEscopo";
+import { VisualizadorDocumento, type DocumentoAlvo } from "@/components/ui/VisualizadorDocumento";
 import {
   contarSemEscrita, linhaSemEscrita, podeEditarLinha, podeExcluirLinha,
 } from "@/lib/escopo";
@@ -190,45 +191,20 @@ export default function AnotacaoModal({
     } catch (e) { console.error(e); }
   };
 
-  /* ⚠️ ESTA FUNÇÃO BAIXAVA O ERRO COMO SE FOSSE O DOCUMENTO. Ela fazia
-   * `fetch(...).then(r => r.blob())` sem olhar `r.ok`: quando o backend recusa
-   * — 403 de quem não tem `gestao.anexo_baixar`, 404 de índice fora da lista —
-   * o corpo de ERRO virava blob e descia no disco com o nome do arquivo real. A
-   * pessoa recebia um "oficio.pdf" de 90 bytes com `{"detail":"..."}` dentro,
-   * sem aviso nenhum, e concluía que o documento estava corrompido no sistema.
-   *
-   * ⚠️ E o `fetch` manual lia `pactha_token` do localStorage — o token que
-   * `lib/api.ts` APAGA no primeiro refresh (auto-cura). Aqui o header era
-   * guardado (`token ? ... : {}`), então não chegava a mandar `Bearer null`,
-   * mas o caminho continuava sem a renovação automática e sem o retry que o
-   * `api` faz. Passa pelo cliente, como as outras telas já passam. */
-  const baixarAnexo = async (anotId: number, idx: number, nome: string) => {
-    setErr(null);
-    try {
-      const r = await api.get(`/gestao/anotacoes/${anotId}/anexo/${idx}`,
-                              { responseType: "blob" });
-      const url = URL.createObjectURL(r.data);
-      const a = document.createElement("a");
-      a.href = url; a.download = nome;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: unknown) {
-      const erro = e as { response?: { data?: Blob; status?: number } };
-      let msg = "Não foi possível baixar o anexo.";
-      if (erro?.response?.status === 403) {
-        msg = "Você não tem permissão para baixar anexos (peça "
-            + "«Gestão Interna → Baixar anexos» ao administrador).";
-      } else {
-        // O corpo de erro chega como Blob porque pedimos blob: sem o `.text()`
-        // a mensagem do backend some e sobra a genérica.
-        try {
-          const txt = await erro.response?.data?.text();
-          msg = JSON.parse(txt || "{}").detail || msg;
-        } catch { /* corpo não era JSON */ }
-      }
-      setErr(msg);
-    }
-  };
+  /* O anexo ABRE no VisualizadorDocumento, com Baixar e Imprimir lá dentro — era
+   * download direto. A leitura do erro (403 de quem não tem
+   * `gestao.anexo_baixar`, corpo de erro que chega como Blob) mora no
+   * visualizador: foi aqui que o "oficio.pdf de 90 bytes com o JSON do erro
+   * dentro" aconteceu, e ele não pode voltar por nenhuma das telas. */
+  const [anexoAberto, setAnexoAberto] = useState<DocumentoAlvo | null>(null);
+  const abrirAnexo = (anotId: number, idx: number, nome: string) => setAnexoAberto({
+    titulo: nome,
+    sub: numeroReferencia ? `Anexo da Gestão Interna · ${numeroReferencia}` : "Anexo da Gestão Interna",
+    src: `/gestao/anotacoes/${anotId}/anexo/${idx}`,
+    nomeArquivo: nome,
+    mensagem403: "Você não tem permissão para abrir anexos (peça "
+               + "«Gestão Interna → Baixar anexos» ao administrador).",
+  });
 
   return (
     <Modal
@@ -297,13 +273,13 @@ export default function AnotacaoModal({
                             <button
                               key={i}
                               type="button"
-                              onClick={() => baixarAnexo(a.id, i, ax.nome)}
+                              onClick={() => abrirAnexo(a.id, i, ax.nome)}
                               className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] transition-colors bi-hover"
                               style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-muted)" }}
-                              title={`${ax.nome} · ${fmtBytes(ax.tamanho)}`}
+                              title={`Abrir ${ax.nome} · ${fmtBytes(ax.tamanho)}`}
                             >
                               <Paperclip className="size-3" /> {ax.nome}
-                              <Download className="size-3" style={{ color: "var(--bi-accent-ink)" }} />
+                              <Eye className="size-3" style={{ color: "var(--bi-accent-ink)" }} />
                             </button>
                           ))}
                         </div>
@@ -439,6 +415,7 @@ export default function AnotacaoModal({
           </Bloco>
         )}
       </ModalCorpo>
+      <VisualizadorDocumento doc={anexoAberto} onFechar={() => setAnexoAberto(null)} nivel={2} />
     </Modal>
   );
 }

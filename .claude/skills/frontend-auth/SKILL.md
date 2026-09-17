@@ -21,6 +21,16 @@ change the proxy target instead.
 Because `API_PROXY_TARGET` is build-time, changing it requires a rebuild, not just an env var
 update on the running container.
 
+## Arquivos abrem no `VisualizadorDocumento`, não em aba nova
+
+Regra do dono (16/09/2026): anexo, PDF de diário, foto de obra — todo ARQUIVO — abre em
+`src/components/ui/VisualizadorDocumento.tsx` (modal com Baixar / Imprimir / Fonte oficial).
+Nada de `window.open(blob)` nem `<a target=_blank>` para arquivo; link para PÁGINA de portal
+continua em nova aba. O componente busca pelo `api` como blob e embute o `blob:` no iframe,
+porque o backend manda `X-Frame-Options: DENY` em toda resposta — apontar o iframe para a
+rota `/api/...` mostra a página de bloqueio. Não afrouxe o header. O porquê completo está no
+cabeçalho do componente.
+
 ## Kiosk / public surfaces
 
 Kiosk and public-link surfaces (`/tela`, `/t/*`, `/m/*`) use a separate `pactha_kiosk_token`

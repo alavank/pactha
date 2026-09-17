@@ -46,6 +46,7 @@ import {
   Numero, Selo, Vazio, situacaoTom,
 } from "@/components/ui/superficies";
 import { TituloTela } from "@/components/TituloTela";
+import { VisualizadorDocumento, type DocumentoAlvo } from "@/components/ui/VisualizadorDocumento";
 
 /** Um grupo de fotografias da obra, como o SISMOB organiza (Terreno, Placa da
  *  obra, Fachada…). A ORDEM E A DATA são o conteúdo: elas dizem em que fase o
@@ -172,14 +173,19 @@ function Barra({ pct, tom }: { pct: number; tom: Tom }) {
  *  disponível» igual para obras de municípios diferentes. Enquanto durar, o que
  *  o gestor vê aqui é o registro — grupo e data —, que é o que sustenta a
  *  leitura de obra parada. */
-function Foto({ propostaId, foto, grupo }: {
+function Foto({ propostaId, foto, grupo, onAbrir }: {
   propostaId: number; foto: { id: string; em: string | null }; grupo: string;
+  /** Amplia no VisualizadorDocumento. Só é oferecido quando a imagem chegou:
+   *  ampliar a placa "indisponível na origem" abriria outro erro. */
+  onAbrir: () => void;
 }) {
   const [estado, setEstado] = useState<"carregando" | "ok" | "falhou">("carregando");
   return (
     <figure
-      className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg"
+      className={`relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg ${estado === "ok" ? "cursor-zoom-in" : ""}`}
       style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}
+      onClick={estado === "ok" ? onAbrir : undefined}
+      title={estado === "ok" ? "Ampliar, baixar ou imprimir" : undefined}
     >
       {estado !== "falhou" && (
         // eslint-disable-next-line @next/next/no-img-element
@@ -221,6 +227,7 @@ function Foto({ propostaId, foto, grupo }: {
 function ModalFotos({ obra, onFechar }: { obra: Obra; onFechar: () => void }) {
   const [grupos, setGrupos] = useState<GrupoFoto[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [ampliada, setAmpliada] = useState<DocumentoAlvo | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -272,7 +279,14 @@ function ModalFotos({ obra, onFechar }: { obra: Obra; onFechar: () => void }) {
                   />
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
                     {g.fotos.map((f) => (
-                      <Foto key={f.id} propostaId={obra.proposta_id} foto={f} grupo={g.grupo} />
+                      <Foto key={f.id} propostaId={obra.proposta_id} foto={f} grupo={g.grupo}
+                            onAbrir={() => setAmpliada({
+                              titulo: `${g.grupo}${f.em ? ` — ${data(f.em)}` : ""}`,
+                              sub: obra.estabelecimento || `Proposta ${obra.numero_proposta || obra.proposta_id}`,
+                              src: `/sismob/obra/${obra.proposta_id}/foto/${f.id}`,
+                              urlFonte: obra.url_portal,
+                              nomeArquivo: `sismob-${obra.proposta_id}-${f.id}`,
+                            })} />
                     ))}
                   </div>
                 </Bloco>
@@ -280,6 +294,7 @@ function ModalFotos({ obra, onFechar }: { obra: Obra; onFechar: () => void }) {
             </div>
           )}
       </ModalCorpo>
+      <VisualizadorDocumento doc={ampliada} onFechar={() => setAmpliada(null)} nivel={2} />
     </Modal>
   );
 }
