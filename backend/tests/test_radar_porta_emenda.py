@@ -22,7 +22,8 @@ recurso: o gestor nao cumpre esse prazo sozinho. Listar as duas sem distinguir
 faria o prefeito montar proposta para uma porta que nao depende dele, o que e
 pior do que nao mostrar o programa.
 
-BENEF_ESP (29 programas) fica fora de proposito — beneficiario ja nomeado.
+BENEF_ESP entrou em 17/09/2026 como terceira porta, so para o municipio
+nomeado: ver `test_radar_beneficiario.py`.
 """
 import re
 from datetime import date
@@ -153,18 +154,17 @@ def test_consorcio_continua_sendo_COLETADO_e_cortado_so_na_rota():
     assert ":nat = ANY(naturezas)" in rota
 
 
-def test_benef_esp_nao_abre_porta():
-    """⚠️ BENEF_ESP FICA DE FORA DE PROPOSITO — 29 programas.
-
-    O beneficiario ja vem nomeado no programa; sem cruzar com o CNPJ do
-    municipio, entrariam como ruido numa tela que manda abrir processo. Se um dia
-    alguem ligar essa terceira porta, que seja por decisao, e este teste vai
-    falhar para forcar a conversa.
-    """
+def test_benef_esp_entra_na_coleta_e_o_corte_e_na_rota():
+    """BENEF_ESP ficava fora "ate alguem decidir", e este teste existia para
+    forcar a conversa. Ela aconteceu em 17/09/2026: a porta entra na coleta e
+    SO o municipio nomeado a ve, pelo CNPJ, na rota. Os testes da porta nova
+    moram em `test_radar_beneficiario.py`."""
     l = _linha(DT_PROG_FIM_RECEB_PROP="31/01/2026",
                DT_PROG_INI_BENEF_ESP="01/08/2026",
                DT_PROG_FIM_BENEF_ESP="30/11/2026")
-    assert not P.agrupa([l], HOJE)
+    assert P.agrupa([l], HOJE)
+    rota = (RAIZ / "routers" / "programas_captacao.py").read_text(encoding="utf-8")
+    assert ":cnpj = ANY(p.proponentes_cnpj)" in rota
 
 
 # --------------------------------------------------------------------------
@@ -175,8 +175,9 @@ def test_o_router_devolve_a_porta_e_ordena_pelo_prazo_que_vale():
     """⚠️ Sem `porta` na resposta, a tela nao consegue distinguir — e listar as
     duas juntas sem rotulo e o desfecho pior que este PR poderia ter."""
     fonte = (RAIZ / "routers" / "programas_captacao.py").read_text(encoding="utf-8")
-    assert '"porta"' in fonte, "o router parou de devolver `porta` para a tela"
-    for termo in ("porta_receb", "porta_emenda"):
+    # Desde 17/09/2026 sao tres portas e a resposta leva a LISTA delas.
+    assert '"portas"' in fonte, "o router parou de devolver `portas` para a tela"
+    for termo in ("porta_receb", "porta_emenda", "porta_benef"):
         assert termo in fonte, f"`{termo}` sumiu do router"
     # A ordenacao nao pode voltar a ser sempre por dt_fim_receb: num programa so
     # de emenda esse campo e data PASSADA, e ele iria para o topo como se fosse
@@ -190,7 +191,7 @@ def test_a_tela_distingue_as_duas_portas():
     tela = (RAIZ.parent / "frontend" / "src" / "app" / "dashboard"
             / "transferegov-radar" / "page.tsx").read_text(encoding="utf-8")
     assert "emenda parlamentar" in tela.lower()
-    assert 'porta === "emenda"' in tela, (
+    assert 'tem(p, "emenda") && !tem(p, "recebimento")' in tela, (
         "a tela nao trata a porta de emenda em separado — o gestor leria a lista "
         "inteira como 'e so protocolar'")
     assert "function prazo(" in tela, (

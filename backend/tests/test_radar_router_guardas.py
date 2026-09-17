@@ -202,7 +202,7 @@ def test_a_janela_de_inicio_tambem_e_guarda():
     ninguem estaria olhando.
     """
     sql = pglast.prettify(_sql_da_rota()).lower()
-    for porta in ("receb", "emenda"):
+    for porta in ("receb", "emenda", "benef"):
         assert f"dt_ini_{porta}" in sql, f"a ponta de INICIO da porta {porta} sumiu"
         assert f"dt_ini_{porta} <=" in sql, (
             f"`dt_ini_{porta}` aparece mas nao e comparado com hoje — a janela "

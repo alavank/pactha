@@ -32,6 +32,23 @@ regionais ("INFRA-ESTRUTURA BASICA SR(RS)" so aceita municipio gaucho). Ignorar
 ⚠️ SEM ROSTO PROPRIO NO ARQUIVO: nao ha valor, teto, nem dotacao. O radar diz
 QUE existe e ATE QUANDO — nao quanto. Inventar um valor seria pior que omitir.
 
+⭐ A TERCEIRA PORTA, BENEFICIARIO ESPECIFICO (17/09/2026). O programa ja nomeia
+quem pode propor, e a lista mora em `siconv_programa_proponentes.zip`
+(ID_PROGRAMA x ID_PROPONENTE; o CNPJ sai de `siconv_proponentes.zip`). Ate aqui
+ela era descartada por falta desse cruzamento. Medido no dump de 17/09/2026, com
+o recorte municipal: 112 programas abertos, 31 com a porta de beneficiario
+aberta, e em 28 deles so ela. Nova Palma estava nomeada em 4 (Novo PAC Agua e
+Esgoto entre eles), Santa Maria em 13, Monte Siao em 3, e nenhum aparecia.
+
+⚠️ A MESMA LISTA SIGNIFICA COISAS DIFERENTES CONFORME A PORTA:
+- beneficiario especifico: sao os NOMEADOS e ninguem propos ainda (Novo PAC Agua:
+  5.623 listados, 0 propostas). Fora da lista, a porta nao abre.
+- emenda: ~95% dos listados JA propuseram (Acao 00T1: 943 listados, 888
+  propuseram). E quem teve emenda indicada, e a lista cresce durante a janela:
+  estar fora dela NAO fecha a porta de emenda, so nao marca o municipio.
+- recebimento: nenhum programa aberto hoje tem lista.
+Por isso a coleta guarda a lista de CNPJs e quem decide e o router.
+
 Rodar:  DATABASE_URL_SYNC=... python -u ingestion/programas_captacao.py
 """
 from __future__ import annotations
@@ -62,6 +79,8 @@ log = logging.getLogger("programas_captacao")
 
 FONTE = "programas_captacao"
 ARQUIVO = "siconv_programa.zip"
+ARQUIVO_LISTA = "siconv_programa_proponentes.zip"
+ARQUIVO_PROPONENTES = "siconv_proponentes.zip"
 
 # As duas naturezas que interessam a uma prefeitura. O consorcio entra porque
 # muitos municipios captam por ele; a TELA filtra so o que a prefeitura propoe
@@ -125,20 +144,22 @@ def agrupa(linhas, hoje: date) -> dict[str, dict]:
         # qual faria o prefeito achar que basta protocolar, o que e pior que nao
         # mostrar. Por isso `portas` viaja junto com o programa.
         #
-        # BENEF_ESP (29 programas) fica DE FORA de proposito: o beneficiario ja
-        # vem nomeado no programa, entao so seria oportunidade para quem for o
-        # nomeado. Sem cruzar com o CNPJ do municipio, entraria como ruido numa
-        # tela que manda abrir processo.
+        # BENEF_ESP entra desde 17/09/2026 como a TERCEIRA porta, e a coleta a
+        # guarda para todos. So o nomeado a ve: o router cruza o CNPJ do
+        # municipio com `proponentes_cnpj` (ver `listas_de_proponentes`).
         fim = data_br(l.get("DT_PROG_FIM_RECEB_PROP"))
         ini = data_br(l.get("DT_PROG_INI_RECEB_PROP"))
         fim_em = data_br(l.get("DT_PROG_FIM_EMENDA_PAR"))
         ini_em = data_br(l.get("DT_PROG_INI_EMENDA_PAR"))
+        fim_be = data_br(l.get("DT_PROG_FIM_BENEF_ESP"))
+        ini_be = data_br(l.get("DT_PROG_INI_BENEF_ESP"))
 
         # "Aberta" e estar DENTRO da janela, e nao so antes do fim — o mesmo
         # criterio dos dois lados que o router ja aplicava ao recebimento.
         receb_aberta = fim is not None and fim >= hoje and (ini is None or ini <= hoje)
         emenda_aberta = fim_em is not None and fim_em >= hoje and (ini_em is None or ini_em <= hoje)
-        if not receb_aberta and not emenda_aberta:
+        benef_aberta = fim_be is not None and fim_be >= hoje and (ini_be is None or ini_be <= hoje)
+        if not receb_aberta and not emenda_aberta and not benef_aberta:
             continue
         pid = (l.get("ID_PROGRAMA") or "").strip()
         if not pid:
@@ -159,6 +180,8 @@ def agrupa(linhas, hoje: date) -> dict[str, dict]:
                 "dt_fim_receb": fim,
                 "dt_ini_emenda": ini_em,
                 "dt_fim_emenda": fim_em,
+                "dt_ini_benef": ini_be,
+                "dt_fim_benef": fim_be,
                 # ⚠️ QUAL PORTA ESTA ABERTA NAO E GRAVADO, e sim derivado das
                 # datas no router. A tentacao e persistir "porta" aqui, mas seria
                 # um "hoje" congelado: a coleta roda uma vez por dia e o valor
@@ -187,9 +210,13 @@ def agrupa(linhas, hoje: date) -> dict[str, dict]:
         # anunciar a um municipio um prazo que nao e dele, e a tabela teria de
         # passar a ser por (programa, UF). O `divergentes` abaixo existe para
         # esse dia CHEGAR COM AVISO em vez de em silencio.
+        #
+        # ⚠️ `fim` PODE SER None: programa aberto so por emenda ou por
+        # beneficiario. Comparar None com data levantaria TypeError e derrubaria
+        # a rodada inteira.
         if fim != p["dt_fim_receb"]:
             p["_prazos_divergentes"] = True
-            if fim > p["dt_fim_receb"]:
+            if fim is not None and (p["dt_fim_receb"] is None or fim > p["dt_fim_receb"]):
                 p["dt_fim_receb"] = fim
 
     divergentes = [p["id_programa"] for p in progs.values()
@@ -210,14 +237,84 @@ def _int(x):
         return None
 
 
+def cnpj_de(identif) -> str | None:
+    """`IDENTIF_PROPONENTE` -> CNPJ de 14 digitos, ou None. Funcao PURA.
+
+    Medido em 17/09/2026: 69.802 de 69.817 proponentes vem com 14 digitos; 14 vem
+    com 9 caracteres nao numericos (CPF mascarado de pessoa fisica) e 1 com 12
+    digitos, que e o CNPJ sem os zeros a esquerda.
+    """
+    d = "".join(ch for ch in str(identif or "") if ch.isdigit())
+    if len(d) in (12, 13):
+        d = d.zfill(14)
+    return d if len(d) == 14 else None
+
+
+def listas_de_proponentes(ids_programa, linhas_lista, linhas_proponentes) -> dict[str, list[str]] | None:
+    """{id_programa: [CNPJ, ...]} dos programas pedidos que tem lista. PURA.
+
+    Programa que nao aparece no arquivo nao tem lista (a chave fica de fora).
+    Devolve **None** quando a leitura nao merece confianca, e o `run()` entao
+    preserva a lista antiga em vez de gravar "sem lista":
+    - uma coluna esperada sumiu do cabecalho (layout mudado);
+    - a lista nao cita nenhum dos programas pedidos, ou nenhum proponente citado
+      tem CNPJ no cadastro. Com 100+ programas abertos, zero e arquivo truncado,
+      nao realidade: em 17/09/2026 eram 107 programas com lista.
+
+    ⚠️ ESCONDER POR FALHA NOSSA E O PIOR RESULTADO AQUI. Sem lista, a porta de
+    beneficiario some da tela de todo municipio. Por isso a falha preserva a
+    lista antiga em vez de apaga-la.
+    """
+    ids = set(ids_programa)
+    por_programa: dict[str, set[str]] = {}
+    for l in linhas_lista:
+        if "ID_PROGRAMA" not in l or "ID_PROPONENTE" not in l:
+            log.error(f"{ARQUIVO_LISTA}: cabecalho sem ID_PROGRAMA/ID_PROPONENTE")
+            return None
+        pid = (l["ID_PROGRAMA"] or "").strip()
+        if pid in ids:
+            por_programa.setdefault(pid, set()).add((l["ID_PROPONENTE"] or "").strip())
+    if ids and not por_programa:
+        log.error(f"{ARQUIVO_LISTA}: nenhum dos {len(ids)} programas abertos tem lista — "
+                  f"suspeita de arquivo truncado")
+        return None
+
+    procurados = set().union(*por_programa.values()) if por_programa else set()
+    cnpj: dict[str, str] = {}
+    for l in linhas_proponentes:
+        if "ID_PROPONENTE" not in l or "IDENTIF_PROPONENTE" not in l:
+            log.error(f"{ARQUIVO_PROPONENTES}: cabecalho sem ID_PROPONENTE/IDENTIF_PROPONENTE")
+            return None
+        i = (l["ID_PROPONENTE"] or "").strip()
+        if i in procurados:
+            c = cnpj_de(l["IDENTIF_PROPONENTE"])
+            if c:
+                cnpj[i] = c
+    if procurados and not cnpj:
+        log.error(f"{ARQUIVO_PROPONENTES}: nenhum dos {len(procurados)} proponentes "
+                  f"listados tem CNPJ no cadastro — suspeita de arquivo truncado")
+        return None
+
+    return {pid: sorted({cnpj[i] for i in s if i in cnpj})
+            for pid, s in por_programa.items()}
+
+
 _SQL = """
     INSERT INTO programas_captacao
         (id_programa, cod_programa, nome, orgao, cod_orgao, modalidade,
          naturezas, ufs, acao_orcamentaria, subtipo, dt_ini_receb, dt_fim_receb,
          dt_ini_emenda, dt_fim_emenda, dt_disponibilizacao, ano_disponibilizacao,
-         raw_data, visto_em, ausente_desde, updated_at)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW(),NULL,NOW())
+         raw_data, dt_ini_benef, dt_fim_benef, proponentes_cnpj,
+         visto_em, ausente_desde, updated_at)
+    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,
+            NOW(),NULL,NOW())
     ON CONFLICT (id_programa) DO UPDATE SET
+        dt_ini_benef=EXCLUDED.dt_ini_benef, dt_fim_benef=EXCLUDED.dt_fim_benef,
+        -- ⚠️ LISTA ILEGIVEL NESTA RODADA PRESERVA A ANTERIOR (o bind e
+        -- `lista_ok`). Gravar NULL apagaria a porta de beneficiario de todo
+        -- municipio por uma falha de download.
+        proponentes_cnpj=CASE WHEN %s THEN EXCLUDED.proponentes_cnpj
+                              ELSE programas_captacao.proponentes_cnpj END,
         cod_programa=EXCLUDED.cod_programa, nome=EXCLUDED.nome,
         orgao=EXCLUDED.orgao, cod_orgao=EXCLUDED.cod_orgao,
         modalidade=EXCLUDED.modalidade, naturezas=EXCLUDED.naturezas,
@@ -257,6 +354,15 @@ def run() -> int:
     hoje = hoje_br()
     progs = agrupa(_linhas(ARQUIVO), hoje)
     log.info(f"programas abertos hoje ({hoje:%d/%m/%Y}): {len(progs)}")
+    listas = None
+    if progs:
+        try:
+            listas = listas_de_proponentes(progs.keys(), _linhas(ARQUIVO_LISTA),
+                                           _linhas(ARQUIVO_PROPONENTES))
+        except Exception as e:  # download ou zip ruim: o radar segue sem a lista nova
+            log.error(f"listas de proponentes ilegiveis: {type(e).__name__}: {e}")
+        if listas is not None:
+            log.info(f"programas com lista de proponentes: {len(listas)}")
 
     # ⚠️ RODADA VAZIA NAO MARCA NADA COMO AUSENTE. Um download truncado, um
     # layout mudado ou uma queda do TransfereGov devolvem zero programa — e
@@ -288,7 +394,9 @@ def run() -> int:
                 p["modalidade"], sorted(p["naturezas"]), sorted(p["ufs"]),
                 p["acao_orcamentaria"], p["subtipo"], p["dt_ini_receb"], p["dt_fim_receb"],
                 p["dt_ini_emenda"], p["dt_fim_emenda"], p["dt_disponibilizacao"],
-                p["ano_disponibilizacao"], json.dumps(p["raw"], ensure_ascii=False)))
+                p["ano_disponibilizacao"], json.dumps(p["raw"], ensure_ascii=False),
+                p["dt_ini_benef"], p["dt_fim_benef"],
+                (listas or {}).get(p["id_programa"]), listas is not None))
         cn.commit()
 
         # ⚠️ PISO PROPORCIONAL ANTES DE MARCAR AUSENCIA — nao basta guardar o
@@ -321,6 +429,11 @@ def run() -> int:
                         (list(progs.keys()),))
             sumiram = cur.rowcount
         cn.commit()
+        if listas is None:
+            # ⚠️ NAO E 'success'. Os programas foram gravados, mas a porta de
+            # beneficiario ficou com a lista da rodada anterior (ou sem nenhuma).
+            aviso = "listas de proponentes ilegiveis — mantida a lista anterior"
+            parcial = f"{parcial}; {aviso}" if parcial else aviso
         log.info(f"radar: {len(progs)} programa(s) aberto(s), "
                  f"{sumiram} marcado(s) como ausente(s)")
         return len(progs)

@@ -21,7 +21,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from "react";
-import { CalendarClock, ExternalLink, Loader2, Radar, UserCircle2 } from "lucide-react";
+import { BadgeCheck, CalendarClock, ExternalLink, Loader2, Radar, UserCircle2 } from "lucide-react";
 
 import api from "@/lib/api";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -45,14 +45,22 @@ interface Programa {
   dias_emenda: number | null;
   qt_ufs: number;
   abrangencia: "nacional" | "regional" | "exclusivo";
-  /* ⚠️ POR QUAL PORTA SE ENTRA. "recebimento" é proposta espontânea — a
+  /* ⚠️ POR QUAIS PORTAS SE ENTRA. "recebimento" é proposta espontânea — a
      prefeitura protocola. "emenda" depende de um deputado ou senador destinar o
-     recurso, e o gestor NÃO cumpre esse prazo sozinho. Até 02/09/2026 o radar só
-     carregava a primeira, e por isso a tela não precisava distinguir. */
-  porta: "recebimento" | "emenda" | "ambas";
+     recurso, e o gestor NÃO cumpre esse prazo sozinho. "beneficiario" (desde
+     17/09/2026) é o programa que já NOMEIA quem propõe, e o backend só a manda
+     quando o CNPJ do município está na lista. */
+  portas: Porta[];
+  dt_fim_benef: string | null;
+  dias_benef: number | null;
+  /** O município está na lista de proponentes do programa, seja qual for a porta. */
+  nomeado: boolean;
 }
+type Porta = "recebimento" | "emenda" | "beneficiario";
 interface Resp {
   municipio: { nome: string; uf: string };
+  /** Sem CNPJ cadastrado, a porta de beneficiário específico nunca abre. */
+  cnpj_cadastrado?: boolean;
   total: number;
   programas: Programa[];
   atualizado_em: string | null;
@@ -64,18 +72,21 @@ interface Resp {
  *
  * ⚠️ Num programa aberto só por emenda, `dt_fim_receb` é uma data PASSADA (ou
  * nula): usá-la no cartão mostraria um prazo vencido como se fosse o alvo, ou um
- * "—" no lugar do prazo real. Quem manda é a porta aberta; com as duas abertas,
- * vale a que fecha primeiro, porque é a que muda a agenda da semana.
+ * "—" no lugar do prazo real. Quem manda é a porta aberta; com mais de uma
+ * aberta, vale a que fecha primeiro, porque é a que muda a agenda da semana.
  */
 function prazo(p: Programa): { data: string | null; dias: number | null } {
-  const receb = { data: p.dt_fim_receb, dias: p.dias };
-  const emenda = { data: p.dt_fim_emenda, dias: p.dias_emenda };
-  if (p.porta === "recebimento") return receb;
-  if (p.porta === "emenda") return emenda;
-  if (receb.dias == null) return emenda;
-  if (emenda.dias == null) return receb;
-  return emenda.dias < receb.dias ? emenda : receb;
+  const janelas = {
+    recebimento: { data: p.dt_fim_receb, dias: p.dias },
+    emenda: { data: p.dt_fim_emenda, dias: p.dias_emenda },
+    beneficiario: { data: p.dt_fim_benef, dias: p.dias_benef },
+  };
+  const abertas = p.portas.map((q) => janelas[q]).filter((j) => j.dias != null);
+  if (abertas.length === 0) return { data: null, dias: null };
+  return abertas.reduce((a, b) => (b.dias! < a.dias! ? b : a));
 }
+
+const tem = (p: Programa, q: Porta) => p.portas.includes(q);
 
 export default function RadarPage() {
   const { municipioId } = useMunicipio();
@@ -129,7 +140,8 @@ export default function RadarPage() {
     const q = prazo(p).dias;
     return q != null && q <= 30;
   });
-  const comEmenda = ps.filter((p) => p.porta === "emenda" || p.porta === "ambas");
+  const comEmenda = ps.filter((p) => tem(p, "emenda"));
+  const nomeados = ps.filter((p) => p.nomeado);
   const nuncaColetado = d.atualizado_em == null;
   // ⚠️ O TRANSFEREGOV PUBLICA PROGRAMAS DISTINTOS COM O MESMO NOME. Medido em
   // 02/09/2026: "Ação 00SX — Apoio a Projetos de Desenvolvimento Sustentável"
@@ -167,10 +179,20 @@ export default function RadarPage() {
           Dados abertos do TransfereGov · lido em {formatarQuando(d.atualizado_em)} ·
           {" "}recorte: programas abertos à Administração Pública Municipal com
           prazo de proposta em pé{d.municipio.uf ? `, válidos para ${d.municipio.uf}` : ""}
+          {" "}· os de beneficiário específico, só onde o CNPJ do município está nomeado
         </p>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      {/* ⚠️ Sem CNPJ, a porta de beneficiário específico nunca abre, e a tela
+          precisa dizer: senão "nenhum programa nomeia o município" se lê como fato. */}
+      {d.cnpj_cadastrado === false && (
+        <p className="text-[11px]" style={{ color: "var(--bi-warn-ink, var(--bi-muted))" }}>
+          {d.municipio.nome} está sem CNPJ cadastrado, então os programas que nomeiam
+          o município não aparecem aqui. Cadastre o CNPJ em Configurações → Municípios.
+        </p>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Numero icon={Radar} rotulo="Programas abertos hoje" tom="acento"
                 valor={String(d.total)}
                 sub={`para ${d.municipio.nome}${d.municipio.uf ? ` — ${d.municipio.uf}` : ""}`} />
@@ -183,6 +205,10 @@ export default function RadarPage() {
         <Numero icon={UserCircle2} rotulo="Aceitam emenda parlamentar"
                 valor={String(comEmenda.length)}
                 sub="janela própria, que depende de um gabinete indicar" />
+        <Numero icon={BadgeCheck} rotulo="Nomeiam o município"
+                tom={nomeados.length > 0 ? "acento" : "neutro"}
+                valor={String(nomeados.length)}
+                sub="o CNPJ da prefeitura está na lista de proponentes" />
       </div>
 
       <Bloco className="p-3">
@@ -223,8 +249,21 @@ export default function RadarPage() {
                         lista inteira como "é só protocolar" e monta proposta
                         para uma porta que não depende dele. É a razão pela qual
                         os 67 programas de emenda podem entrar na tela. */}
-                    {p.porta === "emenda" && <Selo tom="atencao">via emenda parlamentar</Selo>}
-                    {p.porta === "ambas" && <Selo>proposta ou emenda</Selo>}
+                    {tem(p, "emenda") && !tem(p, "recebimento") && (
+                      <Selo tom="atencao">via emenda parlamentar</Selo>
+                    )}
+                    {tem(p, "emenda") && tem(p, "recebimento") && <Selo>proposta ou emenda</Selo>}
+                    {/* ⚠️ "NOMEADO" NÃO É A MESMA COISA NAS DUAS PORTAS. Na de
+                        beneficiário, é o convite: só quem está na lista propõe.
+                        Na de emenda, a lista é de quem já teve emenda indicada
+                        (medido: 888 de 943 já propuseram), então o selo diz
+                        "está na lista", e não "pode propor". */}
+                    {tem(p, "beneficiario") && (
+                      <Selo tom="acento">município nomeado</Selo>
+                    )}
+                    {p.nomeado && !tem(p, "beneficiario") && (
+                      <Selo>na lista do programa</Selo>
+                    )}
                     {prazo(p).dias != null && prazo(p).dias! <= 30 && (
                       <Selo tom={prazo(p).dias! <= 7 ? "critico" : "atencao"}>
                         {prazo(p).dias === 0 ? "fecha hoje"
@@ -243,15 +282,19 @@ export default function RadarPage() {
                         programas cujo recebimento já FECHOU, e escrever
                         "propostas até <data passada>" convidaria o gestor a
                         montar proposta por uma porta que não aceita mais. */}
-                    {(p.porta === "recebimento" || p.porta === "ambas")
+                    {tem(p, "recebimento")
                       && p.dias != null && p.dias > 30 && (
                       <span>· propostas até {formatarData(p.dt_fim_receb)} ({p.dias} dias)</span>
                     )}
                     {/* A janela de emenda é outro prazo e por isso vem escrita
                         por extenso: o gestor não a cumpre sozinho. */}
-                    {(p.porta === "emenda" || p.porta === "ambas")
+                    {tem(p, "emenda")
                       && p.dias_emenda != null && p.dias_emenda >= 0 && (
                       <span>· emenda parlamentar até {formatarData(p.dt_fim_emenda)}</span>
+                    )}
+                    {tem(p, "beneficiario")
+                      && p.dias_benef != null && p.dias_benef >= 0 && (
+                      <span>· proposta do beneficiário nomeado até {formatarData(p.dt_fim_benef)}</span>
                     )}
                     {p.cod_programa && <span>· código {p.cod_programa}</span>}
                     {p.acao_orcamentaria && <span>· ação {p.acao_orcamentaria}</span>}
