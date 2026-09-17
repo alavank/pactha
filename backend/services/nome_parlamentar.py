@@ -219,3 +219,50 @@ def e_pessoa(nome: str) -> bool:
     if any(p.isdigit() and len(p) >= 11 for p in palavras):
         return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# NOME DA EMENDA -> CADASTRO DA CASA (partido, UF, cargo, foto)
+# ---------------------------------------------------------------------------
+
+def chave_nome(nome: str) -> str:
+    """A chave que casa o autor da emenda com `parlamentares_cadastro.nomes_norm`.
+
+    Mais agressiva que `_chave`: tira tudo que nao e letra, espacos inclusive.
+    ⚠️ Motivo medido em 17/09/2026: a fonte escreve "CHICO D ANGELO" e a Camara,
+    "Chico D'Angelo". Tirar o apostrofo sem tirar o espaco deixa "CHICO D ANGELO"
+    contra "CHICO DANGELO", e 177 emendas ficam sem partido.
+    """
+    return "".join(ch for ch in _chave(nome) if ch.isalpha())
+
+
+def escolhe_cadastro(candidatos: list[dict]) -> dict | None:
+    """Entre os cadastros com a mesma chave de nome, o que representa o autor.
+
+    `candidatos` e uma lista de dicts com `casa`, `id_externo` e `legislaturas`.
+    - Um so: e ele.
+    - Varios: o de legislatura mais recente, SE nenhum outro chegar a ela. Cobre
+      o deputado que virou senador (a emenda recente e do mandato novo).
+    - Empate na legislatura mais recente com a MESMA UF e o MESMO partido: e a
+      mesma pessoa nas duas casas (medido em 17/09/2026: Reginete Bispo, Fabio
+      Garcia e Eduardo Velloso foram suplentes no Senado e sao deputados na 57).
+      Volta um registro com os dois cargos, porque a fonte da emenda nao diz de
+      qual mandato ela e.
+    - Empate entre pessoas diferentes ("Bebeto" PSB-BA e "Bebeto" PP-RJ):
+      **None**. Partido errado ao lado de um nome e pior que partido nenhum,
+      porque a tela o afirma.
+    """
+    if not candidatos:
+        return None
+    if len(candidatos) == 1:
+        return candidatos[0]
+    ult = lambda c: max(c.get("legislaturas") or [0])  # noqa: E731
+    topo = max(ult(c) for c in candidatos)
+    no_topo = [c for c in candidatos if ult(c) == topo]
+    if len(no_topo) == 1:
+        return no_topo[0]
+    if len({(c.get("uf"), c.get("partido")) for c in no_topo}) == 1 and no_topo[0].get("partido"):
+        cargos = sorted({c.get("cargo") for c in no_topo if c.get("cargo")})
+        base = next((c for c in no_topo if c.get("foto_url")), no_topo[0])
+        return {**base, "cargo": " e ".join(cargos)}
+    return None

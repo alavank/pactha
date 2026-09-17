@@ -131,6 +131,10 @@ FRESCOR_HORAS_NACIONAL = {
     # aberto no Brasil nao e resultado plausivel), entao um arquivo que mudou de
     # layout aparece aqui como fonte parada, e nao como sucesso silencioso.
     "programas_captacao": 30,
+    # CADASTRO DE PARLAMENTARES (Camara/Senado/ALMG). Mesmo cron do radar e
+    # auto-limite de 20h, como o SICONFI: cadencia real diaria, 30h = um dia +
+    # folga. Casa fora do ar grava 'partial'; as tres fora, 'error'.
+    "parlamentares_cadastro": 30,
     # SICONFI/Tesouro (contas entregues + CAPAG). MESMO desenho do `sismob` e do
     # `simec_termos`: o proprio ingest() se auto-limita
     # (SICONFI_MIN_INTERVAL_H=20), entao a cadencia REAL e diaria e 30h = um dia

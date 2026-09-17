@@ -36,7 +36,11 @@ def run_all() -> None:
                       # ⚠️ E vem DEPOIS do SISMOB de proposito: a lista roda em
                       # ordem e o `except` abaixo isola cada fonte, entao a
                       # ultima e a que menos atrapalha se algum dia engasgar.
-                      ("Radar de captação", "ingestion.programas_captacao")):
+                      ("Radar de captação", "ingestion.programas_captacao"),
+                      # CADASTRO DE PARLAMENTARES (Camara, Senado, ALMG): mesmo
+                      # perfil — aberto, idempotente, ~50 s, e o ingest() se
+                      # auto-limita a 1x/dia (PARLAMENTARES_MIN_INTERVAL_H).
+                      ("Cadastro de parlamentares", "ingestion.parlamentares_cadastro")):
         # ⚠️ SIMEC Termos NAO entra aqui — e a correcao do PR #259, que o pendurou
         # neste laco por premissa ERRADA ("nao tem Scheduled Task em nenhum
         # worker"). Tem: os QUATRO workers ja rodavam `simec-termos` as 06:10,

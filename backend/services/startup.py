@@ -624,6 +624,9 @@ MIGRATION_FILES = [
     # `convenios_estadual`, as duas do create_all — qualquer posicao acima da
     # imutabilidade serve.
     "add_segov_convenios_empenhos.sql",
+    # Cadastro de parlamentares (Camara, Senado, ALMG): partido, UF, cargo e foto
+    # do autor da emenda, + apelidos curados. Sem FK nenhuma.
+    "add_parlamentares_cadastro.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
