@@ -1693,6 +1693,46 @@ medido contra o `siconv_emenda.zip`: **99,05% das emendas federais individuais**
 - senador que saiu antes de 2026 fica sem partido;
 - deputado estadual de MG de legislatura passada não casa.
 
+**PR 1 no ar (#500).** A task temporária `cadastro-agora` rodou nos 6 tenants em 17/09
+(2.904 parlamentares em cada) e foi apagada no mesmo dia.
+
+### PR 2: o backend (`routers/emendas_parlamentares.py`)
+
+**Permissão, decisão do dono (17/09):** não existe tela nova. Cada aba cobra a chave que já
+existia, então ninguém ganha nem perde acesso e não há migration de acesso para falhar:
+- **Federais:** `emendas_federais`;
+- **Estaduais:** a tela da UF — MG `emendas`, RS `emendas_rs`, GO `repasses`;
+- **Parlamentares:** `parlamentares`.
+
+⚠️ O plano original previa `TELAS_RENOMEADAS`, que saiu do código em 06/09.
+
+**As rotas:**
+- **`/federais`:** uma linha por emenda. A lógica pura está em `services/emendas_unificadas.py`.
+  - **Casamento:** pelo código de 12 dígitos, gravado em três formatos (`202432980001`,
+    `…-Nome` na TE, `2024.3298.0001` em Parcerias). A voluntária casa pelo `id_proposta` da
+    carteira.
+  - **Soma:** o que casa vira *instrumento* da linha e não soma. O que não casa vira linha
+    própria. O total só soma a prefeitura, e nunca a execução CGU.
+  - **PAC e FNS ficam fora**, porque não têm código e casar por nome apaga emenda.
+- **`/estaduais`:**
+  - MG: SIGCON com o convênio ligado (`SQL_EMENDAS_COM_CONVENIO`, a mesma junção da tela
+    antiga);
+  - RS: o conteúdo curado;
+  - GO: repasses com autor;
+  - ES e as outras UFs: a frase de por que não há dado.
+- **`/parlamentares`:** `aggregate_parlamentares` sem mudar a soma, mais o cadastro.
+  ⚠️ **Parcerias continua fora da soma:** pode ser a mesma proposta do FNS (bloco 6) e não há
+  chave comum para descontar. Medir antes.
+- **`/emenda/{origem}/{id}`:** para `te`, `parcerias` e `voluntaria`, `dados` é o payload do
+  modal da tela de origem. Para isso, `carregar_plano_acao`, `carregar_proposta`,
+  `carregar_voluntaria` e `linha_do_tempo` foram extraídos dos handlers. O município vem da
+  linha: se não bate, 404.
+- **Partido, cargo e foto:** `services/cadastro_parlamentar.py::cadastros_por_nome`, uma
+  consulta para a lista inteira, com apelidos aplicados.
+
+**Não medido:** não houve banco nesta sessão. O SQL passou no pglast, e os números batem com
+as telas antigas só na teoria. Conferir em Nova Palma e na Freitas depois do deploy.
+
 ## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
 
 Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#496, branch

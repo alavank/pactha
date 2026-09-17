@@ -420,6 +420,13 @@ async def documentos(
     """
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "emendas_federais")
+    return await linha_do_tempo(db, codigo_emenda, municipio_id)
+
+
+async def linha_do_tempo(db: AsyncSession, codigo_emenda: str,
+                         municipio_id: int) -> dict:
+    """O corpo da rota acima, SEM gate — reusado pelo detalhe da tela de Emendas
+    parlamentares (17/09/2026). `municipio_id` continua entrando no WHERE."""
     try:
         r = await db.execute(text("""
             SELECT d.data, d.fase, d.codigo_documento, d.codigo_documento_resumido,

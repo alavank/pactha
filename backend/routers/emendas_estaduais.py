@@ -69,31 +69,7 @@ async def list_emendas_estaduais(
     # (capturado por _scrape_indicacoes, #2). LATERAL LIMIT 1: o 1o convenio do mesmo
     # municipio com a mesma indicacao. Vazio enquanto o #2 nao populou aquele convenio.
     r = await db.execute(text(f"""
-        SELECT id, municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
-               uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
-               grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao, ano,
-               c.conv_nr, c.conv_objeto
-        FROM emendas_estaduais
-        LEFT JOIN LATERAL (
-            SELECT COALESCE(ce.nr_proposta, ce.nr_sigcon, ce.nr_siafi) AS conv_nr,
-                   ce.objeto AS conv_objeto
-            FROM convenios_estadual ce
-            WHERE ce.municipio_id = emendas_estaduais.municipio_id
-              AND emendas_estaduais.nr_indicacao IS NOT NULL
-              AND emendas_estaduais.nr_indicacao <> ''
-              -- Casa pelo numero da indicacao capturado no convenio (_scrape_indicacoes,
-              -- modal expandido). Escalar (1a indicacao) OU qualquer uma da lista
-              -- `indicacoes` (convenio pode ter varias). Ver ingestion/sigcon_scraper.py.
-              AND (
-                ce.raw_data->>'nr_indicacao' = emendas_estaduais.nr_indicacao
-                OR EXISTS (
-                    SELECT 1 FROM jsonb_array_elements(
-                        CASE WHEN jsonb_typeof(ce.raw_data->'indicacoes') = 'array'
-                             THEN ce.raw_data->'indicacoes' ELSE '[]'::jsonb END) ind
-                    WHERE ind->>'nr_indicacao' = emendas_estaduais.nr_indicacao)
-              )
-            LIMIT 1
-        ) c ON true
+        {SQL_EMENDAS_COM_CONVENIO}
         WHERE {where_sql}
         ORDER BY ano DESC NULLS LAST, valor_indicacao DESC NULLS LAST
         LIMIT :limit OFFSET :offset
@@ -115,6 +91,39 @@ async def list_emendas_estaduais(
     pages = (total + per_page - 1) // per_page if total > 0 else 1
     return {"items": items, "total": total, "page": page, "per_page": per_page, "pages": pages,
             "coleta_em": coleta_em, "coleta_falhas": coleta_falhas}
+
+
+# A emenda com o convenio que ela gerou. Constante de modulo desde 17/09/2026: a
+# tela de Emendas parlamentares le a MESMA junção (sem paginar), e uma copia
+# "equivalente" e como as duas telas passariam a discordar do convenio ligado.
+SQL_EMENDAS_COM_CONVENIO = """
+        SELECT id, municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
+               uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
+               grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao, ano,
+               c.conv_id, c.conv_nr, c.conv_objeto
+        FROM emendas_estaduais
+        LEFT JOIN LATERAL (
+            SELECT ce.id AS conv_id,
+                   COALESCE(ce.nr_proposta, ce.nr_sigcon, ce.nr_siafi) AS conv_nr,
+                   ce.objeto AS conv_objeto
+            FROM convenios_estadual ce
+            WHERE ce.municipio_id = emendas_estaduais.municipio_id
+              AND emendas_estaduais.nr_indicacao IS NOT NULL
+              AND emendas_estaduais.nr_indicacao <> ''
+              -- Casa pelo numero da indicacao capturado no convenio (_scrape_indicacoes,
+              -- modal expandido). Escalar (1a indicacao) OU qualquer uma da lista
+              -- `indicacoes` (convenio pode ter varias). Ver ingestion/sigcon_scraper.py.
+              AND (
+                ce.raw_data->>'nr_indicacao' = emendas_estaduais.nr_indicacao
+                OR EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(
+                        CASE WHEN jsonb_typeof(ce.raw_data->'indicacoes') = 'array'
+                             THEN ce.raw_data->'indicacoes' ELSE '[]'::jsonb END) ind
+                    WHERE ind->>'nr_indicacao' = emendas_estaduais.nr_indicacao)
+              )
+            LIMIT 1
+        ) c ON true
+"""
 
 
 @router.get("/anos", dependencies=[exige("emendas.ver")])

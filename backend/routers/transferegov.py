@@ -775,6 +775,19 @@ async def voluntarias_detalhe(
         # Cobra a primeira para a negativa sair com chave, trilha e mensagem
         # normais em vez de um 403 escrito a mao.
         authz.exigir(current, _CATEGORIA_PERMISSOES[0])
+    dados = await carregar_voluntaria(db, municipio_id, numero_proposta)
+    if dados is None:
+        raise HTTPException(404, "Proposta não encontrada")
+    return dados
+
+
+async def carregar_voluntaria(db: AsyncSession, municipio_id: int,
+                              numero_proposta: str) -> Optional[dict]:
+    """O detalhe de uma proposta, SEM gate: quem chama já cobrou tela e município.
+
+    Separado do handler em 17/09/2026 para a tela de Emendas parlamentares abrir
+    a MESMA proposta com o MESMO payload — duas consultas "equivalentes" são como
+    o modal de lá e o daqui passariam a divergir. `None` = não existe."""
     r = await db.execute(text("""
         SELECT numero_proposta, situacao, orgao, proponente, identificacao,
                codigo_instrumento, modalidade, situacao_siafi, numero_processo,
@@ -820,7 +833,7 @@ async def voluntarias_detalhe(
     """), {"mun": municipio_id, "num": numero_proposta})
     row = r.first()
     if not row:
-        raise HTTPException(404, "Proposta não encontrada")
+        return None
     # ⭐ O desembolso vem do DUMP quando ha (ver `ops_obs_preferido`), completado
     # com NS/OP/situacao da raspagem onde o numero da OB bate. A aba OPs/OBs e o
     # RM passam a dizer a mesma coisa.
@@ -1051,18 +1064,30 @@ async def detalhe(plano_acao_id: int,
     # modal a todo usuario que recebeu a tela nova, que e exatamente quem abre
     # esta tela. So o super-admin passava.
     authz.exigir_tela(current, "transferegov_especiais")
+    achado = await carregar_plano_acao(db, plano_acao_id)
+    if achado is None:
+        raise HTTPException(404, "Plano de ação não encontrado nesta base")
+    municipio_id, dados = achado
+    # ⭐ AGORA HA MUNICIPIO para conferir. Com o detalhe vindo da SPA, o
+    # `plano_acao_id` era so um id federal e o endpoint abria plano de QUALQUER
+    # municipio do Brasil a quem tivesse a tela. Vindo da tabela, a linha tem
+    # dono: quem so ve Araujos nao abre plano de Nova Serrana pelo id.
+    if municipio_id is not None:
+        ensure_municipio_access(current, municipio_id)
+    return dados
+
+
+async def carregar_plano_acao(db: AsyncSession,
+                              plano_acao_id: int) -> Optional[tuple]:
+    """`(municipio_id, payload)` do plano, SEM gate — o chamador confere o
+    município DA LINHA. Reusado pela tela de Emendas parlamentares (17/09/2026).
+    `None` = o plano não está nesta base."""
     row = (await db.execute(text(
         "SELECT municipio_id, raw_data, detalhe, pagamentos, detalhe_atualizado_em "
         "  FROM transferegov_te WHERE plano_acao_id = :p"
     ), {"p": plano_acao_id})).first()
     if not row:
-        raise HTTPException(404, "Plano de ação não encontrado nesta base")
-    # ⭐ AGORA HA MUNICIPIO para conferir. Com o detalhe vindo da SPA, o
-    # `plano_acao_id` era so um id federal e o endpoint abria plano de QUALQUER
-    # municipio do Brasil a quem tivesse a tela. Vindo da tabela, a linha tem
-    # dono: quem so ve Araujos nao abre plano de Nova Serrana pelo id.
-    if row[0] is not None:
-        ensure_municipio_access(current, row[0])
+        return None
     fonte_em = None
     try:
         fonte_em = (await db.execute(text(
@@ -1070,7 +1095,7 @@ async def detalhe(plano_acao_id: int,
         ))).scalar_one_or_none()
     except Exception:
         await db.rollback()      # tabela ainda nao migrada: o detalhe segue sem a data
-    return {
+    return row[0], {
         "plano": row[1] if isinstance(row[1], dict) else None,
         "detalhe": row[2] if isinstance(row[2], dict) else None,
         "pagamentos": row[3] if isinstance(row[3], dict) else None,
