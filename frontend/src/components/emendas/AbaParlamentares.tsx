@@ -46,7 +46,10 @@ export function SeloCadastro({ c }: { c?: Cadastro | null }) {
     <span className="inline-flex min-w-0 items-center gap-1.5">
       {c.foto_url && (
         // eslint-disable-next-line @next/next/no-img-element
+        /* Foto que não carrega SOME, em vez de virar ícone quebrado: a foto é
+           do site da Câmara/Senado, e lá fora pode cair sem aviso. */
         <img src={c.foto_url} alt="" loading="lazy" referrerPolicy="no-referrer"
+             onError={(e) => { e.currentTarget.style.display = "none"; }}
              className="size-6 shrink-0 rounded-full object-cover"
              style={{ background: "var(--bi-surface-2)" }} />
       )}

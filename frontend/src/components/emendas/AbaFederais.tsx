@@ -21,10 +21,11 @@
  * base inteira embaixo de uma lista filtrada se contradiz na tela.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Banknote, Landmark, Loader2, Users } from "lucide-react";
 
 import api from "@/lib/api";
+import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
 import {
   Abas, Aviso, Bloco, BlocoHead, ItemLinha, Lista, Numero, Selo, Vazio,
@@ -176,6 +177,13 @@ export default function AbaFederais({ municipioId, onAbrir }: {
       });
     return () => { vivo = false; };
   }, [chave, municipioId, ano, autor, tipo, origem]);
+
+  /* ⭐ ABRE NO ANO CORRENTE, como a tela antiga abria (`lib/anoPadrao.ts`).
+     Esquecido na primeira versão desta aba e visto na Freitas em 17/09/2026:
+     Nova Serrana abriu com «R$ 100,6 mi à Prefeitura», a soma desde 2009 —
+     duas emendas de bancada de 2012 e 2013 davam R$ 59 mi sozinhas. */
+  const aplicarAno = useCallback((a: string[]) => setAno(a[0] || ""), []);
+  useAnoCorrentePadrao(opcoes?.anos, aplicarAno);
 
   const daVez = res?.chave === chave;
   const d = daVez ? res!.d : null;
