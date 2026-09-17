@@ -1617,6 +1617,42 @@ As regras comuns ficam em `services/voluntarias_dump.py`.
   - A `transferegov-lote` segue listando cada município no rodízio (2 a 3 dias nos
     clientes grandes). Reserva: `TG_LISTAGEM_BASE=1`.
 
+## 1.27. Radar de captação: a porta do beneficiário específico (17/09/2026)
+
+Conferência pedida pelo dono: o que as APIs novas têm que o PACTHA não usa.
+- **As três APIs REST estão inteiras em uso** (Especiais 24 rotas no openapi de 17/09,
+  Parcerias 18, Fundo a Fundo 21).
+- **Dos 65 dumps, 5 não eram lidos.** Só um valia a pena: `siconv_programa_proponentes`
+  (programa → proponentes nomeados). Os outros estão no README de
+  `docs/dados-abertos-transferegov/`.
+
+**O que faltava:** o radar descartava de propósito a janela `DT_PROG_*_BENEF_ESP`, porque
+sem a lista de nomeados ela seria ruído.
+- Medido no dump de 17/09: 31 programas municipais com essa janela aberta, 28 só com ela.
+- Programas que só abrem por essa porta e agora aparecem:
+  - Nova Palma: 2, Novo PAC Água e Esgoto. A tela passa de 36 para 38 programas;
+  - Santa Maria: 6 (também Contenção de Encostas e Drenagem), de 36 para 42;
+  - Monte Sião: 2, de 35 para 37.
+
+**Como ficou** (PR `feat/radar-beneficiario-especifico`):
+- a coleta guarda `dt_ini/fim_benef` e `proponentes_cnpj TEXT[]`
+  (migration `add_programas_captacao_beneficiario.sql`);
+- a rota abre `porta_benef` só com `municipios.cnpj` na lista, e devolve `portas` (lista)
+  e `nomeado`;
+- a tela ganha o cartão "Nomeiam o município" e os selos "município nomeado" e "na lista do
+  programa".
+
+⚠️ **A lista não significa a mesma coisa em todas as portas.**
+- Na porta de beneficiário, são os nomeados e ninguém propôs ainda: Novo PAC Água tem
+  5.623 listados e 0 propostas.
+- Na porta de emenda, ~95% dos listados já propuseram (Ação 00T1: 888 de 943). A lista
+  cresce durante a janela, então **estar fora dela não fecha a porta de emenda**.
+
+**Lista ilegível preserva a anterior.** Isso vale para cabeçalho mudado ou arquivo
+truncado: a rodada sai `partial` e grava `lista_ok=false` no upsert.
+
+**Município sem `cnpj` cadastrado** não vê essa porta, e a tela avisa.
+
 ## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
 
 Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#496, branch

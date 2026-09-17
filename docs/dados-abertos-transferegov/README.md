@@ -72,9 +72,11 @@ com `siconv_`). ★ marca os dumps que a camada base lê (`transferegov_opendata
 `programas_captacao`).
 
 **Desde 15/09/2026, `ingestion/transferegov_arvore.py` lê todas as tabelas sem ★** e as pendura
-em cada proposta (CONTINUAR §1.26). Ficam de fora só `programa_proponentes`, e três arquivos
-do host sem tabela no modelo: `prop_inst_indicadores_estados`, do estado,
-`app_parceriasgov_necessidades` e `_aprovadas`. As colunas lidas pelo nome estão em
+em cada proposta (CONTINUAR §1.26). `programa_proponentes` é lido pelo radar de captação desde
+17/09/2026 (`ingestion/programas_captacao.py`, CONTINUAR §1.27). Ficam de fora só três arquivos
+do host sem tabela no modelo: `prop_inst_indicadores_estados`, do estado, e
+`app_parceriasgov_necessidades` e `_aprovadas` (medido em 17/09/2026: 4.231 pedidos no país,
+quase todos de 2018–2020, nenhum dos municípios clientes). As colunas lidas pelo nome estão em
 `ARQUIVOS`, conferidas contra o cabeçalho real em `tests/test_transferegov_arvore.py`.
 
 | Tabela | Colunas | | Tabela | Colunas |

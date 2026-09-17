@@ -152,6 +152,22 @@ def test_campos_do_arquivo_chegam_inteiros():
 
 # ------------------------------------------------------------------- run ---
 
+def _arquivos(*programas):
+    """`_linhas` falso que responde por ARQUIVO, como o real.
+
+    ⚠️ DESDE 17/09/2026 O `run()` LE TRES ARQUIVOS. Um falso que devolve as
+    linhas de programa para qualquer nome faria as listas de proponentes sairem
+    ilegiveis, e toda rodada viraria `partial` por defeito do teste."""
+    def linhas(nome):
+        if nome == P.ARQUIVO_LISTA:
+            return iter([{"ID_PROGRAMA": p["ID_PROGRAMA"], "ID_PROPONENTE": "1"}
+                         for p in programas])
+        if nome == P.ARQUIVO_PROPONENTES:
+            return iter([{"ID_PROPONENTE": "1", "IDENTIF_PROPONENTE": "87612826000190"}])
+        return iter(list(programas))
+    return linhas
+
+
 class _Cursor:
     """⚠️ `fetchone` DEVOLVE ZERO ATIVOS POR PADRAO, e a escolha importa: com
     zero no banco o piso proporcional nao dispara, entao o caso base continua
@@ -240,7 +256,7 @@ def test_rodada_vazia_nao_marca_ninguem_como_ausente(monkeypatch):
 
 def test_rodada_com_dado_grava_e_marca_os_que_sumiram(monkeypatch):
     cur = _Cursor()
-    monkeypatch.setattr(P, "_linhas", lambda _a: iter([_linha(ID_PROGRAMA="7")]))
+    monkeypatch.setattr(P, "_linhas", _arquivos(_linha(ID_PROGRAMA="7")))
     monkeypatch.setattr(P.psycopg2, "connect", lambda _d: _Conn(cur))
     monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://x/y")
 
@@ -317,7 +333,7 @@ def test_queda_de_mais_da_metade_NAO_marca_ausencia(monkeypatch):
     cur = _Cursor()
     conn = _Conn(cur)
     cur.fetchone = lambda: (17,)          # 17 ativos no banco...
-    monkeypatch.setattr(P, "_linhas", lambda _a: iter([_linha(ID_PROGRAMA="7")]))
+    monkeypatch.setattr(P, "_linhas", _arquivos(_linha(ID_PROGRAMA="7")))
     monkeypatch.setattr(P.psycopg2, "connect", lambda _d: conn)
     monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://x/y")
 
@@ -339,7 +355,7 @@ def test_queda_pequena_marca_ausencia_normalmente(monkeypatch):
     cur = _Cursor()
     conn = _Conn(cur)
     cur.fetchone = lambda: (2,)           # 2 ativos, a rodada traz 1 -> 50%
-    monkeypatch.setattr(P, "_linhas", lambda _a: iter([_linha(ID_PROGRAMA="7")]))
+    monkeypatch.setattr(P, "_linhas", _arquivos(_linha(ID_PROGRAMA="7")))
     monkeypatch.setattr(P.psycopg2, "connect", lambda _d: conn)
     monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://x/y")
 
@@ -366,7 +382,7 @@ def test_rodada_que_estoura_no_meio_grava_error_e_nao_some(monkeypatch):
             raise RuntimeError("conexao caiu no meio")
 
     cur.execute = explode
-    monkeypatch.setattr(P, "_linhas", lambda _a: iter([_linha(ID_PROGRAMA="7")]))
+    monkeypatch.setattr(P, "_linhas", _arquivos(_linha(ID_PROGRAMA="7")))
     monkeypatch.setattr(P.psycopg2, "connect", lambda _d: conn)
     monkeypatch.setenv("DATABASE_URL_SYNC", "postgresql://x/y")
 

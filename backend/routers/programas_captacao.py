@@ -58,6 +58,18 @@ _CTE_ABERTOS = """
                  -- a tela promete uma janela que o filtro já não garante.
                  (p.dt_fim_receb  >= h.d AND (p.dt_ini_receb  IS NULL OR p.dt_ini_receb  <= h.d)) AS porta_receb,
                  (p.dt_fim_emenda >= h.d AND (p.dt_ini_emenda IS NULL OR p.dt_ini_emenda <= h.d)) AS porta_emenda,
+                 -- ⚠️ A TERCEIRA PORTA SÓ ABRE PARA O NOMEADO (17/09/2026). O
+                 -- programa de beneficiário específico já diz quem propõe; fora
+                 -- da lista, mostrá-lo seria oferecer uma porta que não abre.
+                 -- `COALESCE` porque CNPJ ausente ou lista nula dão NULL, e NULL
+                 -- não pode vazar para a resposta como "talvez".
+                 COALESCE(p.dt_fim_benef >= h.d AND (p.dt_ini_benef IS NULL OR p.dt_ini_benef <= h.d)
+                          AND :cnpj = ANY(p.proponentes_cnpj), false) AS porta_benef,
+                 -- O município está na lista do programa, seja qual for a porta.
+                 -- Na de emenda isso quer dizer, na prática, emenda já indicada
+                 -- (medido: 888 de 943 listados já propuseram), e a porta NÃO
+                 -- fecha para quem está fora, porque a lista cresce na janela.
+                 COALESCE(:cnpj = ANY(p.proponentes_cnpj), false) AS nomeado,
                  h.d AS hoje_br
             FROM programas_captacao p CROSS JOIN hoje h
         )
@@ -75,7 +87,7 @@ _FILTRO_ABERTOS = """         WHERE ausente_desde IS NULL
            -- calculadas acima com o mesmo critério e voltam para a tela — quem
            -- decide por onde se entra é a data, não a coleta, porque a coleta
            -- roda uma vez por dia e um rótulo gravado envelheceria.
-           AND (porta_receb OR porta_emenda)
+           AND (porta_receb OR porta_emenda OR porta_benef)
            -- ⚠️ A JANELA TEM DOIS LADOS, e isso vale para as duas portas.
            -- "Aberto" é estar DENTRO do período, e não apenas antes do fim: um
            -- programa que só abre em novembro entraria na conta de "abertos
@@ -107,12 +119,14 @@ _SELECT_LISTA = """        SELECT id_programa, nome, orgao, modalidade, dt_ini_r
                -- posicional (`r[0]`..`r[12]`) logo abaixo; inserir no meio
                -- desloca tudo em silencio e a tela passa a mostrar um campo no
                -- lugar de outro.
-               porta_receb, porta_emenda
+               porta_receb, porta_emenda,
+               porta_benef, dt_fim_benef, (dt_fim_benef - hoje_br) AS dias_benef, nomeado
           FROM base
 """
 
 _ORDEM_LISTA = """         ORDER BY LEAST(CASE WHEN porta_receb  THEN dt_fim_receb  END,
-                        CASE WHEN porta_emenda THEN dt_fim_emenda END), nome
+                        CASE WHEN porta_emenda THEN dt_fim_emenda END,
+                        CASE WHEN porta_benef  THEN dt_fim_benef  END), nome
     """
 
 
@@ -127,10 +141,14 @@ async def radar(
     ensure_tela(current, "transferegov_radar")
 
     mun = (await db.execute(text(
-        "SELECT nome, uf FROM municipios WHERE id = :m"), {"m": municipio_id})).first()
+        "SELECT nome, uf, regexp_replace(coalesce(cnpj, ''), '\\D', '', 'g') "
+        "FROM municipios WHERE id = :m"), {"m": municipio_id})).first()
     if mun is None:
         raise HTTPException(404, "Município não encontrado")
     uf = (mun[1] or "").strip().upper()
+    # ⚠️ CHAVE É CNPJ, NUNCA NOME. "MUNICIPIO DE SANTA MARIA" casaria com Santa
+    # Maria do Herval, que está nomeada em outros programas.
+    cnpj = mun[2] or ""
 
     # ⚠️ SEM UF NÃO DÁ PARA RESPONDER, e o honesto é dizer isso. A alternativa
     # seria rodar a consulta assim mesmo: `'' = ANY(ufs)` nunca casa, a tela
@@ -155,7 +173,7 @@ async def radar(
 
     linhas = (await db.execute(
         text(_CTE_ABERTOS + _SELECT_LISTA + _FILTRO_ABERTOS + _ORDEM_LISTA),
-        {"uf": uf, "nat": NATUREZA_PREFEITURA})).all()
+        {"uf": uf, "nat": NATUREZA_PREFEITURA, "cnpj": cnpj})).all()
 
     # ⚠️ `qt_ufs` VAI CRU PARA A TELA, e a classificação é só de três estados.
     # A primeira versão mandava apenas "nacional | regional" com corte em 27, e
@@ -182,13 +200,22 @@ async def radar(
         # o radar só carregava a primeira porta, e por isso a tela nunca precisou
         # distinguir; agora que as duas chegam, misturá-las faria o prefeito
         # achar que basta protocolar, o que é pior que não mostrar o programa.
-        "porta": ("ambas" if (r[13] and r[14])
-                  else "recebimento" if r[13]
-                  else "emenda"),
+        #
+        # ⚠️ DESDE 17/09/2026 SÃO TRÊS PORTAS, e por isso uma LISTA, e não mais
+        # o rótulo "recebimento | emenda | ambas". "beneficiario" só chega aqui
+        # quando o CNPJ do município está na lista do programa.
+        "portas": [nome for nome, aberta in (("recebimento", r[13]), ("emenda", r[14]),
+                                             ("beneficiario", r[15])) if aberta],
+        "dt_fim_benef": r[16].isoformat() if r[16] else None,
+        "dias_benef": r[17],
+        "nomeado": bool(r[18]),
     } for r in linhas]
 
     return {
         "municipio": {"nome": mun[0], "uf": uf},
+        # Sem CNPJ cadastrado a terceira porta nunca abre, e a tela precisa dizer
+        # isso: senão "nenhum programa com o município nomeado" se lê como fato.
+        "cnpj_cadastrado": bool(cnpj),
         "total": len(itens),
         "programas": itens,
         # ⚠️ SEM CARIMBO, A TELA NÃO PODE PROMETER FRESCOR. `None` significa uma
@@ -222,9 +249,11 @@ async def contagem(
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "transferegov_radar")
 
-    uf = (await db.execute(text(
-        "SELECT upper(coalesce(uf, '')) FROM municipios WHERE id = :m"),
-        {"m": municipio_id})).scalar()
+    mun = (await db.execute(text(
+        "SELECT upper(coalesce(uf, '')), regexp_replace(coalesce(cnpj, ''), '\\D', '', 'g') "
+        "FROM municipios WHERE id = :m"),
+        {"m": municipio_id})).first()
+    uf, cnpj = (mun[0], mun[1]) if mun else ("", "")
     # Sem UF o recorte não existe (ver o `motivo` da listagem). Zero aqui é a
     # resposta honesta: o menu não tem espaço para explicar, e a tela explica.
     if not uf:
@@ -234,10 +263,11 @@ async def contagem(
         text(_CTE_ABERTOS + """
         SELECT count(*),
                min(LEAST(CASE WHEN porta_receb  THEN dt_fim_receb  END,
-                         CASE WHEN porta_emenda THEN dt_fim_emenda END) - hoje_br)
+                         CASE WHEN porta_emenda THEN dt_fim_emenda END,
+                         CASE WHEN porta_benef  THEN dt_fim_benef  END) - hoje_br)
           FROM base
         """ + _FILTRO_ABERTOS),
-        {"uf": uf, "nat": NATUREZA_PREFEITURA})).first()
+        {"uf": uf, "nat": NATUREZA_PREFEITURA, "cnpj": cnpj})).first()
 
     return {"total": int(linha[0] or 0),
             "dias_mais_proximo": int(linha[1]) if linha and linha[1] is not None else None}
