@@ -31,6 +31,7 @@ import {
   BarChart3, CalendarClock, Radar, HardHat, Users, ScrollText, Activity,
   KeyRound, SlidersHorizontal,
 } from "lucide-react";
+import { hrefToTela } from "@/lib/telas";
 
 /* `destaque` marca o item que sai da fila e ganha cor propria — hoje so o
    Radar de Captacao. Nao e enfeite: e o unico item do menu que olha para
@@ -56,6 +57,16 @@ export type NavLeaf = {
    *  `test_arvore_segue_o_menu.py` as tinha numa lista de exceção, o que
    *  escondeu o buraco em vez de acusá-lo. */
   telasExtras?: string[];
+  /** ⭐ TELA COM ABAS, CADA ABA COM A SUA PERMISSÃO (17/09/2026).
+   *
+   *  Hoje só «Emendas parlamentares»: juntou quatro telas numa, e o dono decidiu
+   *  que cada aba continua cobrando a chave que já existia — ninguém ganha nem
+   *  perde acesso. A folha não tem chave própria; ela aparece para quem tem
+   *  QUALQUER uma das abas (`telasDoHref`), e na árvore de Usuários vira um
+   *  grupo com uma linha por aba.
+   *
+   *  ⚠️ `tela` é chave de `telas.ts`; `rotulo` é o que a árvore escreve. */
+  abas?: Array<{ tela: string; rotulo: string }>;
 };
 export type NavSection = { sectionLabel: string; children: NavLeaf[] };
 export type NavGroup = {
@@ -133,13 +144,8 @@ export const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },
-      /* ⭐ EMENDAS PARLAMENTARES FEDERAIS (06/09/2026). Até aqui a emenda
-         federal só aparecia de raspão: como Transferência Especial em
-         «Especiais» e como selo `TE` na lista de Convênios — e por um caminho
-         que perdia 45% dela (as que nunca viraram proposta).
-         ⚠️ Não confundir com «Emendas Estaduais», do grupo ESTADUAIS: aquela é
-         SIGCON-MG (`ufs: ["MG"]`). Esta é federal e vale em qualquer tenant. */
-      { href: "/dashboard/emendas-federais", label: "Emendas parlamentares" },
+      /* «Emendas parlamentares» SAIU DAQUI em 17/09/2026: virou a aba Federais
+         da tela única, logo abaixo de ESTADUAIS. */
     ],
   },
   {
@@ -147,21 +153,29 @@ export const NAV_ITEMS: NavEntry[] = [
     icon: FileText,
     children: [
       { href: "/dashboard/convenios", label: "Convênios" },
-      { href: "/dashboard/emendas", label: "Emendas Estaduais" },
       { href: "/dashboard/repasses", label: "Repasses" },
       { href: "/dashboard/cofinanciamento", label: "Cofinanciamento Saúde" },
       { href: "/dashboard/monitoramento", label: "Monitoramento" },
       { href: "/dashboard/consulta-popular", label: "Consulta Popular" },
       { href: "/dashboard/programas-rs", label: "Programas do Estado" },
       { href: "/dashboard/funrigs", label: "Plano Rio Grande" },
-      { href: "/dashboard/emendas-rs", label: "Emendas Estaduais RS" },
       { href: "/dashboard/tce-rs", label: "TCE-RS" },
     ],
   },
+  /* ⭐ EMENDAS PARLAMENTARES — UMA TELA COM ABAS (pedido do dono, 17/09/2026).
+     Juntou Federais › Emendas parlamentares, Estaduais › Emendas Estaduais e
+     Emendas Estaduais RS, e Parlamentares. Fica logo depois das esferas porque
+     é a mesma pergunta — de onde vem o dinheiro —, vista pelo autor.
+     ⚠️ `abas` é a permissão: cada uma com a chave que já existia. */
+  { href: "/dashboard/emendas-parlamentares", label: "Emendas parlamentares", icon: UserCircle2, abas: [
+    { tela: "emendas_federais", rotulo: "Federais" },
+    { tela: "emendas", rotulo: "Estaduais (MG)" },
+    { tela: "emendas_rs", rotulo: "Estaduais (RS)" },
+    { tela: "parlamentares", rotulo: "Parlamentares" },
+  ] },
   // ⭐ AGENDAMENTOS fica FORA dos grupos de esfera porque não é fonte de
   // recurso: é o trabalho da equipe SOBRE essas fontes.
   { href: "/dashboard/agendamentos", label: "Agendamentos", icon: CalendarClock },
-  { href: "/dashboard/parlamentares", label: "Parlamentares", icon: UserCircle2 },
   // ⭐ SAÚDE é um grupo porque a saúde é uma PASTA do município, não quatro
   // sistemas avulsos. O SIMEC fica FORA de propósito — é educação (FNDE).
   {
@@ -232,6 +246,30 @@ export const GRUPO_CONFIGURACOES: NavGroup = {
  *  o grupo de Configurações. A ordem é a da barra, com Configurações no fim —
  *  que é onde ele está para quem administra. */
 export const MENU_COMPLETO: NavEntry[] = [...NAV_ITEMS, GRUPO_CONFIGURACOES];
+
+/** As chaves de tela que abrem uma rota — a dobradiça do guard e do filtro do
+ *  menu. Rota comum: `[hrefToTela(href)]`. Folha com `abas`: as chaves das abas,
+ *  e basta ter UMA (quem só tem Emendas Federais abre a tela e vê só aquela aba).
+ *
+ *  ⚠️ Compara pelo primeiro segmento, como `hrefToTela`: `?aba=` e subrotas
+ *  não mudam a tela. */
+export function telasDoHref(href: string): string[] {
+  const seg = (h: string) => h.split("?")[0].replace(/^\/dashboard\/?/, "").split("/")[0];
+  for (const item of MENU_COMPLETO) {
+    const folhas = "children" in item
+      ? item.children.flatMap((c) => ("sectionLabel" in c ? c.children : [c]))
+      : [item];
+    for (const f of folhas) {
+      if (f.abas && seg(f.href) === seg(href)) return f.abas.map((a) => a.tela);
+    }
+  }
+  return [hrefToTela(href)];
+}
+
+/** A pessoa pode abrir esta rota? `null` = sem limite (super-admin/carregando). */
+export function podeAbrirRota(allowed: Set<string> | null, href: string): boolean {
+  return !allowed || telasDoHref(href).some((t) => allowed.has(t));
+}
 
 /** Lista plana de hrefs (ordem da sidebar) — usada pelo guard de rota. */
 export function allLeafHrefs(items: NavEntry[]): string[] {

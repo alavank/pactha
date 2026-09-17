@@ -36,6 +36,9 @@ const TELAS: Array<[RegExp, string]> = [
   [/^\/dashboard\/transferegov-cnpj/, "TransfereGov · CNPJ"],
   [/^\/dashboard\/transferegov/, "TransfereGov · Especiais"],
   [/^\/dashboard\/convenios/, "Convênios Estaduais"],
+  // Antes de `emendas`, que a pegaria pelo prefixo. As rotas antigas ficam: o
+  // histórico de uso anterior a 17/09/2026 ainda as cita.
+  [/^\/dashboard\/emendas-parlamentares/, "Emendas parlamentares"],
   [/^\/dashboard\/emendas-rs/, "Emendas Estaduais RS"],
   [/^\/dashboard\/emendas/, "Emendas Estaduais"],
   [/^\/dashboard\/repasses/, "Repasses Estaduais"],

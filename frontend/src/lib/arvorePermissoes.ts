@@ -124,6 +124,15 @@ export function arvoreDoMenu(
    *  menu de onde tirar um. */
   const montarFolha = (folha: NavLeaf): TelaNaArvore[] => {
     const saida: TelaNaArvore[] = [];
+    // ⭐ Tela com abas (17/09/2026): cada aba é uma linha, com o rótulo da aba.
+    // A folha não tem chave própria — ver `abas` em `lib/menu.ts`.
+    if (folha.abas) {
+      for (const a of folha.abas) {
+        const linha = linhaDe(a.tela, a.rotulo, folha.href);
+        if (linha) saida.push(linha);
+      }
+      return saida;
+    }
     const principal = linhaDe(telaDaFolha(folha.href), folha.label, folha.href);
     if (principal) saida.push(principal);
     for (const extra of folha.telasExtras ?? []) {
@@ -159,6 +168,12 @@ export function arvoreDoMenu(
       // Grupo que ficou sem tela nenhuma sai: um cabeçalho vazio só ocuparia
       // espaço e faria o administrador procurar dentro dele. É o que acontece
       // com ESTADUAIS num tenant federal.
+      if (telas.length) grupos.push({ rotulo: item.label, icone: item.icon, telas });
+    } else if (item.abas) {
+      // ⭐ A tela com abas vira GRUPO na árvore, no lugar dela no menu: «Emendas
+      // parlamentares» com Federais, Estaduais e Parlamentares embaixo — o que o
+      // dono aprovou ver na tela de Usuários (17/09/2026).
+      const telas = montarFolha(item);
       if (telas.length) grupos.push({ rotulo: item.label, icone: item.icon, telas });
     } else {
       soltos.push(...montarFolha(item));

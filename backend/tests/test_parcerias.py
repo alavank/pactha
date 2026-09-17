@@ -220,8 +220,9 @@ def test_a_tela_mostra_a_contagem_no_lugar_do_valor_repetido():
     """⚠️ A correção só existe se a TELA usar o campo — o router entregar não
     basta, foi esse exatamente o buraco do `vinculo` nas Obras Federais."""
     from pathlib import Path
-    tela = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "app"
-            / "dashboard" / "parcerias" / "page.tsx").read_text(encoding="utf-8")
+    # A tela mora em `components/` desde 17/09/2026 (o modal é reusado).
+    tela = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "components"
+            / "ParceriasTela.tsx").read_text(encoding="utf-8")
     assert "Com emenda identificada" in tela
     assert "d.com_emenda" in tela
     # E o cartão antigo não pode voltar.

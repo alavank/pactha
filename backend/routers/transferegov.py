@@ -941,7 +941,7 @@ def _filho(tipo: str, row) -> dict:
 
 
 @router.get("/voluntarias-arvore/{tipo}",
-            dependencies=[declarado(*_CATEGORIA_PERMISSOES)])
+            dependencies=[declarado(*_CATEGORIA_PERMISSOES, "emendas_federais.ver")])
 async def voluntarias_arvore_lista(
     tipo: str,
     numero_proposta: str = Query(...),
@@ -961,18 +961,29 @@ async def voluntarias_arvore_lista(
 
     ⚠️ PROPOSTA QUE NÃO É DA PREFEITURA vem com `so_resumo` e sem itens — a
     decisão do dono (opção B) foi guardar só as contas delas. A tela explica em
-    vez de mostrar uma lista vazia como se não houvesse pagamento."""
+    vez de mostrar uma lista vazia como se não houvesse pagamento.
+
+    ⭐ TAMBÉM ABRE PELA TELA DE EMENDAS PARLAMENTARES (17/09/2026): o modal da
+    voluntária é o mesmo, e as listas dele chamam esta rota. Quem só tem
+    `emendas_federais` passa — mas SÓ para proposta que tem emenda (autor ou
+    valor de emenda), que é o que aquela tela lista. Sem esta restrição, a
+    permissão de emendas abriria os pagamentos de todo convênio do município."""
     if tipo not in _FILHOS:
         raise HTTPException(404, "Tipo desconhecido")
     ensure_municipio_access(current, municipio_id)
-    if not any(authz.pode(current, chave) for chave in _CATEGORIA_PERMISSOES):
-        authz.exigir(current, _CATEGORIA_PERMISSOES[0])
+    pela_emenda = not any(authz.pode(current, chave) for chave in _CATEGORIA_PERMISSOES)
+    if pela_emenda:
+        if not authz.pode(current, "emendas_federais.ver"):
+            authz.exigir(current, _CATEGORIA_PERMISSOES[0])
+        ensure_tela(current, "emendas_federais")
     r = await db.execute(text(
-        "SELECT id_proposta_siconv, municipal, arvore->'_resumo' FROM transferegov_propostas "
+        "SELECT id_proposta_siconv, municipal, arvore->'_resumo', "
+        "       (parlamentar IS NOT NULL OR coalesce(valor_emenda, 0) > 0) "
+        "  FROM transferegov_propostas "
         "WHERE municipio_id = :mun AND numero_proposta = :num"),
         {"mun": municipio_id, "num": numero_proposta})
     prop = r.first()
-    if not prop:
+    if not prop or (pela_emenda and not prop[3]):
         raise HTTPException(404, "Proposta não encontrada")
     resumo = prop[2] or {}
     base = {"tipo": tipo, "offset": offset, "limit": limit,

@@ -43,16 +43,16 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { Municipio, User } from "@/types";
-import { hrefToTela, allowedTelasOf } from "@/lib/telas";
+import { allowedTelasOf } from "@/lib/telas";
 import { PADDING_PADRAO } from "@/lib/layout";
 import {
-  BI_ON, NAV_ITEMS, allLeafHrefs,
+  BI_ON, NAV_ITEMS, allLeafHrefs, podeAbrirRota,
   type NavEntry, type NavGroup, type NavLeaf, type NavSection,
 } from "@/lib/menu";
 import {
   ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
 } from "@/lib/configuracoes";
-import { cofinanciamentoDaUf, consultaPopularDaUf, fonteEmendasEstaduais, monitoramentoDaUf, programasDaUf, repassesDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
+import { cofinanciamentoDaUf, consultaPopularDaUf, monitoramentoDaUf, programasDaUf, repassesDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -75,14 +75,16 @@ function filterNav(items: NavEntry[], allowed: Set<string> | null): NavEntry[] {
       const children = item.children
         .map((c): NavLeaf | NavSection | null => {
           if ("sectionLabel" in c) {
-            const kids = c.children.filter((l) => allowed.has(hrefToTela(l.href)));
+            const kids = c.children.filter((l) => podeAbrirRota(allowed, l.href));
             return kids.length ? { ...c, children: kids } : null;
           }
-          return allowed.has(hrefToTela(c.href)) ? c : null;
+          return podeAbrirRota(allowed, c.href) ? c : null;
         })
         .filter((c): c is NavLeaf | NavSection => c !== null);
       if (children.length) out.push({ ...item, children });
-    } else if (allowed.has(hrefToTela(item.href))) {
+    // `podeAbrirRota` e não `hrefToTela`: a tela com abas (Emendas parlamentares)
+    // não tem chave própria e aparece para quem tem QUALQUER uma das abas.
+    } else if (podeAbrirRota(allowed, item.href)) {
       out.push(item);
     }
   }
@@ -246,10 +248,8 @@ function SidebarContent({
   if (ufAmbiente && ufAmbiente !== "MG") semFonteNaUf.add("/dashboard/acordofes");
   if (ufAmbiente && !repassesDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/repasses");
   if (ufAmbiente && !cofinanciamentoDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/cofinanciamento");
-  // Emendas estaduais: hoje só MG tem coletor. Num cliente gaúcho a tela abria
-  // vazia anunciando o "SIGCON-MG" — e no RS a emenda estadual nem é impositiva,
-  // então além de vazia ela sugeria um direito que não existe lá.
-  if (ufAmbiente && !fonteEmendasEstaduais(ufAmbiente)) semFonteNaUf.add("/dashboard/emendas");
+  // Emendas estaduais (MG e RS) deixaram de ser item do menu em 17/09/2026: são
+  // a aba Estaduais de «Emendas parlamentares», que escolhe o conteúdo pela UF.
   // Consulta Popular: mecanismo do RS. Em qualquer outra UF a tela abriria vazia
   // anunciando algo que não existe naquele estado.
   if (ufAmbiente && !consultaPopularDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/consulta-popular");
@@ -263,7 +263,6 @@ function SidebarContent({
   // e obrigações do tribunal de contas) só existem onde há conteúdo curado.
   if (ufAmbiente && !temConteudoEstadual(ufAmbiente)) {
     semFonteNaUf.add("/dashboard/funrigs");
-    semFonteNaUf.add("/dashboard/emendas-rs");
     semFonteNaUf.add("/dashboard/tce-rs");
   }
   if (semFonteNaUf.size) {
@@ -827,7 +826,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     if (!allowed) return; // acesso total (super-admin) ou ainda carregando
     // Administracao nao e governada por `user_telas` (ver ROTAS_SEM_TELA).
     if (ROTAS_SEM_TELA.has(pathname)) return;
-    if (allowed.has(hrefToTela(pathname))) return;
+    if (podeAbrirRota(allowed, pathname)) return;
     // Os destinos incluem os itens de Administracao governados por TELA (hoje,
     // a Auditoria). Sem isso, um usuario cujo unico acesso e a trilha nao teria
     // para onde ser mandado: `find` devolveria undefined, nenhum redirect
@@ -842,7 +841,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
       ...ABAS_CONFIGURACOES.filter((a) => a.tela).map((a) => a.href),
       ...ADMIN_NAV_ITEMS.filter((i) => i.tela).map((i) => i.href),
     ];
-    const firstAllowed = destinos.find((h) => allowed.has(hrefToTela(h)));
+    const firstAllowed = destinos.find((h) => podeAbrirRota(allowed, h));
     if (firstAllowed && firstAllowed !== pathname) router.replace(firstAllowed);
   }, [user, pathname, router]);
 

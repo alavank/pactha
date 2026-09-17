@@ -1730,8 +1730,40 @@ existia, então ninguém ganha nem perde acesso e não há migration de acesso p
 - **Partido, cargo e foto:** `services/cadastro_parlamentar.py::cadastros_por_nome`, uma
   consulta para a lista inteira, com apelidos aplicados.
 
-**Não medido:** não houve banco nesta sessão. O SQL passou no pglast, e os números batem com
-as telas antigas só na teoria. Conferir em Nova Palma e na Freitas depois do deploy.
+**Conferido na Freitas depois do deploy (17/09, 42 municípios):**
+- 0 erros;
+- a carteira bate uma a uma com a tela antiga (1.045 emendas);
+- o ranking de Parlamentares é idêntico;
+- 605 voluntárias casaram com a carteira; Pix e Parcerias casaram 0 vezes (são outros
+  sistemas);
+- nenhuma linha solta tem par na carteira com o mesmo autor, ano e valor;
+- 99,7% das pessoas com partido;
+- o detalhe abre nas 6 origens, e id de outro município dá 404.
+
+### PR 3: a tela (`/dashboard/emendas-parlamentares`)
+
+- **Menu:** um item de primeiro nível, logo depois de ESTADUAIS, com `abas` em
+  `lib/menu.ts`. As 4 folhas antigas saíram do menu.
+  - O item aparece para quem tem qualquer aba (`podeAbrirRota`, usado no filtro do menu e
+    no guard do layout).
+  - Na árvore de Usuários vira um grupo com uma linha por aba (`arvorePermissoes.ts`).
+  - `test_arvore_segue_o_menu.py` lê as `abas`.
+- **As 4 rotas antigas** redirecionam para `?aba=`.
+- **Reuso sem cópia:** as telas movidas para `components/` com `git mv`.
+  - Estaduais MG e RS e Parlamentares viraram abas: o título virou `h2`, a lista de
+    Parlamentares lê a rota nova (com foto e partido) e a de MG ganhou clique.
+  - O Pix (`PlanoAcaoModal`), a voluntária (`DetalheVoluntariaModal`) e Parcerias
+    (`DetalheProposta`, com a prop `carregar`) viraram modais exportados, usados pelas
+    duas telas.
+- **`DetalheEmenda`:** para Pix, Parcerias e voluntária abre o modal de origem com os dados
+  da rota nova. Para a emenda da carteira, a indicação, o SIGCON e GO usa um modal próprio.
+  - A emenda da carteira tem as abas Resumo, Parlamentar, Pagamentos, Histórico e Projeto e
+    instrumentos. Clicar num instrumento troca de modal.
+- **Backend:**
+  - `voluntarias-arvore` aceita `emendas_federais`, mas só para proposta com emenda. O
+    detalhe da voluntária pela tela nova tem a mesma restrição.
+  - Colegiado sem `tipo` é reconhecido pelo nome.
+  - Cada autor vem com `pessoa`: a SECRETARIA no SIGCON não vira parlamentar.
 
 ## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
 
