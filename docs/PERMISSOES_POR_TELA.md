@@ -67,13 +67,20 @@ que ninguém consegue liberar; uma no catálogo sem folha no menu é uma caixinh
 que concede o que não existe — foi assim que `suas` e `telegram` sobreviveram
 meses depois de removidos.
 
-### Duas exceções, ambas legítimas
+### Três exceções, todas legítimas
 
 - **Tela sem ação nenhuma**: o interruptor É a permissão. Hoje são «Painéis
   Municipais» (mural de painéis oficiais em iframe, sem endpoint próprio) e
   «Modo Tela (TV)».
 - **Ação sem tela**: `transferegov.atualizar` — a coleta. O botão dela mora em
   Configurações › Sessões e alimenta as oito telas de FEDERAIS de uma vez.
+- **Tela com abas, cada aba com a sua chave** (`abas` em `lib/menu.ts`). Hoje
+  só «Emendas parlamentares» (17/09/2026): juntou quatro telas, e o dono decidiu
+  que cada aba continua cobrando a chave que já existia (`emendas_federais`,
+  `emendas`, `emendas_rs`, `parlamentares`). A folha não tem chave própria;
+  aparece para quem tem qualquer uma das abas (`podeAbrirRota`), e na árvore
+  vira um grupo com uma linha por aba. Ninguém ganhou nem perdeu acesso, e não
+  houve migration de acesso.
 
 ### Caixinhas inertes ficam escondidas
 

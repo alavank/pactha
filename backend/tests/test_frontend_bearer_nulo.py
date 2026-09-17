@@ -87,7 +87,8 @@ def test_as_tres_telas_do_incidente_usam_o_cliente_api():
     """As que quebraram passam a exportar pelo `api` (cookie + retry do
     interceptor), e nao por `fetch` cru."""
     for rel, rota in (("app/dashboard/convenios/page.tsx", "/export-pdf/convenios"),
-                      ("app/dashboard/emendas/page.tsx", "/export-pdf/emendas"),
+                      # Virou aba de «Emendas parlamentares» em 17/09/2026.
+                      ("components/emendas/AbaEstaduaisMG.tsx", "/export-pdf/emendas"),
                       ("app/dashboard/dou/page.tsx", "/export-pdf/dou")):
         txt = open(os.path.join(SRC, *rel.split("/")), encoding="utf-8").read()
         assert 'api.get("' + rota in txt or "api.get(`" + rota in txt, \

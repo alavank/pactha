@@ -48,9 +48,29 @@ def _fonte(arquivo: Path) -> str:
     return arquivo.read_text(encoding="utf-8")
 
 
+def _hrefs_com_abas() -> set[str]:
+    """As folhas que são TELA COM ABAS (`abas:` na mesma linha do `href:`).
+
+    Elas não têm chave própria: a permissão é a de cada aba. Ver `abas` em
+    `lib/menu.ts` (Emendas parlamentares, 17/09/2026)."""
+    return set(re.findall(r'href:\s*"(/dashboard[^"]*)"[^\n]*\babas:\s*\[', _fonte(MENU_TS)))
+
+
+def _telas_das_abas() -> set[str]:
+    """As chaves declaradas nas abas — contam como estar no menu."""
+    return {
+        chave
+        for bloco in re.findall(r"\babas:\s*\[(.*?)\]\s*\}", _fonte(MENU_TS), re.S)
+        for chave in re.findall(r'tela:\s*"([a-z_]+)"', bloco)
+    }
+
+
 def _hrefs_do_menu() -> list[str]:
-    """Todo `href:` de `menu.ts`, na ordem em que aparecem."""
-    return re.findall(r'href:\s*"(/dashboard[^"]*)"', _fonte(MENU_TS))
+    """Todo `href:` de `menu.ts`, na ordem em que aparecem — menos as telas com
+    abas, cuja chave sai das abas e não da rota."""
+    com_abas = _hrefs_com_abas()
+    return [h for h in re.findall(r'href:\s*"(/dashboard[^"]*)"', _fonte(MENU_TS))
+            if h not in com_abas]
 
 
 def _chaves_de_tela() -> set[str]:
@@ -128,11 +148,24 @@ def test_toda_chave_de_tela_esta_no_menu():
     # Agora a folha DECLARA as capacidades dela (`telasExtras` em `menu.ts`) e o
     # teste le a declaracao. Nao ha mais lista de excecao — o que nao estiver
     # declarado em lugar nenhum quebra, que era o ponto desde o começo.
-    sobrando = _chaves_de_tela() - do_menu - _telas_extras()
+    sobrando = _chaves_de_tela() - do_menu - _telas_extras() - _telas_das_abas()
     assert not sobrando, (
         f"chaves em telas.ts que nao tem folha no menu nem `telasExtras`: "
         f"{sorted(sobrando)}. Uma tela que nao esta em nenhum dos dois nao "
         "aparece na arvore, e ninguem consegue conceder nem tirar")
+
+
+def test_emendas_parlamentares_e_uma_tela_com_as_quatro_chaves_antigas():
+    """⭐ Decisão do dono (17/09/2026): a tela única NÃO tem chave nova — cada aba
+    cobra a que já existia. Se uma aba sumir da declaração, quem só tinha aquela
+    permissão perde o item do menu e a linha na árvore de Usuários."""
+    assert "/dashboard/emendas-parlamentares" in _hrefs_com_abas()
+    assert {"emendas_federais", "emendas", "emendas_rs", "parlamentares"} <= _telas_das_abas()
+    assert "emendas_parlamentares" not in _chaves_de_tela()
+    # As rotas antigas saíram do menu (redirecionam para a aba).
+    antigas = {"/dashboard/emendas-federais", "/dashboard/emendas",
+               "/dashboard/emendas-rs", "/dashboard/parlamentares"}
+    assert not antigas & set(re.findall(r'href:\s*"(/dashboard[^"]*)"', _fonte(MENU_TS)))
 
 
 def test_as_capacidades_do_painel_estao_declaradas():

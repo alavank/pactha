@@ -30,6 +30,8 @@ import re
 import unicodedata
 from typing import Optional
 
+from services.nome_parlamentar import e_pessoa
+
 COLEGIADOS = ("BANCADA", "COMISSAO", "RELATOR GERAL")
 
 # Rótulo curto do instrumento, o que a tela escreve no selo.
@@ -202,8 +204,12 @@ def unificar_federais(carteira: list[dict], te: list[dict], parcerias: list[dict
 
     for ln in linhas:
         tipo = _norm(ln.get("tipo"))
-        ln["colegiado"] = tipo in COLEGIADOS
         ln["autores"] = autores_de(ln.get("autor"))
+        # ⚠️ O TIPO NÃO BASTA. A voluntária e a TE não trazem `tipo`, e o autor
+        # delas vem como "BANCADA DE MINAS GERAIS" ou "COM. CULTURA" — medido na
+        # Freitas em 17/09/2026, eram os 5 "sem partido" que não eram gente.
+        ln["colegiado"] = tipo in COLEGIADOS or bool(
+            ln["autores"] and not any(e_pessoa(a) for a in ln["autores"]))
         # O que a tela desenha como selo: a origem da linha e a de cada instrumento.
         ln["origens"] = sorted({ln["origem"], *(i["origem"] for i in ln["instrumentos"])})
     linhas.sort(key=lambda l: (-(l["ano"] or 0), -(l["valor"] or 0)))

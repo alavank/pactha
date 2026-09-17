@@ -280,7 +280,7 @@ interface Obras {
 }
 
 
-interface Detalhe extends Proposta {
+export interface Detalhe extends Proposta {
   detalhe?: Record<string, string | string[]>;
   ops_obs?: OpsObs | null;
   /** "dump" = `siconv_desembolso` do dado aberto (completado com NS/OP da
@@ -373,9 +373,6 @@ export default function TransfereGovPropostas({
   const [baixandoPdf, setBaixandoPdf] = useState(false);
 
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null);
-  // Aba ativa do modal de detalhe (evita rolagem gigante com 50+ eventos)
-  const [aba, setAba] = useState<"dados" | "execucao" | "opsobs" | "prazos" | "plano" | "licitacoes"
-    | "obras" | "linha" | "historico" | "docs">("dados");
   const [loadingDet, setLoadingDet] = useState(false);
 
   const buildParams = useCallback((): Record<string, string | string[]> => {
@@ -559,7 +556,7 @@ export default function TransfereGovPropostas({
     });
 
   const abrirDetalhe = async (numero: string) => {
-    setDetalhe(null); setLoadingDet(true); setAba("dados");
+    setDetalhe(null); setLoadingDet(true);
     try {
       const r = await api.get<Detalhe>(`/transferegov/voluntarias/${encodeURIComponent(numero)}`,
         { params: { municipio_id: municipioId } });
@@ -891,6 +888,35 @@ export default function TransfereGovPropostas({
           isso um bloco aqui, e não linhas misturadas na lista acima. */}
       {categoria === "rejeitadas" && <BlocoCanceladas municipioId={municipioId} />}
 
+      <DetalheVoluntariaModal detalhe={detalhe} carregando={loadingDet}
+                              municipioId={municipioId} onFechar={() => setDetalhe(null)} />
+    </div>
+  );
+}
+
+type AbaVoluntaria = "dados" | "execucao" | "opsobs" | "prazos" | "plano" | "licitacoes"
+  | "obras" | "linha" | "historico" | "docs";
+
+/** O modal de UMA proposta voluntária, fora da lista desde 17/09/2026.
+ *
+ *  ⭐ Separado para a tela de Emendas parlamentares abrir o MESMO modal com o
+ *  MESMO payload (`/emendas-parlamentares/emenda/voluntaria/{n}` devolve em
+ *  `dados` exatamente o de `/transferegov/voluntarias/{n}`). Duas cópias seriam
+ *  duas versões do convênio. A aba mora aqui: é estado do modal. */
+export function DetalheVoluntariaModal({ detalhe, carregando: loadingDet, municipioId, onFechar }: {
+  detalhe: Detalhe | null;
+  carregando: boolean;
+  municipioId: string | number | null;
+  onFechar: () => void;
+}) {
+  // Aba ativa do modal de detalhe (evita rolagem gigante com 50+ eventos)
+  const [aba, setAba] = useState<AbaVoluntaria>("dados");
+  // Proposta nova abre na primeira aba, como abria quando o estado era da lista.
+  const numero = detalhe?.numero_proposta ?? null;
+  useEffect(() => { setAba("dados"); }, [numero]);
+  const setDetalhe = (_: null) => onFechar();
+  return (
+    <>
       {/* Modal detalhe */}
       {(detalhe !== null || loadingDet) && (() => {
         const nHist = (detalhe?.historico_comunicacoes || []).length;
@@ -1562,7 +1588,7 @@ export default function TransfereGovPropostas({
         </Modal>
         );
       })()}
-    </div>
+    </>
   );
 }
 

@@ -124,6 +124,28 @@ def test_colegiado_e_marcado():
     assert linhas[0]["colegiado"] is True
 
 
+def test_colegiado_sem_tipo_e_marcado_pelo_nome():
+    """A voluntária não traz `tipo`: medido na Freitas, "BANCADA DE MINAS GERAIS"
+    e "COM. CULTURA" saíam como pessoa sem partido."""
+    linhas = unificar_federais([], [], [], [], [
+        {"numero_proposta": "1/2024", "parlamentar": "BANCADA DE MINAS GERAIS",
+         "valor_emenda": 1.0, "municipal": True},
+        {"numero_proposta": "2/2024", "parlamentar": "COM. CULTURA",
+         "valor_emenda": 1.0, "municipal": True},
+        {"numero_proposta": "3/2024", "parlamentar": "Domingos Savio",
+         "valor_emenda": 1.0, "municipal": True}])
+    por_id = {l["id"]: l["colegiado"] for l in linhas}
+    assert por_id == {"1/2024": True, "2/2024": True, "3/2024": False}
+
+
+def test_orgao_no_lugar_do_autor_nao_vira_parlamentar():
+    """No SIGCON o responsável às vezes é a Secretaria de Estado."""
+    from routers.emendas_parlamentares import _autor
+    a = _autor("SECRETARIA DE ESTADO DE EDUCAÇÃO", {"SECRETARIA DE ESTADO DE EDUCAÇÃO": {"partido": "X"}})
+    assert a == {"nome": "SECRETARIA DE ESTADO DE EDUCAÇÃO", "pessoa": False, "cadastro": None}
+    assert _autor("Diego Andrade", {"Diego Andrade": {"partido": "PSD"}})["pessoa"] is True
+
+
 def test_filtros_antes_dos_totais():
     linhas = unificar_federais(
         [_carteira(), _carteira(codigo="202311110001", ano=2023, autor="Outra",

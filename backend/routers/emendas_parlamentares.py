@@ -51,6 +51,7 @@ from services.cadastro_parlamentar import cadastros_por_nome
 from services.conteudo_rs import AVISO_EMENDAS, EMENDAS
 from services.emendas_unificadas import filtrar, totais, unificar_federais
 from services.natureza import e_municipal
+from services.nome_parlamentar import e_pessoa
 from services.registro_rotas import declarado, exige
 
 router = APIRouter(prefix="/api/emendas-parlamentares", tags=["emendas-parlamentares"])
@@ -98,10 +99,19 @@ async def _consulta(db: AsyncSession, sql: str, params: dict) -> list[dict]:
         return []
 
 
+def _autor(nome: str, cadastros: dict) -> dict:
+    """Um autor como a tela o desenha. `pessoa` falso = bancada, comissão ou
+    órgão: no SIGCON o "responsável" às vezes é a SECRETARIA DE ESTADO DE
+    EDUCAÇÃO (medido na Freitas, 17/09/2026), e a tela não pode pôr isso num
+    cartão de parlamentar."""
+    pessoa = e_pessoa(nome)
+    return {"nome": nome, "pessoa": pessoa,
+            "cadastro": cadastros.get(nome) if pessoa else None}
+
+
 def _com_parlamentar(linhas: list[dict], cadastros: dict, campo: str = "autores") -> None:
     for l in linhas:
-        nomes = l.get(campo) or []
-        l["parlamentares"] = [{"nome": n, "cadastro": cadastros.get(n)} for n in nomes]
+        l["parlamentares"] = [_autor(n, cadastros) for n in l.get(campo) or []]
 
 
 # ---------------------------------------------------------------------------
@@ -183,8 +193,9 @@ async def federais(
     cadastros = await cadastros_por_nome(
         db, {n for l in linhas if not l["colegiado"] for n in l["autores"]})
     for l in linhas:
-        l["parlamentares"] = [{"nome": n, "cadastro": None if l["colegiado"] else cadastros.get(n)}
-                              for n in l["autores"]]
+        l["parlamentares"] = [
+            {**_autor(n, cadastros), **({"pessoa": False, "cadastro": None} if l["colegiado"] else {})}
+            for n in l["autores"]]
     return {
         "tem_dados": bool(todas),
         # O estado e o aviso da CARTEIRA continuam valendo: dizem se a execução
@@ -397,7 +408,9 @@ async def detalhe(
                         autores=[linha[0]["parlamentar"]] if linha and linha[0]["parlamentar"] else [])
     elif origem == "voluntaria":
         dados = await carregar_voluntaria(db, municipio_id, ident)
-        if dados is None:
+        # ⚠️ SÓ PROPOSTA COM EMENDA, a mesma regra da lista (`_fontes_federais`):
+        # sem ela, a permissão de emendas abriria qualquer convênio do município.
+        if dados is None or not (dados.get("parlamentar") or (dados.get("valor_emenda") or 0) > 0):
             raise HTTPException(404, "Proposta não encontrada neste município")
         resposta.update(dados=dados, autores=[
             n.strip() for n in str(dados.get("parlamentar") or "").split(",") if len(n.strip()) >= 3])
@@ -437,7 +450,7 @@ async def detalhe(
 
     autores = resposta.pop("autores", []) or []
     cadastros = await cadastros_por_nome(db, autores)
-    resposta["parlamentares"] = [{"nome": n, "cadastro": cadastros.get(n)} for n in autores]
+    resposta["parlamentares"] = [_autor(n, cadastros) for n in autores]
     return resposta
 
 

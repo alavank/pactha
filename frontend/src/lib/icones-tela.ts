@@ -69,6 +69,9 @@ const ICONES: Record<string, Icone> = {
   "/dashboard/emendas-rs": BadgeDollarSign,
   "/dashboard/tce-rs": Scale,                     // tribunal de contas
 
+  // A tela com abas (17/09/2026). As quatro rotas acima e abaixo que viraram
+  // aba ficam no mapa: redirecionam, mas o histórico de uso ainda as cita.
+  "/dashboard/emendas-parlamentares": UserCircle2,
   "/dashboard/agendamentos": CalendarClock,
   "/dashboard/parlamentares": UserCircle2,        // o que faltava, no print do dono
 
