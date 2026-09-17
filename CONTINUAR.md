@@ -113,9 +113,7 @@ sistema operando sozinho. Se você só ler um bloco deste arquivo, leia este:
 3. **Observabilidade honesta** (PR #160): `ingestion_log` com `success`/`parcial`/`erro`
    reais; watchdog com staleness POR MUNICÍPIO (agregado, anti-spam; credencial falhando
    = nota, nunca alarme — regra do dono); paginação validada contra o total oficial.
-   O canal Telegram do watchdog foi **removido em 05/09/2026** (nunca teve token em
-   tenant nenhum): o alerta sai no log, na tabela `watchdog_historico` (aba Status dos
-   Dados) e, se `WATCHDOG_WEBHOOK_URL` estiver setada, num POST JSON genérico.
+   Canais do alerta (log, `watchdog_historico`, webhook, Telegram): §1.22.
 4. **Selo "Atualizado em" nas telas** (PR #164): CAUC/CAGEC já tinham; Convênios
    Estaduais e Emendas ganharam — só data com coleta saudável (`tentativas=0`), senão
    avisa sem afirmar causa. Emendas têm carimbo próprio (`fonte='sigcon_emendas'`).
@@ -1185,6 +1183,16 @@ parece melhora de meia linha: no Markdown legado o `_` abre itálico, e as fonte
 **Um vigia não pode ter um modo de falhar que depende do nome do que ele vigia.** Vai em
 texto puro, marcadores removidos, hierarquia por emoji. Travado em
 `tests/test_watchdog_canais.py`.
+
+⚠️ **Login gov.br expirado não alarmava — alarma desde 17/09/2026.** De 14 a 17/09 a
+sessão morreu nos **seis** tenants e ninguém soube por ~2 dias: o `govbr-renew` escrevia
+`needs_recapture` de hora em hora só no log do container. O `govbr_sessao` do keepalive,
+que já estava no banco, não serve de gatilho — mede o `/private/` das mandatárias, caído em
+100% das rodadas da Freitas de 06 a 12/09 com o login bom. Agora o renew grava a fonte
+`govbr_sso` (`success` / `erro`) e o watchdog manda **🔑 sessão gov.br caída — recapturar**
+depois de 3h sem renovação ok (`WATCHDOG_SESSAO_H`), repetindo a cada 12h
+(`WATCHDOG_SESSAO_COOLDOWN_MIN`), com o que parou e o que fazer. Tenant que nunca capturou
+(`no_session`) não é cobrado. Travado em `tests/test_watchdog_sessao_govbr.py`.
 
 ⚠️ **E o log ia vazar o token.** O token vai **na URL** da API do Telegram, e o `urllib` põe
 a URL na mensagem do `HTTPError`. A primeira versão confiava no corte em 120 caracteres —

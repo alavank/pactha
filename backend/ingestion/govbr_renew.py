@@ -195,8 +195,8 @@ def _status_sessao(private_ok: bool, exec_ok: bool, prest_ok: bool) -> tuple:
     return "parcial", vivos, frase
 
 
-def _registra_sessao(private_ok: bool, exec_ok: bool, prest_ok: bool) -> None:
-    """Grava a saude da sessao gov.br em `ingestion_log`.
+def _grava_estado(source: str, status: str, n: int, erro: str | None) -> None:
+    """Uma linha em `ingestion_log`, no regime MUDA-OU-VENCE (ver HEARTBEAT_MIN).
 
     ⚠️ POR QUE ISTO PRECISOU EXISTIR: a saude da sessao so vivia no LOG DO
     CONTAINER, que e efemero. "Ha quantas horas a sessao esta viva ou morta" era
@@ -208,15 +208,14 @@ def _registra_sessao(private_ok: bool, exec_ok: bool, prest_ok: bool) -> None:
     sessao morta.
 
     Best-effort de verdade: qualquer falha aqui e engolida. Este e um registro de
-    OBSERVACAO — derrubar o keepalive por causa dele seria trocar a coleta pela
-    contabilidade da coleta."""
-    status, vivos, frase = _status_sessao(private_ok, exec_ok, prest_ok)
+    OBSERVACAO — derrubar o keepalive ou a renovacao por causa dele seria trocar a
+    coleta pela contabilidade da coleta."""
     try:
         conn = psycopg2.connect(_sync_url())
         with conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT status, finished_at FROM ingestion_log "
-                "WHERE source = %s ORDER BY id DESC LIMIT 1", (SOURCE_SESSAO,))
+                "WHERE source = %s ORDER BY id DESC LIMIT 1", (source,))
             ult = cur.fetchone()
             if ult and ult[0] == status and ult[1] is not None:
                 cur.execute("SELECT EXTRACT(epoch FROM (now() - %s)) / 60", (ult[1],))
@@ -227,10 +226,42 @@ def _registra_sessao(private_ok: bool, exec_ok: bool, prest_ok: bool) -> None:
                 "INSERT INTO ingestion_log (source, status, records_inserted, "
                 "error_message, started_at, finished_at) "
                 "VALUES (%s, %s, %s, %s, NOW(), NOW())",
-                (SOURCE_SESSAO, status, vivos, frase if status != "success" else None))
+                (source, status, n, erro if status != "success" else None))
         conn.close()
     except Exception as e:
-        log.info(f"registro da sessao nao gravado ({str(e)[:70]}) — keepalive segue")
+        log.info(f"registro de {source} nao gravado ({str(e)[:70]}) — coleta segue")
+
+
+def _registra_sessao(private_ok: bool, exec_ok: bool, prest_ok: bool) -> None:
+    """Saude dos tres SPs que o keepalive navega (`govbr_sessao`)."""
+    status, vivos, frase = _status_sessao(private_ok, exec_ok, prest_ok)
+    _grava_estado(SOURCE_SESSAO, status, vivos, frase)
+
+
+# O LOGIN gov.br em si (SSO), e nao os SPs de cima. ⚠️ Sao sinais DIFERENTES, e
+# foi confundi-los que deixou os seis tenants 2 dias sem sessao sem ninguem saber
+# (14-17/09/2026): o `govbr_sessao` mede o /private/ das mandatarias, que vive
+# caido MESMO com o SSO bom (medido na Freitas de 06 a 12/09: CAIU em 100% das
+# rodadas), entao ninguem podia alarmar por ele. Quem sabe que o login expirou e
+# o renew() — e ate aqui ele so dizia isso no log efemero do container.
+# Quem le esta fonte: watchdog_coleta._sessao_govbr_caida (o nome e repetido la
+# de proposito, para o vigia nao importar Playwright/crypto; teste garante).
+SOURCE_SSO = "govbr_sso"
+FRASE_SSO_EXPIROU = "SSO gov.br expirou — recapturar pela extensao do Chrome"
+FRASE_SEM_SESSAO = "nenhuma sessao gov.br no Cofre"
+
+
+def _registra_sso(resultado: str) -> None:
+    """'reconnected' vira success; o resto vira erro com a frase que diz o que fazer.
+
+    `no_session` tem frase PROPRIA: tenant que nunca capturou sessao nao e sessao
+    caida, e o vigia nao pode cobrar recaptura de quem nunca capturou."""
+    if resultado == "reconnected":
+        _grava_estado(SOURCE_SSO, "success", 1, None)
+    elif resultado == "no_session":
+        _grava_estado(SOURCE_SSO, "erro", 0, FRASE_SEM_SESSAO)
+    else:
+        _grava_estado(SOURCE_SSO, "erro", 0, FRASE_SSO_EXPIROU)
 
 
 def _save_cookies(cofre_id: int, cookies_pw: list) -> None:
@@ -400,4 +431,9 @@ async def keepalive() -> str:
 if __name__ == "__main__":
     import sys
     modo = sys.argv[1] if len(sys.argv) > 1 else "renew"
-    print(asyncio.run(keepalive() if modo == "keepalive" else renew()))
+    if modo == "keepalive":
+        print(asyncio.run(keepalive()))
+    else:
+        resultado = asyncio.run(renew())
+        _registra_sso(resultado)
+        print(resultado)
