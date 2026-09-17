@@ -9,7 +9,7 @@ from database import get_db
 from routers import (
     auth, municipios, convenios, cofre, service_tokens,
     session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, dou_to, dou_rs,
-    fns, transferegov, emendas_federais, export_pdf,
+    fns, transferegov, emendas_federais, emendas_parlamentares, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, siconfi, negativos, acordofes, control, freshness, painel, bi,
     sismob, obrasgov, parcerias, faf_planos, investsus, auditoria, permissoes,
@@ -196,6 +196,10 @@ app.include_router(transferegov.router)
 # Fica junto do transferegov de proposito: as duas sao do mesmo grupo do menu
 # e a emenda federal aparecia ate aqui embutida nas telas dele.
 app.include_router(emendas_federais.router)
+# Emendas parlamentares numa tela so (17/09/2026): Federais | Estaduais |
+# Parlamentares. Cada aba cobra a chave que ja existia — nao ha tela nova no
+# catalogo. Ver o cabecalho de routers/emendas_parlamentares.py.
+app.include_router(emendas_parlamentares.router)
 app.include_router(export_pdf.router)
 app.include_router(users.router)
 app.include_router(simec.router)

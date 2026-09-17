@@ -326,14 +326,24 @@ async def detalhe_proposta(
     `municipio_id` gravado. Mesmo desenho do detalhe da Transferencia Especial.
     """
     ensure_tela(current, "parcerias")
+    achado = await carregar_proposta(db, id_proposta)
+    if achado is None:
+        raise HTTPException(404, "Proposta não encontrada nesta base")
+    ensure_municipio_access(current, achado[0])
+    return achado[1]
+
+
+async def carregar_proposta(db: AsyncSession, id_proposta: int) -> Optional[tuple]:
+    """`(municipio_id, payload)` da proposta, SEM gate — o chamador confere o
+    município DA LINHA. Reusado pela tela de Emendas parlamentares (17/09/2026).
+    `None` = a proposta não está nesta base."""
     row = (await db.execute(text(
         "SELECT municipio_id, raw_data, detalhe, detalhe_atualizado_em, atualizado_em "
         "  FROM parcerias_propostas WHERE id_proposta = :p "
         " ORDER BY atualizado_em DESC NULLS LAST LIMIT 1"
     ), {"p": id_proposta})).first()
     if not row:
-        raise HTTPException(404, "Proposta não encontrada nesta base")
-    ensure_municipio_access(current, row[0])
+        return None
     fonte_em = None
     try:
         fonte_em = (await db.execute(text(
@@ -341,7 +351,7 @@ async def detalhe_proposta(
         ))).scalar_one_or_none()
     except Exception:
         await db.rollback()
-    return {
+    return row[0], {
         "proposta": row[1] if isinstance(row[1], dict) else None,
         "detalhe": row[2] if isinstance(row[2], dict) else None,
         "detalhe_atualizado_em": _d(row[3]),

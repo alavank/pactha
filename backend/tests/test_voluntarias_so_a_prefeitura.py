@@ -98,7 +98,10 @@ def test_o_coletor_grava_natureza_e_municipal(monkeypatch):
 NAO_SOMAM = {
     ("routers/control.py", "*"): "Central: conta o banco inteiro, é operação",
     ("routers/freshness.py", "*"): "frescor da fonte: quando e quanto chegou",
-    ("routers/transferegov.py", "voluntarias_detalhe"): "UMA proposta, pelo número",
+    ("routers/transferegov.py", "carregar_voluntaria"): "UMA proposta, pelo número",
+    ("routers/emendas_parlamentares.py", "_fontes_federais"): "lista TODAS marcadas "
+        "com `municipal`, e `emendas_unificadas.totais` soma só as da prefeitura "
+        "(guardado em test_emendas_parlamentares.py)",
     ("routers/transferegov.py", "voluntarias_arvore_lista"): "UMA proposta, pelo número "
         "(pagamentos/licitações/liquidações paginados)",
     ("routers/transferegov.py", "listar_pac"): "elo PAC→voluntária, por número; não soma",
