@@ -1653,6 +1653,46 @@ truncado: a rodada sai `partial` e grava `lista_ok=false` no upsert.
 
 **Município sem `cnpj` cadastrado** não vê essa porta, e a tela avisa.
 
+## 1.28. Emendas parlamentares numa tela só — PR 1: o cadastro de parlamentares (17/09/2026)
+
+**Pedido do dono:** juntar numa tela, com abas Federais | Estaduais | Parlamentares, o
+que hoje está em 4 itens de menu, e trazer partido, cargo e foto do autor.
+
+A série tem 3 PRs, cada um contra `main`:
+1. cadastro;
+2. backend unificado;
+3. tela.
+
+O plano está no começo desta sessão.
+
+**Nenhuma fonte de emenda traz partido, cargo ou foto.** A exceção é o FNS, com
+`sgPartido` no raw. A tabela `parlamentares` antiga existe, mas ninguém a preenche.
+
+**PR 1: `ingestion/parlamentares_cadastro.py`** grava `parlamentares_cadastro` e
+`parlamentares_apelidos` (migration `add_parlamentares_cadastro.sql`).
+- **Câmara:** legislaturas 52–57, com partido por legislatura e foto.
+- **Senado:** legislaturas 52–57. A lista não traz partido nem foto:
+  - o partido sai de `lista/atual`, e só existe para quem está em exercício;
+  - a foto tem URL fixa pelo código.
+- **ALMG:** só a legislatura atual (situações 1–3). Sem foto e sem histórico na API.
+- **Onde roda:** `run_dadosabertos_cron`, com auto-limite de 20 h, e entra no vigia com 30 h.
+
+**Casamento pelo nome** (`services/nome_parlamentar.py::chave_nome` + `escolhe_cadastro`),
+medido contra o `siconv_emenda.zip`: **99,05% das emendas federais individuais**.
+- A chave tira acento, apóstrofo **e espaço**: a fonte escreve "CHICO D ANGELO" e a
+  Câmara, "Chico D'Angelo".
+- As grafias se somam (`nomes_norm TEXT[]`), porque a Câmara renomeia o deputado entre
+  legislaturas. Guardar só a última custava 1.400 emendas.
+- Homônimos na mesma legislatura ("Bebeto" PP-RJ × PSB-BA) **não casam**.
+- A mesma pessoa nas duas casas (Reginete Bispo, suplente no Senado e deputada) volta com
+  os dois cargos.
+- Os 17 maiores sem casamento viraram apelido curado na migration.
+
+**Limites:**
+- o partido é o da legislatura mais recente, não o do dia da emenda;
+- senador que saiu antes de 2026 fica sem partido;
+- deputado estadual de MG de legislatura passada não casa.
+
 ## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
 
 Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#496, branch

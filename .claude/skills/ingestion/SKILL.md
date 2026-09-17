@@ -227,6 +227,25 @@ Reads 50 of the zips and hangs everything on the proposals **already in the DB**
     proposals, and a situação ~19 h fresher than the dump. The lote still lists every
     município in its rodízio.
 
+## Parliamentarian registry — party, UF, cargo, photo (`ingestion/parlamentares_cadastro.py`, 17/09/2026)
+
+No amendment source carries the author's party, cargo or photo, only a name. The
+registry reads Câmara (legislaturas 52–57), Senado (52–57) and ALMG (current only). It
+runs inside `run_dadosabertos_cron` with a 20 h self-limit.
+- **Match by name only through `services/nome_parlamentar.py::chave_nome`.** The key
+  keeps letters only, without accents, apostrophes or spaces. Then
+  `escolhe_cadastro` picks the record. Measured: 99,05% of the individual federal
+  amendments in `siconv_emenda.zip`.
+- **Name spellings accumulate** (`nomes_norm TEXT[]`), because the Câmara renames the
+  same deputy between legislaturas.
+- **Homonyms in the same legislatura return None.** A wrong party next to a name is
+  worse than none.
+- **Source typos and long civil names** go in `parlamentares_apelidos`, curated with the
+  reason.
+- **The Senado list per legislatura has no party.** Party comes only from `lista/atual`,
+  and the upsert `COALESCE`s so a senator who left keeps the party already stored.
+- **The registry never deletes.** A house that fails makes the run `partial`.
+
 ## Authenticated sources
 
 **SIGCON** needs a logged-in session. It reuses a session captured by the Chrome extension
