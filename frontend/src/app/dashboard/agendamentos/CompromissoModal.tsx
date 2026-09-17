@@ -34,6 +34,7 @@ import {
   Selo,
 } from "@/components/ui/superficies";
 import type { MunicipioEscolha } from "@/components/TransicaoMunicipio";
+import { VisualizadorDocumento } from "@/components/ui/VisualizadorDocumento";
 import {
   Anotacao, Coluna, Compromisso, CorPaleta, MapaFeriados, diaBR,
   ehFeriadoDeVerdade, estiloDaCor, hojeISO, horarioDe, mascaraTelefone, minutos,
@@ -519,8 +520,7 @@ export default function CompromissoModal({
             <ul className="space-y-1">
               {item.anexos.map((ax, i) => (
                 <li key={`${ax.nome}-${i}`}>
-                  <BotaoAnexo id={item.id} idx={i} nome={ax.nome}
-                              onErro={setErro} />
+                  <BotaoAnexo id={item.id} idx={i} nome={ax.nome} />
                 </li>
               ))}
             </ul>
@@ -599,47 +599,32 @@ function Leitura({ children, forte }: { children: ReactNode; forte?: boolean }) 
   );
 }
 
-/** ⚠️ CONFERE O STATUS ANTES DE SALVAR O ARQUIVO. O `baixarAnexo` do
- *  `AnotacaoModal` faz `.then(r => r.blob())` SEM olhar `r.ok`: quando o backend
- *  recusa (403 de quem não tem `anexo_baixar`, 404 de índice fora da lista), o
- *  corpo de ERRO vira blob e desce no disco com o nome do documento. A pessoa
- *  recebe um "oficio.pdf" de 90 bytes com `{"detail":"..."}` dentro, sem aviso
- *  nenhum, e conclui que o arquivo está corrompido no sistema. */
-function BotaoAnexo({ id, idx, nome, onErro }: {
-  id: number; idx: number; nome: string; onErro: (m: string) => void;
-}) {
-  const [baixando, setBaixando] = useState(false);
-  const baixar = async () => {
-    setBaixando(true);
-    try {
-      const r = await api.get(`/agendamentos/${id}/anexo/${idx}`,
-                              { responseType: "blob" });
-      const url = URL.createObjectURL(r.data);
-      const a = document.createElement("a");
-      a.href = url; a.download = nome; a.click();
-      URL.revokeObjectURL(url);
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: Blob; status?: number } };
-      let msg = "Não foi possível baixar o anexo.";
-      if (err?.response?.status === 403) {
-        msg = "Você não tem permissão para baixar anexos (peça "
-            + "«Agendamentos → Baixar anexos» ao administrador).";
-      } else {
-        try {
-          const txt = await err.response?.data?.text();
-          msg = JSON.parse(txt || "{}").detail || msg;
-        } catch { /* corpo não era JSON */ }
-      }
-      onErro(msg);
-    } finally { setBaixando(false); }
-  };
+/** O anexo ABRE no VisualizadorDocumento (Baixar e Imprimir lá dentro) — era
+ *  download direto. A leitura do erro mora no visualizador: 403 de quem não tem
+ *  `anexo_baixar` e 404 de índice fora da lista viram mensagem, nunca um
+ *  "oficio.pdf" de 90 bytes com `{"detail":"..."}` dentro. */
+function BotaoAnexo({ id, idx, nome }: { id: number; idx: number; nome: string }) {
+  const [aberto, setAberto] = useState(false);
   return (
-    <button type="button" onClick={baixar} disabled={baixando}
-            className="inline-flex items-center gap-1.5 text-[12px] underline"
-            style={{ color: "var(--bi-accent-ink)" }}>
-      {baixando ? <Loader2 className="size-3 animate-spin" />
-                : <Paperclip className="size-3" />}
-      {nome}
-    </button>
+    <>
+      <button type="button" onClick={() => setAberto(true)}
+              className="inline-flex items-center gap-1.5 text-[12px] underline"
+              style={{ color: "var(--bi-accent-ink)" }}>
+        <Paperclip className="size-3" />
+        {nome}
+      </button>
+      <VisualizadorDocumento
+        nivel={2}
+        onFechar={() => setAberto(false)}
+        doc={aberto ? {
+          titulo: nome,
+          sub: "Anexo do compromisso",
+          src: `/agendamentos/${id}/anexo/${idx}`,
+          nomeArquivo: nome,
+          mensagem403: "Você não tem permissão para abrir anexos (peça "
+                     + "«Agendamentos → Baixar anexos» ao administrador).",
+        } : null}
+      />
+    </>
   );
 }

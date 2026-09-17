@@ -9,6 +9,7 @@ import { Search, Loader2, Eye, Download, Newspaper } from "lucide-react";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
 import { diarioDaUf } from "@/lib/estadual";
 import { TituloTela } from "@/components/TituloTela";
+import { VisualizadorDocumento, type DocumentoAlvo } from "@/components/ui/VisualizadorDocumento";
 
 interface JmgItem {
   id_jornal: number;
@@ -99,33 +100,31 @@ export default function DouMGPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [abrindo, setAbrindo] = useState<number | null>(null);
+  // "Visualizar" abre o PDF no modal, sem sair do PACTHA (regra do
+  // VisualizadorDocumento). Era `window.open(blob)` numa aba nova.
+  const [doc, setDoc] = useState<DocumentoAlvo | null>(null);
 
-  // Ve/baixa a publicacao PELA plataforma (proxy backend extrai o PDF do JMG).
-  const abrirPublicacao = async (id: number, download: boolean) => {
+  // Baixa a publicacao PELA plataforma (proxy backend extrai o PDF do JMG).
+  // Passa pelo `api` e nao por `fetch` com o `pactha_token` do localStorage —
+  // o token que `lib/api.ts` apaga no primeiro refresh; por `fetch` o download
+  // ficava sem a renovacao silenciosa.
+  const baixarPublicacao = async (id: number) => {
     setAbrindo(id);
     setError(null);
     try {
-      const token = localStorage.getItem("pactha_token");
-      const res = await fetch(`${api.defaults.baseURL}${base}/publicacao/${id}?download=${download}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-        credentials: "include",
+      const r = await api.get(`${base}/publicacao/${id}`, {
+        params: { download: true }, responseType: "blob",
       });
-      if (!res.ok) throw new Error(String(res.status));
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      if (download) {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${(prov?.api || "").replace("/", "")}-${id}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } else {
-        window.open(url, "_blank");
-      }
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(prov?.api || "").replace("/", "")}-${id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch {
-      setError("Não foi possível abrir a publicação. Tente novamente.");
+      setError("Não foi possível baixar a publicação. Tente novamente.");
     } finally {
       setAbrindo(null);
     }
@@ -189,9 +188,6 @@ export default function DouMGPage() {
     // ⚠️ Mesmo conserto do `dashboard/convenios`: `pactha_token` é apagado do
     // localStorage no primeiro refresh, e `Bearer null` ATROPELA o cookie bom
     // no backend (o Bearer é lido antes). Pelo `api` vai o cookie e há retry.
-    //
-    // Note que `abrirPublicacao`, logo acima neste mesmo arquivo, JÁ protegia o
-    // header (`token ? {...} : {}`) e por isso nunca quebrou — era só esta.
     api.get(`/export-pdf/dou?${qs.toString()}`, { responseType: "blob" })
       .then((r) => {
         const u = URL.createObjectURL(r.data as Blob);
@@ -348,7 +344,14 @@ export default function DouMGPage() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          onClick={() => abrirPublicacao(it.id_jornal, false)}
+                          onClick={() => setDoc({
+                            titulo: `${prov?.titulo || "Diário Oficial"} — ${fmtDate(it.data_publicacao)}`,
+                            sub: `${it.tipo_caderno ? `${it.tipo_caderno} · ` : ""}página ${it.pagina ?? "—"} · jornal ${it.id_jornal}`,
+                            src: `${base}/publicacao/${it.id_jornal}?download=false`,
+                            urlFonte: it.url_visualizar,
+                            nomeArquivo: `${base.replace("/", "")}-${it.id_jornal}`,
+                            mensagem403: "Você não tem permissão para abrir o Diário Oficial (peça «Diário Oficial → Ver» ao administrador).",
+                          })}
                           disabled={carregando}
                           title="Visualizar publicação"
                           aria-label="Visualizar publicação"
@@ -358,7 +361,7 @@ export default function DouMGPage() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          onClick={() => abrirPublicacao(it.id_jornal, true)}
+                          onClick={() => baixarPublicacao(it.id_jornal)}
                           disabled={carregando}
                           title="Baixar publicação"
                           aria-label="Baixar publicação"
@@ -411,6 +414,8 @@ export default function DouMGPage() {
           )}
         </Bloco>
       )}
+
+      <VisualizadorDocumento doc={doc} onFechar={() => setDoc(null)} />
     </div>
   );
 }
