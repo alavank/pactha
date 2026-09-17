@@ -487,6 +487,73 @@ def _municipios_defasados(cur) -> list[dict]:
     return achados
 
 
+# LOGIN gov.br EXPIRADO. Gravado por `govbr_renew._registra_sso` (a cada renovacao
+# horaria). O nome e a frase sao repetidos aqui, e nao importados, de proposito:
+# o `govbr_renew` puxa Playwright e `services.crypto`, e o vigia nao pode deixar
+# de rodar porque um desses nao importou. `test_watchdog_sessao_govbr.py` garante
+# que os dois lados continuam iguais.
+SOURCE_SSO = "govbr_sso"
+FRASE_SEM_SESSAO = "nenhuma sessao gov.br no Cofre"
+# 3h = tres renovacoes horarias seguidas falhando. Uma so pode ser o portal fora
+# do ar por minutos (o renew le isso como "nao autenticado"); tres e o SSO.
+SESSAO_LIMITE_H = float(os.getenv("WATCHDOG_SESSAO_H", "3") or "3")
+# ⚠️ COOLDOWN PROPRIO, mais longo que o padrao (180 min). Sessao caida so volta
+# com uma PESSOA fazendo login — repetir a cada 3h nos seis tenants seriam 48
+# mensagens por dia, e alarme que enche o canal ensina a silenciar o canal.
+SESSAO_COOLDOWN_MIN = int(os.getenv("WATCHDOG_SESSAO_COOLDOWN_MIN", "720") or "720")
+
+
+def _sessao_govbr_caida(cur) -> list[dict]:
+    """O login gov.br deste tenant expirou ha mais de SESSAO_LIMITE_H.
+
+    ⭐ POR QUE EXISTE: de 14 a 17/09/2026 a sessao morreu nos SEIS tenants e
+    ninguem soube por ~2 dias. O `govbr-renew` escrevia `needs_recapture` toda hora
+    — no log do container. E o `govbr_sessao` do keepalive, que ESTA no banco, nao
+    serve de gatilho: ele mede o /private/ das mandatarias, caido quase sempre
+    mesmo com o SSO bom. Sem sessao param o detalhe dos convenios, NEs, Termos de
+    Notificacao, Projeto Basico e os anexos do TransfereGov — e so uma pessoa
+    resolve (o login tem reCAPTCHA).
+
+    Nao alarma: tenant sem nenhuma linha (task nao existe) e tenant que NUNCA
+    capturou sessao (`FRASE_SEM_SESSAO`) — cobrar recaptura de quem nunca capturou
+    e o alarme eterno que este modulo evita em todo lugar."""
+    cur.execute("SELECT status, error_message FROM ingestion_log "
+                "WHERE source = %s ORDER BY id DESC LIMIT 1", (SOURCE_SSO,))
+    ult = cur.fetchone()
+    if not ult or (ult[0] or "").lower() in STATUS_SUCESSO or ult[1] == FRASE_SEM_SESSAO:
+        return []
+    # Desde quando: a ultima renovacao boa; sem nenhuma, a primeira linha da
+    # fonte. ⚠️ O segundo ramo e o do DEPLOY DESTE VIGIA: em 17/09/2026 os seis
+    # tenants ja estavam sem sessao, entao `govbr_sso` nasce sem um unico success
+    # — exigir um sucesso anterior deixaria o alarme mudo exatamente agora.
+    cur.execute("""
+        SELECT EXTRACT(EPOCH FROM (now() - t)) / 3600.0,
+               to_char(t AT TIME ZONE 'America/Sao_Paulo', 'DD/MM HH24:MI'),
+               ok
+        FROM (
+          SELECT coalesce(
+                   max(finished_at) FILTER (WHERE lower(coalesce(status, '')) = ANY(%s)),
+                   min(finished_at)) AS t,
+                 bool_or(lower(coalesce(status, '')) = ANY(%s)) AS ok
+          FROM ingestion_log WHERE source = %s
+        ) x
+    """, (list(STATUS_SUCESSO), list(STATUS_SUCESSO), SOURCE_SSO))
+    idade_h, quando, teve_ok = cur.fetchone()
+    if idade_h is None or float(idade_h) < SESSAO_LIMITE_H:
+        return []
+    desde = (f"ultima renovacao ok em {quando} (Brasilia)" if teve_ok
+             else f"sem renovacao ok desde que o vigia passou a medir, {quando} (Brasilia)")
+    return [{
+        "tipo": "sessao_govbr_caida",
+        "chave": SOURCE_SSO,
+        "detalhe": (f"Login gov.br expirado ha {float(idade_h):.0f}h — {desde}.\n"
+                    "Parado: detalhe dos convenios, NEs, Termos de Notificacao, "
+                    "Projeto Basico e anexos do TransfereGov.\n"
+                    "Resolver: login no gov.br no Chrome com a extensao do PACTHA "
+                    "e abrir o TransfereGov."),
+    }]
+
+
 def _processos_travados() -> list[dict]:
     """Processos de ingestao / Chromium vivos ha mais que IDADE_TRAVADO_S.
 
@@ -725,20 +792,24 @@ def main() -> None:
         logger.info("frescor esperado neste tenant: %s",
                     ", ".join(sorted(esperado)) or "(nenhuma fonte)")
         achados = (_fontes_paradas(cur, esperado) + _municipios_defasados(cur)
-                   + _processos_travados())
+                   + _sessao_govbr_caida(cur) + _processos_travados())
         if not achados:
             logger.info("coleta saudavel: nenhuma fonte parada, nenhum municipio defasado, nenhum processo travado")
         else:
             _ICONES = {"processo_travado": "\U0001F534", "fonte_parada": "\U0001F7E0",
                        "municipio_defasado": "\U0001F7E1",
                        # Chave: e acao de PESSOA (trocar a senha), nao de maquina.
-                       "credencial_recusada": "\U0001F511"}
+                       "credencial_recusada": "\U0001F511",
+                       # Mesma natureza: so uma pessoa faz o login.
+                       "sessao_govbr_caida": "\U0001F511"}
             _TITULOS = {"processo_travado": "processo travado", "fonte_parada": "fonte parada",
                         "municipio_defasado": "municipios defasados",
-                        "credencial_recusada": "credencial recusada — coleta suspensa"}
+                        "credencial_recusada": "credencial recusada — coleta suspensa",
+                        "sessao_govbr_caida": "sessao gov.br caida — recapturar"}
             enviados = 0
             for a in achados:
-                if _deve_alertar(cur, a["tipo"], a["chave"], cooldown):
+                cd = SESSAO_COOLDOWN_MIN if a["tipo"] == "sessao_govbr_caida" else cooldown
+                if _deve_alertar(cur, a["tipo"], a["chave"], cd):
                     conn.commit()
                     icone = _ICONES.get(a["tipo"], "\U0001F7E0")
                     titulo = _TITULOS.get(a["tipo"], a["tipo"])

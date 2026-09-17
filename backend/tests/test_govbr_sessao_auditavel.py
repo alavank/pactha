@@ -79,7 +79,9 @@ def test_o_heartbeat_evita_afogar_o_painel():
     import inspect
 
     from ingestion import govbr_renew as m
-    src = inspect.getsource(m._registra_sessao)
+    # A regra mora no `_grava_estado`, que o registro dos SPs e o do login usam.
+    assert "_grava_estado(" in inspect.getsource(m._registra_sessao)
+    src = inspect.getsource(m._grava_estado)
     assert "ORDER BY id DESC LIMIT 1" in src, "sem ler a ultima linha nao ha como comparar"
     assert "HEARTBEAT_MIN" in src
 
@@ -91,6 +93,6 @@ def test_o_registro_NUNCA_derruba_o_keepalive():
     import inspect
 
     from ingestion import govbr_renew as m
-    src = inspect.getsource(m._registra_sessao)
+    src = inspect.getsource(m._grava_estado)
     assert "except Exception" in src
-    assert "keepalive segue" in src
+    assert "coleta segue" in src
