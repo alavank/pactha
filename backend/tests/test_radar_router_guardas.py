@@ -238,6 +238,9 @@ def test_o_contador_do_menu_usa_o_MESMO_filtro_da_tela():
     """
     fonte = open(R.__file__, encoding="utf-8").read()
     trecho = fonte[fonte.index("async def contagem"):]
+    # Só o corpo da contagem: a ficha (18/09/2026), declarada abaixo, lê as
+    # tabelas filhas `programas_captacao_*` — e isso não é a contagem.
+    trecho = trecho[:trecho.index("\n# ---")]
 
     assert "_CTE_ABERTOS" in trecho, "a contagem não usa a CTE compartilhada"
     assert "_FILTRO_ABERTOS" in trecho, "a contagem não usa o filtro compartilhado"

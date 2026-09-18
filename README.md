@@ -68,7 +68,9 @@ e Nova Palma (01/09/2026) nasceram do zero, e a segunda expos um bug de ORDEM da
 **Federais:** TransfereGov (portal Discricionarias + dumps SICONV/Novo PAC em
 `api-publica.transferegov.gestao.gov.br`), radar de captacao (`siconv_programa.zip` — a
 unica tela que olha para FRENTE, com janela de proposta ainda aberta; mais
-`siconv_programa_proponentes.zip` para os programas que ja nomeiam o municipio pelo CNPJ), FNS (pagamentos D-1),
+`siconv_programa_proponentes.zip` para os programas que ja nomeiam o municipio pelo CNPJ;
+cada programa abre uma ficha com propostas, edicoes anteriores e emendas indicadas —
+CONTINUAR §1.30), FNS (pagamentos D-1),
 InvestSUS/ConsultaFNS (fundo a fundo por bloco), CAUC/STN, SISMOB, Obras.gov.br/CIPI,
 SIMEC/PAR, SICONFI/Tesouro (contas entregues + CAPAG), Portal da Transparencia/CGU
 (emendas parlamentares federais: a carteira sai do dump `siconv_emenda.zip` casada pelo
