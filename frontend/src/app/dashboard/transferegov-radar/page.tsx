@@ -29,6 +29,7 @@ import {
   Bloco, BlocoHead, ItemLinha, Lista, Numero, Selo, Vazio,
 } from "@/components/ui/superficies";
 import { TituloTela } from "@/components/TituloTela";
+import { FichaPrograma } from "./FichaPrograma";
 
 interface Programa {
   id_programa: string;
@@ -93,6 +94,8 @@ export default function RadarPage() {
   const [d, setD] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState(false);
+  /** O programa cuja ficha está aberta. */
+  const [ficha, setFicha] = useState<string | null>(null);
 
   const carregar = useCallback(() => {
     if (!municipioId) return;
@@ -213,7 +216,7 @@ export default function RadarPage() {
 
       <Bloco className="p-3">
         <BlocoHead icon={Radar} titulo="Programas abertos"
-                   sub="do prazo mais curto para o mais longo" />
+                   sub="do prazo mais curto para o mais longo · clique para ver a ficha" />
         {ps.length === 0 ? (
           /* ⚠️ Vazio COM coleta é informação, e a frase diz isso. "Nenhum
              resultado" deixaria a dúvida entre não-há e não-buscamos. */
@@ -227,6 +230,7 @@ export default function RadarPage() {
             {ps.map((p) => (
               <ItemLinha
                 key={p.id_programa}
+                onClick={() => setFicha(p.id_programa)}
                 titulo={
                   <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span>{p.nome}</span>
@@ -321,6 +325,10 @@ export default function RadarPage() {
           </a>
         </div>
       </Bloco>
+      {ficha && municipioId && (
+        <FichaPrograma key={`${municipioId}:${ficha}`} idPrograma={ficha} municipioId={municipioId}
+                       onFechar={() => setFicha(null)} />
+      )}
     </div>
   );
 }

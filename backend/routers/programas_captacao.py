@@ -26,6 +26,8 @@ apareceria para cliente daqueles estados. O radar é FEDERAL e vale para os 27.
 """
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -271,3 +273,204 @@ async def contagem(
 
     return {"total": int(linha[0] or 0),
             "dias_mais_proximo": int(linha[1]) if linha and linha[1] is not None else None}
+
+
+# ---------------------------------------------------------------- ficha ---
+
+_SELECT_FICHA = """        SELECT id_programa, nome, orgao, modalidade, cod_programa, acao_orcamentaria,
+               subtipo, ufs, naturezas, dt_disponibilizacao,
+               dt_ini_receb, dt_fim_receb, dt_ini_emenda, dt_fim_emenda,
+               dt_ini_benef, dt_fim_benef, porta_receb, porta_emenda, porta_benef,
+               nomeado, hoje_br, edicoes_anteriores, ficha_em
+          FROM base
+"""
+
+# Contagem por fase — a MESMA expressão para a edição aberta e para as
+# anteriores, nacional e na UF, para as quatro caixas não divergirem.
+_CONTA_FASES = """
+        SELECT count(*) AS propostas,
+               count(*) FILTER (WHERE fase = 'aprovada')  AS aprovadas,
+               count(*) FILTER (WHERE fase = 'rejeitada') AS rejeitadas,
+               count(*) FILTER (WHERE fase = 'andamento') AS andamento,
+               count(*) FILTER (WHERE uf = :uf) AS propostas_uf,
+               count(*) FILTER (WHERE uf = :uf AND fase = 'aprovada')  AS aprovadas_uf,
+               count(*) FILTER (WHERE uf = :uf AND fase = 'rejeitada') AS rejeitadas_uf,
+               -- ⚠️ "REPASSE MEDIANO DAS APROVADAS", nunca "valor do programa":
+               -- é o que cada prefeitura pediu e levou, e a fonte não publica
+               -- teto nem dotação (ver `add_programas_captacao.sql`).
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY vl_repasse)
+                   FILTER (WHERE fase = 'aprovada' AND vl_repasse > 0) AS repasse_mediano,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY vl_contrapartida / NULLIF(vl_global, 0))
+                   FILTER (WHERE fase = 'aprovada' AND vl_global > 0
+                           AND vl_contrapartida IS NOT NULL) AS contrapartida_mediana
+          FROM programas_captacao_propostas
+         WHERE id_programa = ANY(:ids)
+"""
+
+
+def _data(v):
+    return v.isoformat() if v else None
+
+
+def _num(v):
+    return float(v) if v is not None else None
+
+
+def _fases(r) -> dict:
+    return {"propostas": r["propostas"], "aprovadas": r["aprovadas"],
+            "rejeitadas": r["rejeitadas"], "andamento": r["andamento"],
+            "uf": {"propostas": r["propostas_uf"], "aprovadas": r["aprovadas_uf"],
+                   "rejeitadas": r["rejeitadas_uf"]},
+            "repasse_mediano": _num(r["repasse_mediano"]),
+            "contrapartida_mediana": _num(r["contrapartida_mediana"])}
+
+
+# ⚠️ DECLARADA DEPOIS DE `/contagem`, e a ordem importa: o FastAPI casa as rotas
+# na ordem em que foram registradas, e `/{id_programa}` antes dela engoliria
+# "contagem" como id — o contador do menu passaria a receber 404.
+@router.get("/{id_programa}", dependencies=[exige("transferegov_radar.ver")])
+async def ficha(
+    id_programa: str,
+    municipio_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """A ficha de UM programa aberto, para o município: prazos, situação do
+    município, concorrência, edições anteriores, exemplos aprovados e quem indica.
+
+    ⚠️ O PROGRAMA PASSA PELO MESMO FILTRO DA LISTA (`_FILTRO_ABERTOS`). Ficha de
+    programa vencido, de outra UF ou que só o consórcio assina seria a porta que
+    não abre, agora com mais detalhe — 404 é a resposta honesta.
+    """
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "transferegov_radar")
+
+    mun = (await db.execute(text(
+        "SELECT nome, upper(coalesce(uf, '')), regexp_replace(coalesce(cnpj, ''), '\\D', '', 'g'), "
+        "regexp_replace(coalesce(ibge_code, ''), '\\D', '', 'g') "
+        "FROM municipios WHERE id = :m"), {"m": municipio_id})).first()
+    if mun is None:
+        raise HTTPException(404, "Município não encontrado")
+    nome_mun, uf, cnpj, ibge = mun[0], mun[1].strip(), mun[2] or "", mun[3] or ""
+    if not uf:
+        raise HTTPException(404, "Município sem UF cadastrada")
+
+    p = (await db.execute(
+        text(_CTE_ABERTOS + _SELECT_FICHA + _FILTRO_ABERTOS + "           AND id_programa = :id\n"),
+        {"uf": uf, "nat": NATUREZA_PREFEITURA, "cnpj": cnpj, "id": id_programa},
+    )).mappings().first()
+    if p is None:
+        raise HTTPException(404, "Programa não está aberto para este município hoje")
+
+    hoje = p["hoje_br"]
+
+    def janela(ini, fim, aberta):
+        return {"inicio": _data(ini), "fim": _data(fim), "aberta": bool(aberta),
+                "dias": (fim - hoje).days if (fim and aberta) else None}
+
+    programa = {
+        "id_programa": p["id_programa"], "nome": p["nome"], "orgao": p["orgao"],
+        "modalidade": p["modalidade"], "cod_programa": p["cod_programa"],
+        "acao_orcamentaria": p["acao_orcamentaria"], "subtipo": p["subtipo"],
+        "ufs": sorted(p["ufs"] or []),
+        "consorcio_tambem": "Consórcio Público" in (p["naturezas"] or []),
+        "dt_disponibilizacao": _data(p["dt_disponibilizacao"]),
+        "dias_publicado": (hoje - p["dt_disponibilizacao"]).days if p["dt_disponibilizacao"] else None,
+        "janelas": {
+            "recebimento": janela(p["dt_ini_receb"], p["dt_fim_receb"], p["porta_receb"]),
+            "emenda": janela(p["dt_ini_emenda"], p["dt_fim_emenda"], p["porta_emenda"]),
+            "beneficiario": janela(p["dt_ini_benef"], p["dt_fim_benef"], p["porta_benef"]),
+        },
+        "nomeado": bool(p["nomeado"]),
+    }
+    resp = {"municipio": {"nome": nome_mun, "uf": uf, "cnpj_cadastrado": bool(cnpj),
+                          "ibge_cadastrado": bool(ibge)},
+            "programa": programa,
+            # ⚠️ `ficha_em` NULL = ficha ainda não montada para este programa.
+            # A tela mostra os blocos abaixo como PENDENTES, nunca como zero:
+            # "ninguém propôs" dito sobre uma tabela que não foi lida é mentira.
+            "ficha_em": p["ficha_em"].isoformat() if p["ficha_em"] else None}
+    if p["ficha_em"] is None:
+        return resp
+
+    edicoes = p["edicoes_anteriores"] or []
+    if isinstance(edicoes, str):  # driver sem decodificação de JSONB
+        edicoes = json.loads(edicoes)
+    ids_ant = [e["id"] for e in edicoes if e.get("id")]
+    todos = [id_programa] + ids_ant
+
+    # SUA SITUAÇÃO — ⚠️ proposta por IBGE (pega a prefeitura E o fundo municipal,
+    # que tem CNPJ próprio), indicação por CNPJ (é a única chave do arquivo).
+    # Nunca por nome: "SANTA MARIA" casaria Santa Maria do Herval.
+    suas = []
+    if ibge:
+        suas = (await db.execute(text("""
+            SELECT id_programa, ano, dt_proposta, nr_proposta, situacao, fase,
+                   vl_repasse, vl_global, objeto, proponente
+              FROM programas_captacao_propostas
+             WHERE id_programa = ANY(:ids) AND ibge = :ibge
+             ORDER BY (id_programa = :id) DESC, dt_proposta DESC NULLS LAST
+             LIMIT 30"""), {"ids": todos, "ibge": ibge, "id": id_programa})).mappings().all()
+    indicacoes = []
+    if cnpj:
+        indicacoes = (await db.execute(text("""
+            SELECT parlamentar, solicitante, indicacao, nr_emenda, valor
+              FROM programas_captacao_apoiadores
+             WHERE id_programa = :id AND cnpj = :cnpj
+             ORDER BY valor DESC NULLS LAST"""), {"id": id_programa, "cnpj": cnpj})).mappings().all()
+    resp["situacao"] = {
+        "indicacoes": [{"parlamentar": r["parlamentar"], "solicitante": r["solicitante"],
+                        "indicacao": r["indicacao"], "nr_emenda": r["nr_emenda"],
+                        "valor": _num(r["valor"])} for r in indicacoes],
+        "propostas": [{"edicao_atual": r["id_programa"] == id_programa, "ano": r["ano"],
+                       "data": _data(r["dt_proposta"]), "nr_proposta": r["nr_proposta"],
+                       "situacao": r["situacao"], "fase": r["fase"],
+                       "vl_repasse": _num(r["vl_repasse"]), "vl_global": _num(r["vl_global"]),
+                       "objeto": r["objeto"], "proponente": r["proponente"]} for r in suas],
+    }
+
+    atual = (await db.execute(text(_CONTA_FASES), {"uf": uf, "ids": [id_programa]})).mappings().first()
+    resp["concorrencia"] = _fases(atual)
+    anteriores = None
+    if ids_ant:
+        anteriores = (await db.execute(text(_CONTA_FASES), {"uf": uf, "ids": ids_ant})).mappings().first()
+    resp["historico"] = {"edicoes": edicoes,
+                         "fases": _fases(anteriores) if anteriores else None}
+
+    # EXEMPLOS: o que OUTRAS prefeituras aprovaram — da UF primeiro, depois do
+    # país; edição aberta e anteriores. É o que substitui a descrição que o
+    # arquivo não traz: o gestor entende o que o programa paga vendo o que já
+    # passou.
+    exemplos = (await db.execute(text("""
+        SELECT id_programa, ano, uf, proponente, objeto, vl_repasse
+          FROM programas_captacao_propostas
+         WHERE id_programa = ANY(:ids) AND fase = 'aprovada'
+           AND objeto IS NOT NULL AND coalesce(ibge, '') <> :ibge
+         ORDER BY (uf = :uf) DESC NULLS LAST, ano DESC NULLS LAST, vl_repasse DESC NULLS LAST
+         LIMIT 8"""), {"ids": todos, "uf": uf, "ibge": ibge})).mappings().all()
+    resp["exemplos"] = [{"edicao_atual": r["id_programa"] == id_programa, "ano": r["ano"],
+                         "uf": r["uf"], "proponente": r["proponente"], "objeto": r["objeto"],
+                         "vl_repasse": _num(r["vl_repasse"])} for r in exemplos]
+
+    # QUEM INDICA: parlamentares e comissões com emenda neste programa para
+    # prefeituras da UF — o gabinete a procurar na próxima rodada.
+    quem = (await db.execute(text("""
+        SELECT parlamentar, solicitante, count(DISTINCT cnpj) AS municipios,
+               sum(valor) AS valor
+          FROM programas_captacao_apoiadores
+         WHERE id_programa = :id AND uf = :uf
+         GROUP BY parlamentar, solicitante
+         ORDER BY sum(valor) DESC NULLS LAST
+         LIMIT 12"""), {"id": id_programa, "uf": uf})).mappings().all()
+    total = (await db.execute(text("""
+        SELECT count(*) AS indicacoes, count(DISTINCT cnpj) AS municipios,
+               count(DISTINCT cnpj) FILTER (WHERE uf = :uf) AS municipios_uf
+          FROM programas_captacao_apoiadores WHERE id_programa = :id"""),
+        {"id": id_programa, "uf": uf})).mappings().first()
+    resp["apoiadores"] = {
+        "indicacoes": total["indicacoes"], "municipios": total["municipios"],
+        "municipios_uf": total["municipios_uf"],
+        "na_uf": [{"parlamentar": r["parlamentar"], "solicitante": r["solicitante"],
+                   "municipios": r["municipios"], "valor": _num(r["valor"])} for r in quem],
+    }
+    return resp

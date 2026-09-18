@@ -1653,6 +1653,46 @@ truncado: a rodada sai `partial` e grava `lista_ok=false` no upsert.
 
 **Município sem `cnpj` cadastrado** não vê essa porta, e a tela avisa.
 
+## 1.30. Radar de captação: a ficha do programa (18/09/2026)
+
+Pedido do dono: mais dinâmica no radar, com o programa clicável e mais detalhe. Cada
+programa da lista agora abre um modal (`FichaPrograma.tsx`,
+`GET /api/programas-captacao/{id_programa}`), montado só com dump aberto. Tem seis blocos:
+- **prazos e portas**: início e fim de cada janela, data de publicação, UFs habilitadas
+  por extenso e botão de copiar o código;
+- **situação do município**: emenda indicada (parlamentar, solicitante, valor) e propostas
+  do município nesta edição e nas anteriores;
+- **concorrência** na edição aberta, no país e na UF;
+- **outras edições** do programa: aprovação, repasse mediano das aprovadas e contrapartida;
+- **o que outras prefeituras aprovaram**: objeto das aprovadas, da UF primeiro;
+- **quem indica emenda na UF**.
+
+**Fonte:** `ficha()` em `ingestion/programas_captacao.py`, que roda depois do `run()`.
+- Tem linha própria no `ingestion_log` (`programas_captacao_ficha`, vigiada a 30h).
+- Auto-limite de 20h (`PROGRAMAS_FICHA_MIN_INTERVAL_H`), exceto quando um programa
+  ativo ainda não tem ficha.
+- Lê `siconv_programa_proposta`, `siconv_proposta` e `apoiadores_emendas_programas`.
+- Grava em `programas_captacao_propostas` e `programas_captacao_apoiadores`, e em
+  `edicoes_anteriores`/`ficha_em` (migration `add_programas_captacao_ficha.sql`).
+- Medido no dump de 18/09: 114 programas, 65 com outra edição, 64.153 propostas de
+  prefeitura, 5.311 indicações e 38 s de processamento. Conferido ponta a ponta num
+  Postgres 16 local: lista e contador batem, e a ficha abre em todos os programas de Santa
+  Maria (42), Nova Palma (38) e Monte Sião (37).
+
+**Decisões que não se refazem:**
+- **"Outra edição" = mesmo órgão + mesmo nome sem o ano.** A chave por ação orçamentária
+  foi medida e descartada: `PACFIN25` junta Água, Mobilidade e Drenagem.
+- **Sem valor do programa.** O número é "repasse mediano das aprovadas", com esse rótulo.
+- **Proposta por IBGE** (pega o fundo municipal, que tem CNPJ próprio) e **indicação por
+  CNPJ**, a única chave do arquivo. Nunca por nome.
+- **Só natureza municipal** (22.138 de 22.681 propostas na edição aberta).
+- **CPF do solicitante não é lido** (LGPD).
+- **`ficha_em` nulo = ficha pendente**, e a tela diz isso em vez de mostrar zero.
+- **Emenda sem indicação para o município continua visível** (decisão do dono, 18/09),
+  como já decidido na §1.27: a lista cresce durante a janela.
+- Arquivo de proposta ilegível ou vazio não troca a tabela (`error`). Apoiadores ilegíveis
+  ou zerados com tabela cheia preservam a anterior (`partial`).
+
 ## 1.29. O CI ficou sem crédito — o build foi para a VPS e voltou (17-18/09/2026)
 
 Em 17/09, logo depois do merge do #503, **todo job do GitHub Actions passou a falhar em 4

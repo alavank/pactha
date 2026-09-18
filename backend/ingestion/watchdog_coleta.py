@@ -131,6 +131,11 @@ FRESCOR_HORAS_NACIONAL = {
     # aberto no Brasil nao e resultado plausivel), entao um arquivo que mudou de
     # layout aparece aqui como fonte parada, e nao como sucesso silencioso.
     "programas_captacao": 30,
+    # A FICHA do radar (18/09/2026): mesma chamada, linha PROPRIA no log e
+    # auto-limite de 20h (PROGRAMAS_FICHA_MIN_INTERVAL_H) -> cadencia real
+    # diaria, 30h = um dia + folga. 'partial' (apoiadores ilegiveis) nao conta
+    # como sucesso aqui, entao um dia inteiro assim tambem apita.
+    "programas_captacao_ficha": 30,
     # CADASTRO DE PARLAMENTARES (Camara/Senado/ALMG). Mesmo cron do radar e
     # auto-limite de 20h, como o SICONFI: cadencia real diaria, 30h = um dia +
     # folga. Casa fora do ar grava 'partial'; as tres fora, 'error'.

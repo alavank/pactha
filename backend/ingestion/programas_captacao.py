@@ -49,6 +49,18 @@ Esgoto entre eles), Santa Maria em 13, Monte Siao em 3, e nenhum aparecia.
 - recebimento: nenhum programa aberto hoje tem lista.
 Por isso a coleta guarda a lista de CNPJs e quem decide e o router.
 
+⭐ A FICHA DO PROGRAMA (18/09/2026, `ficha()`), o que a tela mostra ao clicar.
+Etapa PROPRIA, com linha propria no `ingestion_log` (`programas_captacao_ficha`)
+e auto-limite de 20h: o radar roda 4x/dia e a ficha le o `siconv_proposta`
+(205 MB zipado, 13 s localmente), que muda uma vez por dia. Falha dela nao
+mexe na lista, e vice-versa. Medido no dump de 18/09/2026, com 114 programas
+abertos:
+- EDICOES ANTERIORES por (orgao, nome sem o ano): 65 dos 114 tem. A chave por
+  acao orcamentaria foi medida e DESCARTADA: `PACFIN25` junta Agua, Mobilidade e
+  Drenagem, e `114420ZV` junta 64 programas de bancadas de estados diferentes.
+- PROPOSTAS DE PREFEITURA: 22.138 na edicao aberta e 42.003 nas anteriores.
+- APOIADORES: 5.311 indicacoes em 27 programas, 176 parlamentares/comissoes.
+
 Rodar:  DATABASE_URL_SYNC=... python -u ingestion/programas_captacao.py
 """
 from __future__ import annotations
@@ -56,10 +68,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
+import unicodedata
 from datetime import date, datetime
 
 import psycopg2
+from psycopg2.extras import execute_values
 
 # ⚠️ SEM ESTA LINHA O COLETOR NAO SOBE DO JEITO QUE O CRON O CHAMA. O comando da
 # Scheduled Task e `python -u ingestion/programas_captacao.py`, que poe
@@ -72,7 +87,7 @@ import psycopg2
 # defeito so aparecia rodando o comando REAL, nao o `pytest`.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from ingestion.transferegov_opendata import _linhas  # noqa: E402
+from ingestion.transferegov_opendata import _linhas, _money  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("programas_captacao")
@@ -81,6 +96,32 @@ FONTE = "programas_captacao"
 ARQUIVO = "siconv_programa.zip"
 ARQUIVO_LISTA = "siconv_programa_proponentes.zip"
 ARQUIVO_PROPONENTES = "siconv_proponentes.zip"
+
+FONTE_FICHA = "programas_captacao_ficha"
+ARQUIVO_PROGRAMA_PROPOSTA = "siconv_programa_proposta.zip"
+ARQUIVO_PROPOSTA = "siconv_proposta.zip"
+ARQUIVO_APOIADORES = "apoiadores_emendas_programas.zip"
+FICHA_MIN_INTERVALO_H = float(os.getenv("PROGRAMAS_FICHA_MIN_INTERVAL_H", "20") or "20")
+# Objeto mediano tem 66 caracteres e o maior, 4.978 (medido em 18/09/2026). A
+# tela mostra exemplo, nao plano de trabalho.
+OBJETO_MAX = 600
+MUNICIPAL = "Administração Pública Municipal"
+
+# ⚠️ CABECALHO CONFERIDO PELO NOME, coluna por coluna. O risco do dump e coluna
+# renomeada, nao filtro ignorado: sem esta lista, um `.get()` de nome velho
+# devolveria None em toda linha e a ficha sairia "sem proposta nenhuma".
+COLUNAS_PROPOSTA = ("ID_PROPOSTA", "NATUREZA_JURIDICA", "SIT_PROPOSTA", "UF_PROPONENTE",
+                    "COD_MUNIC_IBGE", "IDENTIF_PROPONENTE", "NM_PROPONENTE", "NR_PROPOSTA",
+                    "ANO_PROP", "DIA_PROPOSTA", "VL_GLOBAL_PROP", "VL_REPASSE_PROP",
+                    "VL_CONTRAPARTIDA_PROP", "OBJETO_PROPOSTA")
+# ⚠️ SEM `CPF_PF_SOLICITANTE_APOIADORES_EMENDAS` DE PROPOSITO: e CPF de pessoa
+# fisica, nenhuma tela usa, e o que nao se le nao vaza (LGPD).
+COLUNAS_APOIADORES = ("ID_PROGRAMA", "NUMERO_EMENDA_APOIADORES_EMENDAS",
+                      "NOME_PARLAMENTAR_APOIADORES_EMENDAS",
+                      "PARLAMENTAR_SOLICITANTE_APOIADORES_EMENDAS",
+                      "INDICACAO_APOIADORES_EMENDAS", "CNPJ_PROPONENTE_APOIADORES_EMENDAS",
+                      "NOME_PROPONENTE_APOIADORES_EMENDAS",
+                      "VALOR_REPASSE_PROPOSTA_APOIADORES_EMENDAS")
 
 # As duas naturezas que interessam a uma prefeitura. O consorcio entra porque
 # muitos municipios captam por ele; a TELA filtra so o que a prefeitura propoe
@@ -299,6 +340,160 @@ def listas_de_proponentes(ids_programa, linhas_lista, linhas_proponentes) -> dic
             for pid, s in por_programa.items()}
 
 
+# ------------------------------------------------------------------ ficha ---
+
+def _faltam(linha: dict, colunas) -> list[str]:
+    return [c for c in colunas if c not in linha]
+
+
+def nome_chave(nome) -> str:
+    """O nome do programa sem acento, caixa, pontuacao e ANO. Funcao PURA.
+
+    "Novo PAC - Mobilidade Urbana Sustentavel" de 2024, 2025 e 2026 viram a mesma
+    chave; "... 2025" e "... 2026" tambem. Nome que o dump publica com `?` no
+    lugar do acento ("AGROPECU?RIO") nao casa com o grafado certo — perde-se uma
+    edicao, mas nunca se casa programa errado.
+    """
+    s = unicodedata.normalize("NFKD", str(nome or "")).encode("ascii", "ignore").decode().upper()
+    s = re.sub(r"\b(19|20)\d\d\b", " ", s)
+    return re.sub(r"[^A-Z0-9]+", " ", s).strip()
+
+
+def edicoes_anteriores(abertos: dict[str, tuple[str, str]], linhas) -> dict[str, list[dict]] | None:
+    """{id_aberto: [{id, ano, nome}, ...]} — as outras edicoes de cada programa
+    aberto: mesmo orgao, mesmo `nome_chave`, id diferente e fora da lista de
+    abertos. PURA. `abertos` e {id: (cod_orgao, nome)}.
+
+    Todo aberto sai no resultado, com lista vazia quando nao ha edicao: vazio e
+    "olhamos e nao ha", e o router so o diz porque `ficha_em` esta preenchido.
+    Devolve None quando o cabecalho mudou.
+    """
+    dono: dict[tuple[str, str], list[str]] = {}
+    for pid, (orgao, nome) in abertos.items():
+        k = ((orgao or "").strip(), nome_chave(nome))
+        if k[1]:
+            dono.setdefault(k, []).append(pid)
+    achados: dict[str, dict[str, dict]] = {pid: {} for pid in abertos}
+    for i, l in enumerate(linhas):
+        if i == 0 and _faltam(l, ("ID_PROGRAMA", "NOME_PROGRAMA", "COD_ORGAO_SUP_PROGRAMA")):
+            log.error(f"{ARQUIVO}: cabecalho sem as colunas da edicao anterior")
+            return None
+        pid = (l["ID_PROGRAMA"] or "").strip()
+        if not pid or pid in abertos:
+            continue
+        k = ((l["COD_ORGAO_SUP_PROGRAMA"] or "").strip(), nome_chave(l["NOME_PROGRAMA"]))
+        for aberto in dono.get(k, ()):
+            # O arquivo repete o programa uma vez por UF: fica a primeira.
+            achados[aberto].setdefault(pid, {
+                "id": pid, "ano": _int(l.get("ANO_DISPONIBILIZACAO")),
+                "nome": (l["NOME_PROGRAMA"] or "").strip()})
+    return {pid: sorted(v.values(), key=lambda e: (-(e["ano"] or 0), e["id"]))
+            for pid, v in achados.items()}
+
+
+def fase(situacao) -> str:
+    """SIT_PROPOSTA -> aprovada | rejeitada | andamento. PURA.
+
+    ⚠️ "Proposta Aprovada e Plano de Trabalho em Analise" E APROVADA: a proposta
+    passou, falta o plano. Contar como andamento esconderia 3.961 aprovacoes num
+    recorte de 102 mil propostas medido em 18/09/2026.
+    "Eliminada em Chamamento Publico" e rejeicao. "Cadastrados" (rascunho que
+    nao foi enviado) e andamento: nao foi decidido.
+    """
+    s = str(situacao or "").strip().lower()
+    if "rejeitad" in s or "eliminad" in s:
+        return "rejeitada"
+    if s.startswith("proposta/plano de trabalho aprovad") or s.startswith("proposta aprovada"):
+        return "aprovada"
+    return "andamento"
+
+
+def ligar_propostas(linhas, alvo) -> dict[str, set[str]] | None:
+    """{id_proposta: {id_programa, ...}} das propostas dos programas em `alvo`. PURA."""
+    alvo = set(alvo)
+    ligadas: dict[str, set[str]] = {}
+    for i, l in enumerate(linhas):
+        if i == 0 and _faltam(l, ("ID_PROGRAMA", "ID_PROPOSTA")):
+            log.error(f"{ARQUIVO_PROGRAMA_PROPOSTA}: cabecalho sem ID_PROGRAMA/ID_PROPOSTA")
+            return None
+        pid = (l["ID_PROGRAMA"] or "").strip()
+        if pid in alvo:
+            ligadas.setdefault((l["ID_PROPOSTA"] or "").strip(), set()).add(pid)
+    return ligadas
+
+
+def propostas_de_prefeitura(linhas, ligadas: dict[str, set[str]]) -> list[tuple] | None:
+    """As linhas de `programas_captacao_propostas`, uma por (programa, proposta). PURA.
+
+    So natureza municipal (ver a migration). Devolve None quando o cabecalho mudou.
+    """
+    saida: list[tuple] = []
+    for i, l in enumerate(linhas):
+        if i == 0 and _faltam(l, COLUNAS_PROPOSTA):
+            log.error(f"{ARQUIVO_PROPOSTA}: faltam {_faltam(l, COLUNAS_PROPOSTA)}")
+            return None
+        ip = (l["ID_PROPOSTA"] or "").strip()
+        progs = ligadas.get(ip)
+        if not progs or (l["NATUREZA_JURIDICA"] or "").strip() != MUNICIPAL:
+            continue
+        sit = (l["SIT_PROPOSTA"] or "").strip()
+        base = (ip, _int(l["ANO_PROP"]), data_br(l["DIA_PROPOSTA"]),
+                (l["UF_PROPONENTE"] or "").strip().upper()[:2] or None,
+                (l["COD_MUNIC_IBGE"] or "").strip()[:7] or None,
+                cnpj_de(l["IDENTIF_PROPONENTE"]),
+                (l["NM_PROPONENTE"] or "").strip() or None,
+                (l["NR_PROPOSTA"] or "").strip()[:30] or None,
+                sit or None, fase(sit),
+                _money(l["VL_GLOBAL_PROP"]), _money(l["VL_REPASSE_PROP"]),
+                _money(l["VL_CONTRAPARTIDA_PROP"]),
+                (l["OBJETO_PROPOSTA"] or "").strip()[:OBJETO_MAX] or None)
+        for pid in sorted(progs):
+            saida.append((pid,) + base)
+    return saida
+
+
+def apoiadores_dos_abertos(linhas, abertos) -> list[dict] | None:
+    """As indicacoes de emenda dos programas abertos. PURA. None = cabecalho mudou."""
+    abertos = set(abertos)
+    saida: list[dict] = []
+    for i, l in enumerate(linhas):
+        if i == 0 and _faltam(l, COLUNAS_APOIADORES):
+            log.error(f"{ARQUIVO_APOIADORES}: faltam {_faltam(l, COLUNAS_APOIADORES)}")
+            return None
+        pid = (l["ID_PROGRAMA"] or "").strip()
+        if pid not in abertos:
+            continue
+        saida.append({
+            "id_programa": pid,
+            "nr_emenda": (l["NUMERO_EMENDA_APOIADORES_EMENDAS"] or "").strip()[:20] or None,
+            "parlamentar": (l["NOME_PARLAMENTAR_APOIADORES_EMENDAS"] or "").strip() or None,
+            "solicitante": (l["PARLAMENTAR_SOLICITANTE_APOIADORES_EMENDAS"] or "").strip() or None,
+            "indicacao": (l["INDICACAO_APOIADORES_EMENDAS"] or "").strip()[:40] or None,
+            "cnpj": cnpj_de(l["CNPJ_PROPONENTE_APOIADORES_EMENDAS"]),
+            "proponente": (l["NOME_PROPONENTE_APOIADORES_EMENDAS"] or "").strip() or None,
+            "valor": _money(l["VALOR_REPASSE_PROPOSTA_APOIADORES_EMENDAS"]),
+        })
+    return saida
+
+
+def ufs_por_cnpj(linhas, cnpjs) -> dict[str, str] | None:
+    """{CNPJ: UF} dos proponentes pedidos, do cadastro `siconv_proponentes`. PURA.
+
+    O arquivo de apoiadores nao traz UF, e "quem indica na sua UF" depende dela.
+    Medido em 18/09/2026: os 3.150 CNPJs indicados estao todos no cadastro.
+    """
+    cnpjs = set(cnpjs)
+    saida: dict[str, str] = {}
+    for i, l in enumerate(linhas):
+        if i == 0 and _faltam(l, ("IDENTIF_PROPONENTE", "UF_PROPONENTE")):
+            log.error(f"{ARQUIVO_PROPONENTES}: cabecalho sem IDENTIF_PROPONENTE/UF_PROPONENTE")
+            return None
+        c = cnpj_de(l["IDENTIF_PROPONENTE"])
+        if c in cnpjs:
+            saida[c] = (l["UF_PROPONENTE"] or "").strip().upper()[:2]
+    return saida
+
+
 _SQL = """
     INSERT INTO programas_captacao
         (id_programa, cod_programa, nome, orgao, cod_orgao, modalidade,
@@ -475,14 +670,166 @@ def run() -> int:
                 pass
 
 
+# Horas desde a ficha MAIS VELHA entre os programas ativos; NULL quando algum
+# ainda nao tem ficha (programa publicado depois da ultima montagem) — ai monta
+# de novo sem esperar as 20h, senao o programa novo ficaria um dia sem ficha.
+_SQL_IDADE_FICHA = """
+    SELECT CASE WHEN bool_or(ficha_em IS NULL) THEN NULL
+                ELSE EXTRACT(EPOCH FROM NOW() - min(ficha_em)) / 3600 END
+      FROM programas_captacao WHERE ausente_desde IS NULL
+"""
+
+_COLS_PROPOSTAS = ("id_programa, id_proposta, ano, dt_proposta, uf, ibge, cnpj, proponente, "
+                   "nr_proposta, situacao, fase, vl_global, vl_repasse, vl_contrapartida, objeto")
+_COLS_APOIADORES = ("id_programa, nr_emenda, parlamentar, solicitante, indicacao, cnpj, "
+                    "proponente, uf, valor")
+
+
+def _troca(cur, tabela: str, colunas: str, linhas: list[tuple]) -> None:
+    """Troca a tabela inteira. Chamada DENTRO da transacao da montagem: quem le
+    no meio ve a versao antiga inteira (MVCC), nunca metade."""
+    cur.execute(f"DELETE FROM {tabela}")
+    if linhas:
+        execute_values(cur, f"INSERT INTO {tabela} ({colunas}) VALUES %s", linhas,
+                       page_size=1000)
+
+
+def ficha(forcar: bool = False) -> str | None:
+    """Monta a ficha dos programas ativos. Devolve o status gravado no
+    `ingestion_log`, ou None quando o auto-limite de 20h pulou a rodada.
+
+    Duas partes independentes, e o status diz qual falhou:
+    - PROPOSTAS + EDICOES (`siconv_programa`, `siconv_programa_proposta`,
+      `siconv_proposta`): sem elas nao ha ficha, e `ficha_em` NAO avanca —
+      a tela continua dizendo "ficha pendente" em vez de "ninguem propos".
+      Falha = 'error'.
+    - APOIADORES (`apoiadores_emendas_programas` + UF de `siconv_proponentes`):
+      falha preserva a tabela anterior e sai 'partial'.
+    """
+    cn = psycopg2.connect(_dsn())
+    cur = cn.cursor()
+    status, avisos, gravadas = None, [], 0
+    try:
+        cur.execute(_SQL_IDADE_FICHA)
+        idade = (cur.fetchone() or [None])[0]
+        if not forcar and idade is not None and float(idade) < FICHA_MIN_INTERVALO_H:
+            log.info(f"ficha montada ha {float(idade):.1f}h — pulo (limite "
+                     f"{FICHA_MIN_INTERVALO_H:.0f}h)")
+            return None
+
+        status = "error"
+        cur.execute("SELECT id_programa, cod_orgao, nome FROM programas_captacao "
+                    "WHERE ausente_desde IS NULL")
+        abertos = {r[0]: (r[1] or "", r[2] or "") for r in cur.fetchall()}
+        if not abertos:
+            avisos.append("nenhum programa ativo no banco — nada a montar")
+            return status
+
+        edicoes = propostas = None
+        try:
+            edicoes = edicoes_anteriores(abertos, _linhas(ARQUIVO))
+            if edicoes is not None:
+                alvo = set(abertos) | {e["id"] for es in edicoes.values() for e in es}
+                ligadas = ligar_propostas(_linhas(ARQUIVO_PROGRAMA_PROPOSTA), alvo)
+                if ligadas is not None:
+                    propostas = propostas_de_prefeitura(_linhas(ARQUIVO_PROPOSTA), ligadas)
+        except Exception as e:  # download ou zip ruim
+            log.error(f"propostas ilegiveis: {type(e).__name__}: {e}")
+        # ⚠️ ZERO PROPOSTA DE PREFEITURA EM 100+ PROGRAMAS E ARQUIVO RUIM, nao
+        # realidade (eram 64 mil em 18/09/2026). Trocar a tabela por vazio faria
+        # toda ficha dizer "ninguem propos" — pior que a ficha de ontem.
+        if not propostas:
+            avisos.append("propostas ilegiveis ou vazias — ficha anterior mantida")
+            propostas = None
+
+        apoio = None
+        try:
+            apoio = apoiadores_dos_abertos(_linhas(ARQUIVO_APOIADORES), abertos)
+            if apoio:
+                ufs = ufs_por_cnpj(_linhas(ARQUIVO_PROPONENTES),
+                                   {a["cnpj"] for a in apoio if a["cnpj"]})
+                if ufs is None:
+                    apoio = None
+                else:
+                    for a in apoio:
+                        a["uf"] = ufs.get(a["cnpj"]) or None
+        except Exception as e:
+            log.error(f"apoiadores ilegiveis: {type(e).__name__}: {e}")
+            apoio = None
+        if apoio == []:
+            # ⚠️ Vazio pode ser real (fora da temporada de emenda), mas tambem
+            # arquivo truncado. Com indicacao gravada da rodada anterior, a
+            # duvida fica com o dado antigo — o router so o mostra para programa
+            # que continua aberto.
+            cur.execute("SELECT count(*) FROM programas_captacao_apoiadores")
+            if ((cur.fetchone() or [0])[0] or 0) > 0:
+                avisos.append("zero indicacao de emenda nos programas abertos — "
+                              "mantidas as da rodada anterior")
+                apoio = None
+        elif apoio is None:
+            avisos.append("apoiadores de emenda ilegiveis — mantidos os anteriores")
+
+        if propostas is not None:
+            _troca(cur, "programas_captacao_propostas", _COLS_PROPOSTAS, propostas)
+            cur.executemany(
+                "UPDATE programas_captacao SET edicoes_anteriores = %s::jsonb, "
+                "ficha_em = NOW() WHERE id_programa = %s",
+                [(json.dumps(es, ensure_ascii=False), pid) for pid, es in edicoes.items()])
+            gravadas = len(propostas)
+        if apoio is not None:
+            _troca(cur, "programas_captacao_apoiadores", _COLS_APOIADORES,
+                   [tuple(a.get(c.strip()) for c in _COLS_APOIADORES.split(","))
+                    for a in apoio])
+        cn.commit()
+        status = "error" if propostas is None else ("partial" if avisos else "success")
+        log.info(f"ficha: {gravadas} proposta(s) de prefeitura, "
+                 f"{len(apoio) if apoio is not None else '—'} indicacao(oes) de emenda, "
+                 f"{sum(1 for es in (edicoes or {}).values() if es)} programa(s) com "
+                 f"edicao anterior")
+        return status
+    except BaseException as e:
+        status = "error"
+        avisos.append(f"rodada interrompida ({type(e).__name__}: {e})"[:300])
+        raise
+    finally:
+        if status is not None:
+            try:
+                cn.rollback()
+            except Exception:
+                pass
+            try:
+                cur.execute("INSERT INTO ingestion_log (source, status, records_inserted, "
+                            "error_message, finished_at) VALUES (%s,%s,%s,%s,NOW())",
+                            (FONTE_FICHA, status, gravadas, "; ".join(avisos) or None))
+                cn.commit()
+            except Exception as e2:
+                log.error(f"nao consegui gravar o ingestion_log da ficha: {e2}")
+        for fechar in (cur.close, cn.close):
+            try:
+                fechar()
+            except Exception:
+                pass
+
+
 # ⚠️ O `run_dadosabertos_cron` CHAMA `ingest()`, e nao `run()`. O laco dele faz
 # `m.ingest()` por convencao; sem este nome o modulo entraria na lista e
 # levantaria AttributeError, que o `except` do cron engole como aviso — a fonte
 # ficaria "registrada" e nunca coletaria, sem nada acusando.
 def ingest() -> int:
-    """Nome que o cron de dados abertos procura. Devolve o total, como os irmaos."""
-    return run()
+    """Nome que o cron de dados abertos procura. Devolve o total, como os irmaos.
+
+    A ficha vem DEPOIS da lista e so com lista gravada: ela monta sobre os
+    programas ativos no banco. Falha dela nao muda o que o `run()` devolve —
+    tem linha propria no `ingestion_log`.
+    """
+    n = run()
+    if n:
+        try:
+            ficha()
+        except Exception as e:
+            log.error(f"ficha falhou: {type(e).__name__}: {e}")
+    return n
 
 
 if __name__ == "__main__":
-    run()
+    ingest()

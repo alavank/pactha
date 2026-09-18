@@ -194,7 +194,12 @@ def test_a_porta_de_beneficiario_exige_o_CNPJ_na_lista():
 def test_a_chave_do_municipio_e_o_CNPJ_e_nunca_o_nome():
     rota = (RAIZ / "routers" / "programas_captacao.py").read_text(encoding="utf-8")
     assert "NM_PROPONENTE" not in rota
-    assert rota.count('"cnpj": cnpj') == 2, "listagem e contagem tem de mandar o mesmo CNPJ"
+    # Listagem, contagem e ficha montam a mesma CTE, e as tres tem de mandar o
+    # CNPJ normalizado — senao o selo "nomeado" diverge entre lista e ficha.
+    for funcao in ("async def radar", "async def contagem", "async def ficha"):
+        corpo = rota[rota.index(funcao):]
+        corpo = corpo[:corpo.find("\n@router", 1) if "\n@router" in corpo[1:] else len(corpo)]
+        assert "_CTE_ABERTOS" in corpo and '"cnpj": cnpj' in corpo, funcao
 
 
 def test_a_tela_mostra_o_municipio_nomeado():

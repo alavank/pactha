@@ -106,6 +106,10 @@ MIGRATION_FILES = [
     # A terceira porta do radar (beneficiario especifico) e a lista de CNPJs
     # nomeados por programa. Logo abaixo da criacao da tabela que ela altera.
     "add_programas_captacao_beneficiario.sql",
+    # A ficha do programa (18/09/2026): edicoes anteriores, propostas de
+    # prefeitura e apoiadores de emenda. Tambem altera `programas_captacao`,
+    # entao fica abaixo da criacao dela.
+    "add_programas_captacao_ficha.sql",
     # AGENDAMENTOS: a agenda de trabalho da equipe (lista, calendario e kanban).
     # ⚠️ Tem FK para `municipios` E para `users` — as duas vem do create_all dos
     # modelos, que roda ANTES desta lista. Se um dia esta migration subir para

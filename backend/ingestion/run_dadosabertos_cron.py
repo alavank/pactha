@@ -29,10 +29,14 @@ def run_all() -> None:
                       ("SISMOB", "ingestion.sismob_obras"),
                       # RADAR DE CAPTACAO: programas federais com prazo aberto.
                       # Perfil identico ao do SISMOB — dado aberto, sem login,
-                      # idempotente e LEVE (um zip de 11 MB, ~20s, 17 linhas
+                      # idempotente e LEVE (um zip de 11 MB, ~20s, ~110 linhas
                       # gravadas). Entra aqui em vez de virar Scheduled Task
-                      # porque seriam CINCO tarefas manuais no Coolify, uma por
+                      # porque seriam seis tarefas manuais no Coolify, uma por
                       # worker, para um trabalho de vinte segundos.
+                      # ⚠️ Uma vez por dia o ingest() monta tambem a FICHA dos
+                      # programas (auto-limite de 20h): le o siconv_proposta
+                      # (205 MB, o mesmo cache do transferegov_opendata) e leva
+                      # ~40 s. Linha propria no log: `programas_captacao_ficha`.
                       # ⚠️ E vem DEPOIS do SISMOB de proposito: a lista roda em
                       # ordem e o `except` abaixo isola cada fonte, entao a
                       # ultima e a que menos atrapalha se algum dia engasgar.
