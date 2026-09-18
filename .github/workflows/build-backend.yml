@@ -67,10 +67,7 @@ jobs:
     concurrency:
       group: build-backend-${{ github.ref }}-${{ matrix.name }}
       cancel-in-progress: true
-    # ⭐ RUNNER PROPRIO NA VPS desde 18/09/2026 — o plano do GitHub esgotou os
-    # minutos e todo job passou a falhar ANTES de comecar. O comentario longo,
-    # com o trade-off e a regra da janela de coleta, esta em build-frontend.yml.
-    runs-on: [self-hosted, Linux]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write        # publicar no ghcr da org
@@ -127,11 +124,6 @@ jobs:
           echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      # O disco agora e da VPS — ver o comentario gemeo em build-frontend.yml.
-      - name: Limpar cache de build antigo
-        if: always()
-        run: docker builder prune -f --filter until=168h || true
-
   # Fase D: avanca a tag no Coolify e deploya em DUAS ONDAS: as APIs primeiro
   # (rodam as migrations no boot), com o deployment de cada uma CONFIRMADO via
   # GET /deployments/{uuid} (poll no status do app seria placebo: o container
@@ -144,8 +136,8 @@ jobs:
   deploy:
     needs: build
     if: github.ref == 'refs/heads/main'
-    runs-on: [self-hosted, Linux]
-    timeout-minutes: 120  # teto de seguranca; com as duas ondas e concurrent_builds>1 o normal e poucos minutos
+    runs-on: ubuntu-latest
+    timeout-minutes: 120   # teto de seguranca; com as duas ondas e concurrent_builds>1 o normal e poucos minutos
     concurrency:
       group: deploy-backend        # serializa deploys; um novo ESPERA o atual
       cancel-in-progress: false

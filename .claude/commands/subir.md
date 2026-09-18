@@ -45,20 +45,17 @@ deixa ninguém aprovar o próprio PR. Sem a flag, o merge volta `BLOCKED`.
 
 ### 3. Acompanhar o build e o deploy
 
-O build roda no **runner próprio da VPS** (INFRA.md §2): não consome crédito do
-GitHub, e é fila — os seis frontends saem um a um.
+Primeiro confira que a `main` levou o último commit do PR: um commit empurrado
+segundos antes do merge já ficou de fora uma vez (#504).
 
 ```
+git fetch origin && git log --oneline -3 origin/main
 gh run list --branch main --limit 5 --json name,status,conclusion,databaseId
 gh run watch <id> --exit-status
 ```
 
-Se um job ficar em `queued` por mais de uns minutos, o runner provavelmente está
-parado. Confira antes de culpar o código:
-
-```
-gh api repos/alavank/pactha/actions/runners --jq '.runners[] | "\(.name): \(.status) busy=\(.busy)"'
-```
+O build roda no runner do GitHub (`ubuntu-latest`, INFRA.md §2), com os seis
+frontends em paralelo.
 
 ### 4. Dizer o que entrou
 
@@ -72,5 +69,7 @@ sem lista faz o dono abrir os seis.
   reverta o merge (`gh pr create` com o revert) — o repo não empilha PR.
 - **Deploy parcial:** os tenants ficam em versões diferentes. Ou conclua, ou
   volte todos para a tag anterior; nunca deixe metade.
-- **Sem crédito / runner fora:** o job falha antes de começar, com a mensagem
-  de pagamento. Aí o caminho é o runner (INFRA.md §2), não insistir no merge.
+- **Sem crédito:** o job falha em ~4 s, antes do primeiro passo, com a mensagem
+  de pagamento. Não é código e reexecutar não adianta: é o budget de Actions da
+  org (INFRA.md §2), e só o dono muda. Não mergeie outro PR até resolver — o
+  merge entra e o deploy não acontece.
