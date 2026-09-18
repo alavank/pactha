@@ -52,7 +52,7 @@ jobs:
     # ⚠️ RUNNER UNICO = FILA. Os seis frontends, que rodavam em paralelo no
     # Actions, agora saem um a um (~10 min no total). Quem precisar de paralelo
     # instala um segundo runner na mesma maquina.
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, Linux]
     permissions:
       contents: read
       packages: write
@@ -185,7 +185,7 @@ jobs:
     # efeito colateral BOM: as chamadas ao Coolify passam a sair da propria
     # maquina em que ele roda, entao um bloqueio de rede externa nao derruba o
     # deploy.
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, Linux]
     # Teto de seguranca. Com os seis disparados juntos (15/09/2026) o normal e a
     # duracao do mais lento, nao a soma; um timeout aqui ainda deixaria parte dos
     # tenants na tag nova e parte na velha, por isso o teto continua folgado.

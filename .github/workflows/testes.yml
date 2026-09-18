@@ -44,7 +44,7 @@ jobs:
     name: pytest (backend)
     # RUNNER PROPRIO NA VPS (18/09/2026) — ver build-frontend.yml. A suite roda
     # em ~15s e nao encosta em banco nem em rede: e o job mais barato dos quatro.
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, Linux]
     # A suite roda em ~15s. O teto e so para um travamento nao segurar um runner.
     timeout-minutes: 15
 
