@@ -2121,7 +2121,8 @@ interpolado: [`INFRA.md`](INFRA.md) §5.
    correto (5 confirmados no log); é o texto.
 
 ### 6.1 Domínios definitivos (`*.pactha.com.br`)
-Faltam **três**: `freitas`, `trust` e `novapalma-rs` ainda respondem só por `*.sslip.io`. Monte Sião e Santa Maria já têm domínio próprio (`montesiao.mg.pactha.com.br`, `santamaria.rs.pactha.com.br`), assim como a landing (`pactha.com.br`) e a Central de Comando (`control-center.pactha.com.br`). Falta decidir/criar os DNS `A` → `54.232.208.118` para os apps dos clientes e trocar os domínios no Coolify (`PATCH /applications/<uuid>` + redeploy). Lembre de ajustar `FRONTEND_URL`/`CORS_ORIGIN_REGEX` na API e rebuildar o frontend (env build-time).
+Feito: os seis clientes respondem pelo domínio próprio (conferido em 18/09/2026). A lista e
+o procedimento para cliente novo estão em INFRA.md §2.
 
 ### 6.2 Secrets opcionais por tenant (features ficam OFF até setar)
 `ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy. (`TELEGRAM_BOT_TOKEN` e `TELEGRAM_WEBHOOK_SECRET` saíram desta lista em 05/09/2026 com o módulo — nunca foram setados em tenant nenhum.)
