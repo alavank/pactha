@@ -42,6 +42,12 @@ gh pr merge <n> --squash --admin --delete-branch
 
 ⚠️ `--admin` é necessário: a ruleset da `main` exige revisão e o GitHub não
 deixa ninguém aprovar o próprio PR. Sem a flag, o merge volta `BLOCKED`.
+A mesma flag passa por cima do `pytest (backend)`, que a ruleset exige desde
+18/09 — por isso o check verde é conferido no passo 1, não aqui.
+
+O classificador do Claude Code barra este comando no modo automático ("Merge
+Without Review"). Não contorne: peça ao dono o "ok" explícito na conversa, ou
+que ele rode `! gh pr merge <n> --squash --admin --delete-branch`.
 
 ### 3. Acompanhar o build e o deploy
 
