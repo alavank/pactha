@@ -81,12 +81,17 @@ export type NavEntry = NavLeaf | NavGroup;
 // mesma coisa. Ficou um so.
 export const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
 
-// ⭐ A ORDEM É A QUE O DONO DITOU (11/08/2026), e ela conta uma história: o
-// PAINEL abre, as FONTES DE RECURSO vêm em bloco (federal, estadual,
-// parlamentares, saúde, educação), a REGULARIDADE fecha o diagnóstico, e só
-// então vêm as ferramentas de ENTREGA (relatório, IA, painéis, diário,
-// documentos, gestão). Configurações não está aqui: é item próprio no fim da
-// barra, com as telas de administração em abas (ver `GRUPO_CONFIGURACOES`).
+// ⭐ A ORDEM É A QUE O DONO DITOU (11/08/2026, revista em 18/09/2026), e ela
+// conta uma história: o PAINEL abre, o RADAR mostra o que ainda dá para captar,
+// a REGULARIDADE diz se o município pode receber, e então vêm as FONTES DE
+// RECURSO em bloco (federal, estadual, parlamentares, saúde, educação) e as
+// ferramentas de ENTREGA (relatório, IA, painéis, diário, documentos, gestão).
+// Configurações não está aqui: é item próprio no fim da barra, com as telas de
+// administração em abas (ver `GRUPO_CONFIGURACOES`).
+//
+// ⚠️ A REGULARIDADE ABRIA O BLOCO DE ENTREGA até 18/09/2026 ("fecha o
+// diagnóstico"). Subiu a pedido do dono: certidão vencida trava convênio,
+// emenda e repasse, então ela é pré-requisito do resto do menu, não conclusão.
 //
 // ⚠️ Os GRUPOS foram preservados — "Estaduais" e "Transfere Gov" continuam
 // menus com seus submenus, como o dono confirmou.
@@ -111,6 +116,14 @@ export const NAV_ITEMS: NavEntry[] = [
     icon: Radar,
     destaque: true,
   },
+  /* ⭐ REGULARIDADE SUBIU PARA CÁ (pedido do dono, 18/09/2026): "precisa ficar
+     em local de destaque". Ela estava lá embaixo, entre SIMEC e Relatório de
+     Monitoramento, no meio das ferramentas de entrega.
+     O lugar faz sentido com a história que o menu conta: o PAINEL abre, o RADAR
+     mostra o que dá para captar — e a REGULARIDADE diz se o município PODE
+     receber. Certidão vencida trava convênio, emenda e repasse; descobrir isso
+     depois de rolar o menu inteiro é tarde. */
+  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
   /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
      sistema mostra são emendas e convênios por ESFERA. */
   {
@@ -206,7 +219,6 @@ export const NAV_ITEMS: NavEntry[] = [
     ],
   },
   { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
-  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
   { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
   { href: "/dashboard/paineis", label: "Painéis Municipais", icon: LayoutGrid },
