@@ -57,7 +57,10 @@ permissions:
 
 jobs:
   resumo:
-    runs-on: ubuntu-latest
+    # RUNNER PROPRIO NA VPS (18/09/2026) — ver build-frontend.yml.
+    # ⚠️ ESTE roda de madrugada, DENTRO da janela de coleta: e leve de proposito
+    # (stdlib pura, sem pip install), entao nao disputa a maquina com o rodizio.
+    runs-on: [self-hosted, linux]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4

@@ -1653,6 +1653,35 @@ truncado: a rodada sai `partial` e grava `lista_ok=false` no upsert.
 
 **Município sem `cnpj` cadastrado** não vê essa porta, e a tela avisa.
 
+## 1.29. O CI ficou sem crédito — e o build voltou para a VPS (17-18/09/2026)
+
+Em 17/09, logo depois do merge do #503, **todo job do GitHub Actions passou a falhar em 4
+segundos, antes de rodar um passo**: `recent account payments have failed or your spending
+limit needs to be increased`. O plano do dono tinha consumido os minutos. Não é erro de
+código, e reexecutar não adianta: o merge entra e o deploy não acontece.
+
+**O que tentei primeiro, e por que não repetir.** Montei as seis imagens de frontend no
+Docker Desktop do Windows, publiquei no ghcr e apontei os seis tenants. Os containers
+subiram, as páginas abriram — e **o app não fazia nenhuma chamada à API**. Seis telas
+vazias, nos seis clientes, por ~20 minutos, até o rollback para `sha-88ff0ab`. Conferi o
+que era mais provável e descartei: o endereço da API está inlined certo na imagem
+(`grep` por `localhost:8000` nos chunks: zero), os arquivos carregam (200), e o backend
+responde 200 às mesmas rotas chamadas na mão pelo console. A causa não foi até o fim.
+**A regra que fica: imagem de produção se constrói onde o CI constrói.**
+
+**A saída (decisão do dono, 18/09):** runner próprio na VPS. Minuto de runner próprio não é
+cobrado, e os quatro workflows continuam iguais — só trocaram `ubuntu-latest` por
+`[self-hosted, linux]`. Detalhes de instalação, risco e limpeza de disco em INFRA.md §2.
+
+As alternativas medidas e descartadas: **AWS CodeBuild + ECR** (funciona, mas é cobrado à
+parte do Lightsail e acrescenta credencial de registro no Coolify) e **Coolify buildando
+do Git** (grátis, porém obrigaria os 12 apps de backend a repetir o mesmo build que hoje
+sai uma vez só, e reconfigurar 14 aplicações na mão).
+
+**Aprovação pelo chat:** `/subir` (`.claude/commands/subir.md`) — lista o PR aberto, resume
+o que muda em português, e com o "ok" do dono mergeia (`--admin`, porque a ruleset exige
+revisão e ninguém aprova o próprio PR) e acompanha o deploy até confirmar cada tenant.
+
 ## 1.28. Emendas parlamentares numa tela só — PR 1: o cadastro de parlamentares (17/09/2026)
 
 **Pedido do dono:** juntar numa tela, com abas Federais | Estaduais | Parlamentares, o
