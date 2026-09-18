@@ -33,10 +33,15 @@ import {
 } from "lucide-react";
 import { hrefToTela } from "@/lib/telas";
 
-/* `destaque` marca o item que sai da fila e ganha cor propria — hoje so o
-   Radar de Captacao. Nao e enfeite: e o unico item do menu que olha para
-   FRENTE (prazo ainda aberto), enquanto todo o resto mostra instrumento ja
-   celebrado. Ver o comentario no NAV_ITEMS. */
+/* `destaque` marca o item que sai da fila e ganha cor propria. Hoje sao DOIS,
+   e os dois respondem o que se pergunta ANTES de olhar instrumento celebrado:
+   o Radar de Captacao ("o que ainda da para captar", o unico que olha para
+   FRENTE) e a Regularidade ("o municipio pode receber?", desde 18/09/2026).
+   Ver o comentario no NAV_ITEMS.
+
+   ⚠️ QUEM DESENHA CUIDA DE DUAS COISAS (`app/dashboard/layout.tsx`): o contador
+   de programas e SO do Radar, e o separador sai depois do ULTIMO destacado —
+   senao apareceria uma linha entre eles, quebrando o bloco que eles formam. */
 export type NavLeaf = {
   href: string;
   label: string;
@@ -122,8 +127,10 @@ export const NAV_ITEMS: NavEntry[] = [
      O lugar faz sentido com a história que o menu conta: o PAINEL abre, o RADAR
      mostra o que dá para captar — e a REGULARIDADE diz se o município PODE
      receber. Certidão vencida trava convênio, emenda e repasse; descobrir isso
-     depois de rolar o menu inteiro é tarde. */
-  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck },
+     depois de rolar o menu inteiro é tarde.
+     ⭐ `destaque` também (pedido do dono no mesmo dia): ela sai da fila e usa a
+     família INFO, como o Radar. São os três itens que se olham primeiro. */
+  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck, destaque: true },
   /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
      sistema mostra são emendas e convênios por ESFERA. */
   {
