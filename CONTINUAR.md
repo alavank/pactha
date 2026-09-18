@@ -1653,7 +1653,7 @@ truncado: a rodada sai `partial` e grava `lista_ok=false` no upsert.
 
 **Município sem `cnpj` cadastrado** não vê essa porta, e a tela avisa.
 
-## 1.29. O CI ficou sem crédito — e o build voltou para a VPS (17-18/09/2026)
+## 1.29. O CI ficou sem crédito — o build foi para a VPS e voltou (17-18/09/2026)
 
 Em 17/09, logo depois do merge do #503, **todo job do GitHub Actions passou a falhar em 4
 segundos, antes de rodar um passo**: `recent account payments have failed or your spending
@@ -1669,9 +1669,14 @@ que era mais provável e descartei: o endereço da API está inlined certo na im
 responde 200 às mesmas rotas chamadas na mão pelo console. A causa não foi até o fim.
 **A regra que fica: imagem de produção se constrói onde o CI constrói.**
 
-**A saída (decisão do dono, 18/09):** runner próprio na VPS. Minuto de runner próprio não é
-cobrado, e os quatro workflows continuam iguais — só trocaram `ubuntu-latest` por
-`[self-hosted, linux]`. Detalhes de instalação, risco e limpeza de disco em INFRA.md §2.
+**A saída (decisão do dono, 18/09):** runner próprio na VPS (#504, #505). Minuto de runner
+próprio não é cobrado, e os quatro workflows continuaram iguais — só trocaram `ubuntu-latest`
+por `[self-hosted, linux]`.
+
+**E a volta (decisão do dono, 18/09, horas depois):** de volta ao `ubuntu-latest`. Na VPS o
+ciclo levava ~15 min em fila de um job por vez, pesava na máquina que coleta e era mais uma
+peça para cuidar. O que decide se o CI roda agora é o **budget de Actions da org** (estava
+em US$ 0 com "parar uso") — como conferir e onde mudar em INFRA.md §2.
 
 As alternativas medidas e descartadas: **AWS CodeBuild + ECR** (funciona, mas é cobrado à
 parte do Lightsail e acrescenta credencial de registro no Coolify) e **Coolify buildando

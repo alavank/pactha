@@ -102,34 +102,31 @@ cada build da `main`:
 Segredos do CI: `COOLIFY_URL` + `COOLIFY_TOKEN` nos **GitHub Secrets** do repo. Sem eles
 o job de deploy falha com barulho (proposital — nunca em silêncio).
 
-### 🏗️ Quem roda os workflows é um runner PRÓPRIO, na VPS (18/09/2026)
+### 🏗️ Quem roda os workflows é o runner do GITHUB (`ubuntu-latest`)
 
-Em 17/09/2026 o plano do GitHub esgotou os minutos de Actions e **todo job passou a falhar
-antes de começar**, com `recent account payments have failed or your spending limit needs to
-be increased`. Não é erro de código e não adianta reexecutar: o merge entra e o deploy
-simplesmente não acontece — foi assim que o #503 ficou mergeado e fora do ar.
+Os quatro workflows declaram `runs-on: ubuntu-latest`. Entre 18 e 19/09/2026 rodaram num
+runner próprio na VPS; o dono mandou voltar: fila de um job por vez (~15 min por ciclo),
+carga na máquina que coleta, e mais uma peça para manter.
 
-Os quatro workflows declaram `runs-on: [self-hosted, linux]`. **Minuto de runner próprio não
-é cobrado**, em repositório privado também.
+⚠️ **Minuto do GitHub tem teto, e o teto PARA o CI em vez de cobrar.** Em 17/09/2026 todo job
+passou a falhar **antes do primeiro passo** (~4 s), com `recent account payments have failed
+or your spending limit needs to be increased`. Não é erro de código e não adianta
+reexecutar: o merge entra e o deploy simplesmente não acontece — foi assim que o #503 ficou
+mergeado e fora do ar. Medido em 18/09: a org tinha **3.008 min Linux no mês, todos dentro
+do incluído**, e um **budget de Actions de US$ 0 com "parar uso"** — passou do incluído,
+para tudo. Conferir antes de culpar o código:
 
-- **Onde:** a própria VPS (`54.232.208.118`), como serviço, no usuário `github-runner`.
-- **Instalar/reinstalar:** GitHub → Settings do repo → Actions → Runners → *New self-hosted
-  runner* → Linux x64. A página gera os comandos com o token de registro (validade curta).
-  No servidor, como `github-runner`: baixar, `./config.sh --url https://github.com/alavank/pactha --token <o da pagina>`,
-  e então `sudo ./svc.sh install github-runner && sudo ./svc.sh start`.
-- **Precisa de Docker:** o usuário do runner entra no grupo `docker`
-  (`sudo usermod -aG docker github-runner`). ⚠️ Isso é equivalente a root na máquina —
-  quem escreve no repositório passa a executar código aqui dentro. É aceitável porque o
-  repositório é **privado** e fechado; em repositório público seria um convite.
-- **Conferir se está de pé:**
-  `gh api repos/alavank/pactha/actions/runners --jq '.runners[] | "\(.name): \(.status)"'`.
-  Job preso em `queued` costuma ser runner parado, não fila.
-- **Fila, e não paralelo:** um runner roda um job por vez. Os seis frontends, que saíam
-  juntos, agora levam ~10 min no total. Um segundo runner na mesma máquina resolve.
-- **Disco:** cada build de imagem deixa cache. Os jobs de build terminam com
-  `docker builder prune --filter until=168h` — no runner efêmero do GitHub isso não fazia
-  falta, porque a máquina sumia.
-- ⚠️ **A regra da janela continua:** build pesado **não** entre 19h e 7h, que é a coleta.
+```
+gh api organizations/alavank/settings/billing/usage/summary --jq '.usageItems[] | select(.product=="Actions")'
+gh api organizations/alavank/settings/billing/budgets --jq '.budgets[] | select(.budget_product_sku=="actions")'
+```
+
+O budget se muda em github.com/organizations/alavank/billing/budgets (só o dono da org).
+
+> O runner da VPS (usuário `github-runner`, serviço `actions.runner.*`) foi desligado ao
+> voltar. Se um dia precisar dele de novo, o PR #504 tem o desenho inteiro — e o que ele
+> ensinou: é fila, o disco enche de cache de build, e o usuário no grupo `docker` equivale
+> a root na máquina.
 
 > ⚠️ **NÃO tente publicar imagem construída em OUTRA máquina.** Em 17/09/2026 as seis
 > imagens de frontend foram montadas no Docker Desktop do Windows e publicadas: os
