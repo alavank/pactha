@@ -324,10 +324,13 @@ token e 200 com token válido). Confirmado nos 5 em 07/09/2026.
 | O quê | URL | Repo |
 |---|---|---|
 | Landing comercial | https://pactha.com.br · https://www.pactha.com.br | `alavank/pactha-landing` (projeto Coolify `pactha-landing`) |
-| Central de Comando | https://control-center.pactha.com.br (fallback https://console-54-232-208-118.sslip.io) · API https://console-api-54-232-208-118.sslip.io | `console-alavank` (projeto Coolify `alavank-control`) |
 
-A Central de Comando fala com as APIs do PACTHA usando o `CONTROL_TOKEN_BOOTSTRAP`
-configurado em cada resource `*-api`.
+A Central de Comando (`console-alavank`) foi **abandonada e apagada do Coolify** (dono,
+18/09/2026). As rotas `/api/control/*` **ficam**: o nome é herança dela, mas hoje quem as usa
+é o próprio PACTHA — `resumo-coleta.yml`/`scripts/resumo_coleta.py`,
+`scripts/agenda_noturna.py` (cobertura) e o provisionamento de cliente novo
+(`POST /api/control/municipios`, ver PROVISIONAR_CLIENTE.md). O token delas vem da env
+`CONTROL_TOKEN_BOOTSTRAP` de cada `*-api`.
 
 ---
 
