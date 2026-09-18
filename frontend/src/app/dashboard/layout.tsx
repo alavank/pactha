@@ -437,8 +437,17 @@ function SidebarContent({
             Módulos
           </div>
         )}
-        {visibleNav.map((item) => {
+        {visibleNav.map((item, indiceItem) => {
           const qs = selectedMunicipioId ? `?municipio_id=${selectedMunicipioId}` : "";
+          /* ⚠️ O CONTADOR É DO RADAR, e não do destaque. Desde 18/09/2026 a
+             Regularidade também é destacada, e a contagem de programas com
+             janela aberta ao lado dela diria uma coisa que não é dela. */
+          const ehRadar = "href" in item && item.href === "/dashboard/transferegov-radar";
+          /* ⚠️ O SEPARADOR SAI DEPOIS DO ÚLTIMO DESTACADO, não de cada um: os
+             destacados formam UM bloco ("o que se olha primeiro"), e uma linha
+             entre eles os separaria justamente no que têm em comum. */
+          const ultimoDestaque = "destaque" in item && !!item.destaque
+            && !(visibleNav[indiceItem + 1] as NavLeaf | undefined)?.destaque;
           const renderLeaf = (leaf: NavLeaf) => {
             const isActive = pathname === leaf.href || pathname.startsWith(leaf.href + "/");
             return (
@@ -556,7 +565,7 @@ function SidebarContent({
                 {/* Na barra recolhida não cabe número: vira um ponto. Diz "há
                     algo aqui" sem prometer quanto, que é tudo o que 4rem de
                     largura comportam com honestidade. */}
-                {item.destaque && !!radar && radar.total > 0 && (
+                {ehRadar && !!radar && radar.total > 0 && (
                   <span
                     aria-hidden
                     className="absolute right-1.5 top-1.5 size-1.5 rounded-full"
@@ -566,17 +575,20 @@ function SidebarContent({
               </Link>
             );
           }
-          /* ⭐ O ITEM EM DESTAQUE (hoje só o Radar) usa a família INFO em vez do
-             verde do sistema — inclusive quando ativo, senão ele perderia a
-             identidade justamente na tela dele. O trilho à esquerda, que marca
-             o item selecionado, acompanha a mesma cor. */
+          /* ⭐ O ITEM EM DESTAQUE (o Radar e, desde 18/09/2026, a Regularidade)
+             usa a família INFO em vez do verde do sistema — inclusive quando
+             ativo, senão ele perderia a identidade justamente na tela dele. O
+             trilho à esquerda, que marca o item selecionado, acompanha a mesma
+             cor. */
           if (item.destaque) {
             return (
-              /* ⚠️ O SEPARADOR VEM DEPOIS, e não antes: ele agrupa o Painel e o
-                 Radar como "as duas visões gerais" e os distingue dos grupos por
-                 esfera que vêm abaixo. Posto acima, separaria o Radar do Painel
-                 — sugerindo que ele é de outra natureza que a tela de abertura,
-                 quando os dois são justamente o que se olha primeiro. */
+              /* ⚠️ O SEPARADOR VEM DEPOIS, e não antes: ele agrupa o Painel, o
+                 Radar e a Regularidade como "o que se olha primeiro" e os
+                 distingue dos grupos por esfera que vêm abaixo. Posto acima,
+                 separaria o Radar do Painel — sugerindo que ele é de outra
+                 natureza que a tela de abertura.
+                 ⚠️ E sai UMA vez, depois do último destacado (`ultimoDestaque`):
+                 uma linha entre o Radar e a Regularidade quebraria o bloco. */
               <React.Fragment key={item.href}>
               <Link
                 href={`${item.href}${qs}`}
@@ -596,7 +608,7 @@ function SidebarContent({
                 )}
                 {Icon && <Icon className="size-4" />}
                 <span className="flex-1 text-[13px]">{item.label}</span>
-                {!!radar && radar.total > 0 && (
+                {ehRadar && !!radar && radar.total > 0 && (
                   <span
                     className="rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums"
                     style={{ background: "var(--bi-info-soft)", color: "var(--bi-info-ink)" }}
@@ -608,7 +620,7 @@ function SidebarContent({
                   </span>
                 )}
               </Link>
-              <div className="my-2 border-t border-base-300" />
+              {ultimoDestaque && <div className="my-2 border-t border-base-300" />}
               </React.Fragment>
             );
           }
