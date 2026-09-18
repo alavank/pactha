@@ -19,10 +19,10 @@ name: testes
 # que ja mordeu duas vezes neste repo (transferegov_propostas e
 # add_detalhe_pagina_rodizio.sql).
 #
-# ⚠️ ESTE WORKFLOW NAO BLOQUEIA MERGE SOZINHO. Ele reporta. Para virar trava de
-# verdade, marque o job `backend` como *required status check* no ruleset da main
-# (Settings > Rules > o ruleset da main > Require status checks to pass). Ate la
-# ele e um aviso — bom, mas ignoravel.
+# ⚠️ DESDE 18/09/2026 ESTE JOB E TRAVA DE MERGE: `pytest (backend)` e required
+# status check no ruleset `protecao-main`. Renomear o job (o `name:` abaixo) solta
+# a trava sem aviso — o ruleset procura pelo nome. E o `--admin` do /subir passa
+# por cima dela tambem, por isso o /subir confere o check antes do merge.
 #
 # ⚠️ E NAO DEPLOYA NADA. Nao toca o Coolify, nao publica imagem, nao le segredo:
 # o unico segredo que existiria aqui seria o do registry, e este job nao builda.

@@ -100,9 +100,10 @@ fix the repo config, not the command. It also puts `backend/` on `sys.path`, so 
 from the repo root or from `backend/`.
 
 Tests use plain `asyncio.run(...)` inside test functions rather than `pytest-asyncio` markers.
-`.github/workflows/testes.yml` runs the suite on every PR and push to `main`; it **reports but
-does not block** until the `pytest (backend)` job is marked a required status check in the main
-ruleset. No lint runs in CI — the frontend has 52 pre-existing findings, and a check that is red
+`.github/workflows/testes.yml` runs the suite on every PR and push to `main`, on GitHub-hosted
+runners (`ubuntu-latest`). Since 18/09/2026 `pytest (backend)` is a **required status check** in
+the `protecao-main` ruleset — a red suite blocks the merge (an `--admin` merge still bypasses it,
+so check it first). No lint runs in CI — the frontend has 52 pre-existing findings, and a check that is red
 from day one recreates the exact problem this workflow was added to fix.
 
 ### First login on a fresh database

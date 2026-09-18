@@ -121,10 +121,15 @@ gh api organizations/alavank/settings/billing/usage/summary --jq '.usageItems[] 
 gh api organizations/alavank/settings/billing/budgets --jq '.budgets[] | select(.budget_product_sku=="actions")'
 ```
 
-O budget se muda em github.com/organizations/alavank/billing/budgets (só o dono da org).
+A cobrança é da **enterprise** `alavank` (Enterprise Cloud, **50.000 min/mês incluídos**; em
+18/09 estavam usados 3.001). O budget de US$ 0 só barra o que passar dos 50 mil, e fica
+assim por decisão do dono. Uso e budgets: github.com/enterprises/alavank/billing (só o dono).
+Advanced Security (Secret Protection, Code Security) **não** está incluído — é cobrado por
+committer, e o dono recusou em 18/09.
 
-> O runner da VPS (usuário `github-runner`, serviço `actions.runner.*`) foi desligado ao
-> voltar. Se um dia precisar dele de novo, o PR #504 tem o desenho inteiro — e o que ele
+> O runner da VPS (usuário `github-runner`, serviço `actions.runner.*`) teve o registro
+> apagado do GitHub em 18/09; o serviço sai com
+> `sudo bash -c "cd /home/github-runner/actions-runner && ./svc.sh stop && ./svc.sh uninstall"`. Se um dia precisar dele de novo, o PR #504 tem o desenho inteiro — e o que ele
 > ensinou: é fila, o disco enche de cache de build, e o usuário no grupo `docker` equivale
 > a root na máquina.
 
