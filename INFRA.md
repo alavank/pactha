@@ -102,6 +102,42 @@ cada build da `main`:
 Segredos do CI: `COOLIFY_URL` + `COOLIFY_TOKEN` nos **GitHub Secrets** do repo. Sem eles
 o job de deploy falha com barulho (proposital — nunca em silêncio).
 
+### 🏗️ Quem roda os workflows é um runner PRÓPRIO, na VPS (18/09/2026)
+
+Em 17/09/2026 o plano do GitHub esgotou os minutos de Actions e **todo job passou a falhar
+antes de começar**, com `recent account payments have failed or your spending limit needs to
+be increased`. Não é erro de código e não adianta reexecutar: o merge entra e o deploy
+simplesmente não acontece — foi assim que o #503 ficou mergeado e fora do ar.
+
+Os quatro workflows declaram `runs-on: [self-hosted, linux]`. **Minuto de runner próprio não
+é cobrado**, em repositório privado também.
+
+- **Onde:** a própria VPS (`54.232.208.118`), como serviço, no usuário `github-runner`.
+- **Instalar/reinstalar:** GitHub → Settings do repo → Actions → Runners → *New self-hosted
+  runner* → Linux x64. A página gera os comandos com o token de registro (validade curta).
+  No servidor, como `github-runner`: baixar, `./config.sh --url https://github.com/alavank/pactha --token <o da pagina>`,
+  e então `sudo ./svc.sh install github-runner && sudo ./svc.sh start`.
+- **Precisa de Docker:** o usuário do runner entra no grupo `docker`
+  (`sudo usermod -aG docker github-runner`). ⚠️ Isso é equivalente a root na máquina —
+  quem escreve no repositório passa a executar código aqui dentro. É aceitável porque o
+  repositório é **privado** e fechado; em repositório público seria um convite.
+- **Conferir se está de pé:**
+  `gh api repos/alavank/pactha/actions/runners --jq '.runners[] | "\(.name): \(.status)"'`.
+  Job preso em `queued` costuma ser runner parado, não fila.
+- **Fila, e não paralelo:** um runner roda um job por vez. Os seis frontends, que saíam
+  juntos, agora levam ~10 min no total. Um segundo runner na mesma máquina resolve.
+- **Disco:** cada build de imagem deixa cache. Os jobs de build terminam com
+  `docker builder prune --filter until=168h` — no runner efêmero do GitHub isso não fazia
+  falta, porque a máquina sumia.
+- ⚠️ **A regra da janela continua:** build pesado **não** entre 19h e 7h, que é a coleta.
+
+> ⚠️ **NÃO tente publicar imagem construída em OUTRA máquina.** Em 17/09/2026 as seis
+> imagens de frontend foram montadas no Docker Desktop do Windows e publicadas: os
+> containers subiram, as páginas abriram e **o app não fazia uma única chamada à API** —
+> as seis telas vazias, nos seis clientes, por ~20 min até o rollback. A causa não foi
+> investigada até o fim; o que ficou é a regra: **imagem de produção se constrói onde o CI
+> constrói.**
+
 > ⚠️ **ROTACIONOU O TOKEN DO COOLIFY? ATUALIZE O SECRET NO MESMO ATO.** Em 16/08/2026 o
 > token foi rotacionado e o secret não acompanhou: **quatro merges seguidos (#220–#223)
 > passaram no build e nenhum chegou em produção**, com os quatro tenants rodando código

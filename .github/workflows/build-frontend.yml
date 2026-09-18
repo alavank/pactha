@@ -39,7 +39,20 @@ jobs:
     concurrency:
       group: build-frontend-${{ github.ref }}-${{ matrix.image }}
       cancel-in-progress: true
-    runs-on: ubuntu-latest
+    # ⭐⭐ RUNNER PROPRIO NA VPS desde 18/09/2026, e o motivo e conta: o plano do
+    # GitHub esgotou os minutos de Actions e TODO job passou a falhar antes de
+    # comecar ("recent account payments have failed or your spending limit needs
+    # to be increased"). Minuto de runner proprio nao e cobrado.
+    #
+    # ⚠️ ISTO REVERTE, DE PROPOSITO, A DECISAO DE AGOSTO de tirar o build da VPS
+    # — e o trade-off mudou junto: a maquina passou de 2 para 8 vCPU (INFRA.md
+    # §1) e o build de um frontend leva ~1,5 min. O que continua valendo daquela
+    # decisao e a ordem: builds pesados NAO na janela de coleta (19h-7h).
+    #
+    # ⚠️ RUNNER UNICO = FILA. Os seis frontends, que rodavam em paralelo no
+    # Actions, agora saem um a um (~10 min no total). Quem precisar de paralelo
+    # instala um segundo runner na mesma maquina.
+    runs-on: [self-hosted, linux]
     permissions:
       contents: read
       packages: write
@@ -150,6 +163,15 @@ jobs:
       - name: Resumo
         run: echo "Publicado ${{ env.IMAGE_BASE }}-${{ matrix.image }}:latest" >> "$GITHUB_STEP_SUMMARY"
 
+      # ⚠️ O DISCO AGORA E DA VPS, e cache de build cresce sem pedir licenca. No
+      # runner efemero do GitHub isso nao existia: a maquina sumia no fim.
+      # `until=168h` guarda uma semana — o cache que acelera o build de amanha
+      # fica, o do mes passado sai. `|| true` porque limpeza que falha NAO pode
+      # derrubar um deploy que ja deu certo.
+      - name: Limpar cache de build antigo
+        if: always()
+        run: docker builder prune -f --filter until=168h || true
+
   # Fase D (09/08/2026): o CI fecha o ciclo tambem nos frontends — avanca a tag
   # (sha COMPLETO, padrao deste workflow) e deploya os 4 apps, confirmando cada
   # deployment via GET /deployments/{uuid}. Sem gate de janela: frontend nao
@@ -159,7 +181,11 @@ jobs:
   deploy:
     needs: build
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # Roda na VPS como o build (ver o comentario la em cima). Aqui isso tem um
+    # efeito colateral BOM: as chamadas ao Coolify passam a sair da propria
+    # maquina em que ele roda, entao um bloqueio de rede externa nao derruba o
+    # deploy.
+    runs-on: [self-hosted, linux]
     # Teto de seguranca. Com os seis disparados juntos (15/09/2026) o normal e a
     # duracao do mais lento, nao a soma; um timeout aqui ainda deixaria parte dos
     # tenants na tag nova e parte na velha, por isso o teto continua folgado.
