@@ -34,6 +34,9 @@ from services.nome_parlamentar import e_pessoa
 
 COLEGIADOS = ("BANCADA", "COMISSAO", "RELATOR GERAL")
 
+# Os grupos de `routers/emendas_federais.classificar` que dizem se houve pagamento.
+GRUPOS_COM_EXECUCAO = ("sem_empenho", "parado", "andamento", "paga")
+
 # Rótulo curto do instrumento, o que a tela escreve no selo.
 ROTULO_ORIGEM = {
     "federal": "Emenda federal",
@@ -243,7 +246,7 @@ def totais(linhas: list[dict]) -> dict:
     pararam."""
     t = {"emendas": len(linhas), "valor_prefeitura": 0.0, "fora_prefeitura_n": 0,
          "fora_prefeitura_valor": 0.0, "parado_n": 0, "com_pagamento_n": 0,
-         "nao_consultadas_n": 0, "impositivas_n": 0, "por_origem": {}}
+         "nao_consultadas_n": 0, "com_execucao_n": 0, "impositivas_n": 0, "por_origem": {}}
     for l in linhas:
         v = l["valor"] or 0.0
         if l["municipal"]:
@@ -253,6 +256,12 @@ def totais(linhas: list[dict]) -> dict:
             t["fora_prefeitura_valor"] += v
         if l["grupo"] == "parado":
             t["parado_n"] += 1
+        # ⚠️ O DENOMINADOR DO "SEM PAGAMENTO". Só a emenda da carteira com execução
+        # no Portal tem `grupo` que mede pagamento; Pix, Saúde e voluntária não
+        # têm. Medido na Freitas (2026, 19/09): 33 de 354 linhas — "0 sem
+        # pagamento" sem dizer "de 33" é lido como "todas as 354 pagas".
+        if l["grupo"] in GRUPOS_COM_EXECUCAO:
+            t["com_execucao_n"] += 1
         if l["origem"] == "federal" and not l.get("execucao_consultada"):
             t["nao_consultadas_n"] += 1
         ex = l["execucao"] or {}

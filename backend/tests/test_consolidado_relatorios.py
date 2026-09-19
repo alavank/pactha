@@ -61,6 +61,54 @@ def test_planilha_de_recursos_nao_tem_total():
     assert "sem coluna de total" in ws["A2"].value
 
 
+def test_planilha_soma_cada_coluna_e_nunca_entre_colunas():
+    """A linha "Soma da carteira" (pedido do dono, 19/09/2026) soma na VERTICAL:
+    cada fórmula fica dentro da própria coluna."""
+    ws = openpyxl.load_workbook(io.BytesIO(R.xlsx_recursos(
+        [_linha("Araújos"), _linha("Bom Despacho")], "2026").getvalue())).active
+    soma = [c.value for c in ws[7]]
+    assert soma[0] == "Soma da carteira"
+    assert soma[3] == "=SUM(D5:D6)" and soma[7] == "=SUM(H5:H6)"
+    for col, f in zip("CDEFGHIJKL", soma[2:12]):
+        assert re.fullmatch(rf"=SUM\({col}5:{col}6\)", f), f
+
+
+def _carteira(codigo, grupo, municipal=True, propostas=()):
+    return {"codigo_emenda": codigo, "ano": 2026, "autor": "Fulano", "tipo": "INDIVIDUAL",
+            "impositiva": True, "valor_indicado": 100_000.0,
+            "beneficiario_prefeitura": municipal, "propostas": list(propostas),
+            "execucao_consultada": grupo != "nao_consultada", "grupo": grupo}
+
+
+def test_sem_pagamento_tem_denominador():
+    """Só a emenda da carteira com execução no Portal mede pagamento. Pix, Saúde e
+    voluntária ficam fora do "de N" — "0 sem pagamento" sozinho diria "todas pagas"."""
+    from services.emendas_unificadas import totais, unificar_federais
+    linhas = unificar_federais(
+        [_carteira("202611110001", "parado"), _carteira("202611110002", "paga"),
+         _carteira("202611110003", "nao_consultada")],
+        [{"plano_acao_id": 1, "emenda": "202622220001-Outro", "valor_total": 50_000.0}],
+        [], [], [])
+    t = totais(linhas)
+    assert t["emendas"] == 4 and t["parado_n"] == 1 and t["com_execucao_n"] == 2
+
+
+def test_voluntaria_nas_emendas_conta_casada_e_solta_so_da_prefeitura():
+    from services.emendas_unificadas import unificar_federais
+    linhas = unificar_federais(
+        [_carteira("202611110001", "paga", propostas=["10"]),
+         _carteira("202611110002", "paga", municipal=False, propostas=["20"])],
+        [], [], [],
+        [{"numero_proposta": "000010/2026", "id_proposta_siconv": 10, "valor_emenda": 1.0,
+          "municipal": True},
+         {"numero_proposta": "000020/2026", "id_proposta_siconv": 20, "valor_emenda": 1.0,
+          "municipal": True},
+         {"numero_proposta": "000030/2026", "id_proposta_siconv": 30, "parlamentar": "Beltrano",
+          "valor_emenda": 1.0, "municipal": True}])
+    # a casada à emenda da Prefeitura + a solta; a do hospital não é da Prefeitura
+    assert R.voluntarias_nas_emendas(linhas) == 2
+
+
 def test_matriz_uma_coluna_por_municipio():
     m = {"municipios": ["Araújos", "Bom Despacho"], "truncado": False, "total_parlamentares": 1,
          "parlamentares": [{"nome": "Reginaldo Lopes", "total": 1250000.0,
