@@ -50,7 +50,9 @@ export function SeloCadastro({ c }: { c?: Cadastro | null }) {
            do site da Câmara/Senado, e lá fora pode cair sem aviso. */
         <img src={c.foto_url} alt="" loading="lazy" referrerPolicy="no-referrer"
              onError={(e) => { e.currentTarget.style.display = "none"; }}
-             className="size-6 shrink-0 rounded-full object-cover"
+             /* 30px (19/09/2026, pedido do dono): em 24px o rosto não se
+                reconhecia. Aumento sutil — mais que isso empurra a linha. */
+             className="size-[30px] shrink-0 rounded-full object-cover"
              style={{ background: "var(--bi-surface-2)" }} />
       )}
       {(c.partido || c.uf) && (
