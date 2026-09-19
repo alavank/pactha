@@ -75,6 +75,94 @@ async def painel(
     return await montar(db, ids)
 
 
+# ------------------------------------------------------------ relatórios ---
+
+_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _periodo(anos: Optional[list[int]]) -> str:
+    return ", ".join(map(str, anos)) if anos else "todos os anos"
+
+
+async def _arquivo(db, request, current, tipo: str, arquivo: str, registros: int,
+                   filtros: dict, buf: BytesIO) -> StreamingResponse:
+    """Toda planilha da carteira grava na trilha ANTES de sair — o arquivo sai da
+    plataforma e leva dado de todos os clientes do usuário."""
+    await registrar(
+        db, action=f"export.{tipo}", user=current, request=request,
+        target_type="export", target_id=tipo, alvo_nome=arquivo,
+        details={"formato": "xlsx", "registros": registros, "arquivo": arquivo,
+                 "filtros": {k: v for k, v in filtros.items() if v not in (None, "", [])} or None},
+    )
+    return StreamingResponse(buf, media_type=_XLSX,
+                             headers={"Content-Disposition": f"attachment; filename={arquivo}"})
+
+
+@router.get("/painel/exportar", dependencies=[exige("consolidado.exportar")])
+async def exportar_painel(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """O painel da carteira em planilha, com as listas INTEIRAS (a tela corta em 80)."""
+    from services.consolidado_painel import montar
+    from services.consolidado_relatorios import xlsx_painel
+    ids = await _escopo(db, current)
+    p = await montar(db, ids, limite=None)
+    return await _arquivo(db, request, current, "consolidado_painel", "painel_da_carteira.xlsx",
+                          len(p["municipios"]), {"escopo": f"{len(ids)} municípios"},
+                          xlsx_painel(p))
+
+
+@router.get("/relatorios/recursos", dependencies=[exige("consolidado.ver")])
+async def recursos(
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Estaduais, voluntárias federais e emendas federais por município, lado a
+    lado. SEM total: as fontes se sobrepõem (ver `services/consolidado_relatorios`)."""
+    from services.consolidado_relatorios import recursos_por_municipio
+    ids = await _escopo(db, current)
+    return {"municipios_na_carteira": len(ids),
+            "linhas": await recursos_por_municipio(db, ids, anos_list(anos))}
+
+
+@router.get("/relatorios/recursos/exportar", dependencies=[exige("consolidado.exportar")])
+async def exportar_recursos(
+    request: Request,
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    from services.consolidado_relatorios import recursos_por_municipio, xlsx_recursos
+    ids = await _escopo(db, current)
+    _anos = anos_list(anos)
+    linhas = await recursos_por_municipio(db, ids, _anos)
+    return await _arquivo(db, request, current, "consolidado_recursos",
+                          "recursos_por_municipio.xlsx", len(linhas),
+                          {"anos": _anos, "escopo": f"{len(ids)} municípios"},
+                          xlsx_recursos(linhas, _periodo(_anos)))
+
+
+@router.get("/relatorios/matriz/exportar", dependencies=[exige("consolidado.exportar")])
+async def exportar_matriz(
+    request: Request,
+    anos: Optional[list[int]] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Parlamentares × municípios da carteira, numa agregação só."""
+    from services.consolidado_relatorios import matriz_parlamentares, xlsx_matriz
+    ids = await _escopo(db, current)
+    _anos = anos_list(anos)
+    m = await matriz_parlamentares(db, ids, _anos)
+    return await _arquivo(db, request, current, "consolidado_matriz",
+                          "parlamentares_x_municipios.xlsx", len(m["parlamentares"]),
+                          {"anos": _anos, "escopo": f"{len(ids)} municípios"},
+                          xlsx_matriz(m, _periodo(_anos)))
+
+
 def por_municipio(det: dict) -> list[dict]:
     """Os lançamentos do detalhe agrupados por município. Função PURA.
 

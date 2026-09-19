@@ -113,6 +113,17 @@ async def escopo_de_municipios(db: AsyncSession, current: User,
     return ids
 
 
+def _soma(entry: dict, valor, municipio) -> None:
+    """Soma um lançamento no parlamentar: valor total, município e valor POR
+    município. Um lugar só — os sete blocos do agregado chamam este, e por isso
+    o valor por município fecha com o total por construção."""
+    v = valor if isinstance(valor, float) else _money(valor)
+    entry["valor_total"] += v
+    if municipio:
+        entry["municipios"].add(municipio)
+        entry["por_municipio"][municipio] += v
+
+
 async def aggregate_parlamentares(
     db: AsyncSession,
     municipio_id: Optional[int] = None,
@@ -150,6 +161,10 @@ async def aggregate_parlamentares(
         "total_lancamentos": 0,
         "valor_total": 0.0,
         "municipios": set(),
+        # Valor por NOME de município (18/09/2026): a matriz parlamentar ×
+        # município do CONSOLIDADO sai daqui numa varredura só, em vez de uma
+        # agregação inteira por município. Preenchido por `_soma`.
+        "por_municipio": defaultdict(float),
         # ⚠️ `emenda_federal` entra AQUI, e nao so no bloco que a preenche: o
         # bloco roda dentro de `try/except Exception: pass`, entao sem a chave
         # no dicionario o KeyError do primeiro `+= 1` seria ENGOLIDO e a fonte
@@ -228,9 +243,7 @@ async def aggregate_parlamentares(
             entry = by_norm[key]
             entry["nome_variants"].add(nm)
             entry["total_lancamentos"] += 1
-            entry["valor_total"] += _money(row[3])
-            if row[2]:
-                entry["municipios"].add(row[2])
+            _soma(entry, _money(row[3]), row[2])
             # classifica por fonte: FNS é federal, SIGCON-MG é estadual
             fonte_db = (row[4] or "").upper()
             if "FNS" in fonte_db or "MS" in fonte_db:
@@ -265,9 +278,7 @@ async def aggregate_parlamentares(
             entry = by_norm[key]
             entry["nome_variants"].add(nm)
             entry["total_lancamentos"] += 1
-            entry["valor_total"] += _money(row[3])
-            if row[2]:
-                entry["municipios"].add(row[2])
+            _soma(entry, _money(row[3]), row[2])
             entry["por_fonte"]["voluntaria"] += 1
 
     # 3) Emendas Estaduais (nome_responsavel)
@@ -293,9 +304,7 @@ async def aggregate_parlamentares(
             entry = by_norm[key]
             entry["nome_variants"].add(nm)
             entry["total_lancamentos"] += 1
-            entry["valor_total"] += _money(row[3])
-            if row[2]:
-                entry["municipios"].add(row[2])
+            _soma(entry, _money(row[3]), row[2])
             entry["por_fonte"]["emenda"] += 1
 
     # 4) Transferencia Especial / Plano de Acao (RP9, "emenda Pix") — DA TABELA.
@@ -353,9 +362,7 @@ async def aggregate_parlamentares(
             entry = by_norm[key]
             entry["nome_variants"].add(autor)
             entry["total_lancamentos"] += 1
-            entry["valor_total"] += _money(row[2])
-            if row[1]:
-                entry["municipios"].add(row[1])
+            _soma(entry, _money(row[2]), row[1])
             entry["por_fonte"]["plano_acao"] += 1
     except Exception:
         pass
@@ -384,9 +391,7 @@ async def aggregate_parlamentares(
             entry = by_norm[key]
             entry["nome_variants"].add(nm)
             entry["total_lancamentos"] += 1
-            entry["valor_total"] += _money(row[3])
-            if row[2]:
-                entry["municipios"].add(row[2])
+            _soma(entry, _money(row[3]), row[2])
             entry["por_fonte"]["pac"] += 1
             # Sem emenda parlamentar, o nome acima E o proponente (o municipio,
             # o consorcio) — entidade, nao pessoa.
@@ -444,9 +449,7 @@ async def aggregate_parlamentares(
                 entry = by_norm[key]
                 entry["nome_variants"].add(nm)
                 entry["total_lancamentos"] += 1
-                entry["valor_total"] += val
-                if mun_nome:
-                    entry["municipios"].add(mun_nome)
+                _soma(entry, val, mun_nome)
                 entry["por_fonte"]["fns"] += 1
                 if not autor:
                     entry["_inst"] = True
@@ -519,9 +522,7 @@ async def aggregate_parlamentares(
             entry = by_norm[key]
             entry["nome_variants"].add(nm)
             entry["total_lancamentos"] += 1
-            entry["valor_total"] += _money(row[2])
-            if row[1]:
-                entry["municipios"].add(row[1])
+            _soma(entry, _money(row[2]), row[1])
             entry["por_fonte"]["emenda_federal"] += 1
             # A ORIGEM sabe que nao e pessoa — mesma precedencia deterministica
             # do PAC (bloco 5) e do FNS (bloco 6), que vem ANTES de `e_pessoa`.
@@ -550,6 +551,7 @@ async def aggregate_parlamentares(
         entry["nome_display"] = (variants[0] if variants else key).replace("�", "").strip()
         del entry["nome_variants"]
         entry["municipios"] = sorted(entry["municipios"])
+        entry["por_municipio"] = {k: round(v, 2) for k, v in entry["por_municipio"].items()}
         # `tipo` = "parlamentar" (pessoa) | "outro" (fundo, municipio, consorcio).
         # Duas perguntas, nesta ordem: a ORIGEM ja sabe que nao e pessoa (PAC no
         # proponente, FNS)? Se nao, o NOME denuncia entidade? A origem vem

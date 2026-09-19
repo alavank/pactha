@@ -16,14 +16,16 @@
 
 import React, { useEffect, useState } from "react";
 import {
-  AlertTriangle, BadgeCheck, CalendarClock, FileWarning, Landmark, Loader2, Radar, ShieldCheck,
+  AlertTriangle, BadgeCheck, CalendarClock, FileSpreadsheet, FileWarning, Landmark, Loader2, Radar,
+  ShieldCheck,
 } from "lucide-react";
 
 import api from "@/lib/api";
 import { formatCurrencyShort } from "@/lib/bi-format";
 import {
-  Aviso, Bloco, BlocoHead, Campo, Campos, ItemLinha, Lista, Numero, Selo, Vazio,
+  Aviso, BOTAO_SEC, Bloco, BlocoHead, Campo, Campos, ESTILO_SEC, ItemLinha, Lista, Numero, Selo, Vazio,
 } from "@/components/ui/superficies";
+import { baixarArquivo, mensagemDeErro } from "./baixar";
 
 type Tom = "normal" | "ok" | "atencao" | "critico";
 interface Janela { n: number; proximo_dias: number | null }
@@ -110,6 +112,8 @@ function data(iso: string | null): string {
 export function PainelCarteira() {
   const [d, setD] = useState<Resp | null>(null);
   const [erro, setErro] = useState(false);
+  const [baixando, setBaixando] = useState(false);
+  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -130,8 +134,27 @@ export function PainelCarteira() {
 
   const n = d.municipios_na_carteira;
   const r = d.resumo;
+  const baixar = async () => {
+    setBaixando(true);
+    setErroArquivo(null);
+    try {
+      await baixarArquivo("/consolidado/painel/exportar", "painel_da_carteira.xlsx");
+    } catch (e) {
+      setErroArquivo(mensagemDeErro(e));
+    } finally {
+      setBaixando(false);
+    }
+  };
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {erroArquivo && <span className="text-[11px]" style={{ color: "var(--bi-warn-ink)" }}>{erroArquivo}</span>}
+        <button type="button" className={BOTAO_SEC} style={ESTILO_SEC} onClick={baixar} disabled={baixando}
+                title="Uma aba por bloco, com as listas inteiras">
+          {baixando ? <Loader2 className="size-3.5 animate-spin" /> : <FileSpreadsheet className="size-3.5" />}
+          Planilha do painel
+        </button>
+      </div>
       {d.indisponivel.length > 0 && (
         <Aviso tom="atencao" icon={AlertTriangle} className=""
                titulo={`Ficou de fora desta leitura: ${d.indisponivel.map((b) => BLOCO_NOME[b] ?? b).join(", ")}`}>
