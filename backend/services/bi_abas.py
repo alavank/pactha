@@ -215,7 +215,8 @@ async def bi_transferegov(db: AsyncSession, ids: list[int], anos: Optional[list[
         SELECT v.id, v.municipio_id, m.nome, v.numero_proposta, v.codigo_instrumento,
                v.objeto, v.situacao, COALESCE(v.valor_global, v.valor_repasse, 0) AS valor,
                COALESCE(v.valor_repasse, 0), v.orgao, v.parlamentar,
-               v.dt_inicio_vigencia, v.dt_fim_vigencia, v.programa, v.situacao_contratacao
+               v.dt_inicio_vigencia, v.dt_fim_vigencia, v.programa, v.situacao_contratacao,
+               v.arvore->'_resumo'->>'situacao_desde', v.arvore->'_resumo'->>'situacao_atual'
         FROM transferegov_propostas v LEFT JOIN municipios m ON m.id = v.municipio_id
         WHERE v.municipio_id = ANY(:ids)
           -- So a PREFEITURA (15/09/2026): ver `services/natureza.py`.
@@ -233,6 +234,7 @@ async def bi_transferegov(db: AsyncSession, ids: list[int], anos: Optional[list[
             "valor": _money(r[7]), "repasse": _money(r[8]), "orgao": r[9],
             "parlamentar": r[10], "vigencia_de": _iso(r[11]), "vigencia_ate": _iso(r[12]),
             "programa": r[13], "situacao_contratacao": r[14],
+            "_desde": r[15], "_hist": r[16],
             "ano": int(ano_prop) if (ano_prop or "").isdigit() else None,
         })
 
@@ -265,12 +267,12 @@ async def bi_transferegov(db: AsyncSession, ids: list[int], anos: Optional[list[
     # POR FASE (19/09/2026) — a regra do Painel (`services/fases_voluntaria`).
     # `valor_total`/`valor_repasse` seguem sendo o acervo INTEIRO (a aba é de
     # propostas); a tela mostra o celebrado como número e a análise ao lado.
-    from services.fases_voluntaria import fase_de, fases_vazias
+    from services.fases_voluntaria import fase_de, fases_vazias, refinar
     fases = fases_vazias()
     for f in fases.values():
         f["repasse"] = 0.0
     for v in voluntarias:
-        f = fases[fase_de(v["situacao"])]
+        f = fases[refinar(fase_de(v["situacao"]), v.pop("_desde"), v.pop("_hist"))]
         f["n"] += 1
         f["valor"] += v["valor"]
         f["repasse"] += v["repasse"]
