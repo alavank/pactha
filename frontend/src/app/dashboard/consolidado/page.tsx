@@ -9,7 +9,8 @@
  * ⚠️ NÃO É O "Consolidado (todos)" do seletor, que saiu em 05/08/2026 e continua
  * fora. A regra que torna esta área segura: TODO NÚMERO SAI QUEBRADO POR
  * MUNICÍPIO — dinheiro nunca aparece somado sozinho, onde poderia ser lido como
- * número de um cliente.
+ * número de um cliente. A única soma é a da aba Recursos (pedido do dono, 19/09):
+ * rotulada "Soma da carteira · N municípios", com os municípios logo abaixo.
  *
  * ⚠️ NÃO USA `useMunicipio().municipioId`: o escopo é o do usuário, resolvido no
  * backend (`services/bi.resolve_scope`).
@@ -24,13 +25,13 @@
 
 import React, { useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { CalendarClock, FileSpreadsheet, Radar, ShieldCheck, Users } from "lucide-react";
+import { Banknote, CalendarClock, Radar, ShieldCheck, Users } from "lucide-react";
 
 import { TituloTela } from "@/components/TituloTela";
 import { ParlamentaresCarteira } from "./ParlamentaresCarteira";
 import { RadarCarteira } from "./RadarCarteira";
+import { RecursosCarteira } from "./RecursosCarteira";
 import { RegularidadeCarteira } from "./RegularidadeCarteira";
-import { RelatoriosCarteira } from "./RelatoriosCarteira";
 import { VigenciasCarteira } from "./VigenciasCarteira";
 
 const ABAS = [
@@ -38,15 +39,18 @@ const ABAS = [
   { id: "vigencias", rotulo: "Vigências", sub: "vencendo em 120 dias", icon: CalendarClock },
   { id: "parlamentares", rotulo: "Parlamentares", sub: "quem mandou recurso", icon: Users },
   { id: "radar", rotulo: "Radar", sub: "programas com dono", icon: Radar },
-  { id: "relatorios", rotulo: "Relatórios", sub: "planilhas da carteira", icon: FileSpreadsheet },
+  { id: "recursos", rotulo: "Recursos", sub: "estaduais, voluntárias e emendas", icon: Banknote },
 ] as const;
 type Aba = (typeof ABAS)[number]["id"];
+
+// A aba "Relatórios" virou "Recursos" (19/09/2026); link antigo continua abrindo.
+const APELIDOS: Record<string, Aba> = { relatorios: "recursos" };
 
 export default function ConsolidadoPage() {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const daUrl = params.get("aba");
+  const daUrl = APELIDOS[params.get("aba") ?? ""] ?? params.get("aba");
   const aba: Aba = ABAS.some((a) => a.id === daUrl) ? (daUrl as Aba) : "regularidade";
   const trocar = useCallback((id: Aba) => {
     const p = new URLSearchParams(params.toString());
@@ -92,7 +96,7 @@ export default function ConsolidadoPage() {
       {aba === "vigencias" && <VigenciasCarteira />}
       {aba === "parlamentares" && <ParlamentaresCarteira />}
       {aba === "radar" && <RadarCarteira />}
-      {aba === "relatorios" && <RelatoriosCarteira />}
+      {aba === "recursos" && <RecursosCarteira />}
     </div>
   );
 }

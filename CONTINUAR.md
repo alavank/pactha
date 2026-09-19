@@ -1758,7 +1758,7 @@ barra larga logo abaixo do título, com a aba na URL (`?aba=`):
 | **Vigências** | `/api/convenios/alertas` (sem município) | a tela de bolhas/lista que era o modal «Vigências» do Painel de Indicadores. **O botão saiu do Painel** (dono: só o Consolidado pode ignorar o município selecionado). Clique abre o convênio (estadual) ou a proposta (voluntária) |
 | **Parlamentares** | `/api/consolidado/parlamentares` | PR 1 |
 | **Radar** | `/api/consolidado/radar` (+ `/exportar`) | programas abertos em que o município foi nomeado ou tem emenda indicada — "dinheiro com dono, falta a proposta". Clique abre a ficha do programa (a do Radar de captação) |
-| **Relatórios** | `/api/consolidado/relatorios/*` | recursos por município e matriz parlamentar × município |
+| **Recursos** (era "Relatórios"; `?aba=relatorios` ainda abre) | `/api/consolidado/relatorios/*` | soma da carteira + recursos por município, e matriz parlamentar × município |
 
 **Cada bloco é a conta de uma tela que já existe**, chamada com a lista da carteira
 (`services/consolidado_painel.py`): CAUC = `bi_cauc_rollup`; estadual = `cagec_situacao` com
@@ -1767,10 +1767,22 @@ a regra do `_semaforo_cagec` (uma entidade irregular basta); documentos =
 do menu). Os cartões contam **municípios** ("12 de 42"); "sem coleta" e "sem fonte no
 estado" são escritos, nunca verdes; bloco que falha vira `indisponivel`. Cache de 120 s.
 
-**Recursos por município** (Relatórios): estaduais e voluntárias federais (`bi_kpis`) e
-emendas federais (`_fontes_federais` + `emendas_unificadas`, com o grupo `parado` = "Sem
-pagamento") lado a lado, por período. ⚠️ **Sem coluna de total, de propósito**: a voluntária
-que nasceu de emenda está nas duas colunas.
+**Recursos por município** (aba Recursos): estaduais e voluntárias federais (`bi_kpis`) e
+emendas federais (`_fontes_federais` + `emendas_unificadas`) lado a lado, por período.
+- **Soma da carteira no topo** (dono, 19/09): quatro cartões, um por coluna, que são também
+  os botões de ordenar — a coluna que ordena fica destacada no topo e em cada município (os
+  chips "Ordenar por" foram lidos como filtro). Soma **dentro** da coluna, nunca entre elas.
+- ⚠️ **Sem total geral, de propósito**: a voluntária que nasceu de emenda está nas duas
+  colunas (`voluntarias_n` conta quantas; na Freitas, 2026: 24 de 42 municípios, R$ 16,7 mi).
+- **"Empenhadas sem pagamento" tem denominador** (`com_execucao_n` em `totais`): só a emenda
+  da carteira com execução no Portal mede pagamento — em 2026 eram 33 de 354 linhas na
+  Freitas. Pix e Saúde não entram.
+- **Emendas: `n` conta todas, `valor` só a Prefeitura** (os dois cartões da aba Federais);
+  `fora_n`/`fora_valor` dizem quanto foi a entidade.
+- **Voluntárias contam a proposta em qualquer fase** (a regra do Painel): na Freitas, 2026,
+  das 162, 102 estavam "enviada para análise", 19 em execução e 4 rejeitadas/eliminadas.
+  Conferido em 19/09 contra a aba Federais e as listas do TransfereGov nos 42 municípios:
+  nenhuma divergência e nenhuma emenda duplicada dentro da coluna.
 
 **Matriz parlamentar × município** (planilha): uma chamada a `aggregate_parlamentares`, que
 devolve `por_municipio`; os sete blocos do agregado somam por um helper só (`_soma`), então o
