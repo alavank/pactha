@@ -97,6 +97,10 @@ WITH marca AS (
     -- `telegram` SAIU desta lista em 05/09/2026 pelo mesmo caminho de `suas`:
     -- modulo removido do codigo, tela removida dos tres catalogos.
     VALUES ('dashboard'), ('ai'), ('parlamentares'),
+           -- CONSOLIDADO (18/09/2026). So banco NOVO, como `emendas_federais`
+           -- abaixo; nos que ja estao no ar quem concede e
+           -- `add_tela_consolidado.sql`.
+           ('consolidado'),
            ('gestao'), ('agendamentos'), ('rm'), ('documentos'),
            ('convenios'), ('emendas'),
            ('cauc'), ('sismob'), ('obrasgov'),

@@ -1693,6 +1693,55 @@ programa da lista agora abre um modal (`FichaPrograma.tsx`,
 - Arquivo de proposta ilegível ou vazio não troca a tabela (`error`). Apoiadores ilegíveis
   ou zerados com tabela cheia preservam a anterior (`partial`).
 
+## 1.31. CONSOLIDADO: a carteira inteira lado a lado — PR 1, Parlamentares (18/09/2026)
+
+Pedido da assessoria Freitas: "preciso de uma lista do Reginaldo Lopes, onde ele mandou $$
+para nossos clientes". Nenhuma tela respondia, porque todas as operacionais são de UM
+município.
+
+**Reversão de decisão, na forma de área própria.** Em 05/08/2026 o dono tirou o "Consolidado
+(todos)" do seletor de município (commit `1252fc0`): somar carteiras de clientes diferentes
+cria a chance de ler o número de um achando que é do outro. Em 18/09 ele decidiu:
+- item de menu **CONSOLIDADO**, logo abaixo de Regularidade;
+- **o seletor continua sem "todos"**;
+- dentro da área, **todo número sai quebrado por município**;
+- permissão própria (`consolidado.ver`/`exportar`), com cada usuário vendo só os seus
+  municípios.
+
+A série tem três PRs, cada um aberto contra a main depois do merge do anterior:
+Parlamentares (este), painel consolidado e relatórios. Plano completo em
+`~/.claude/plans/cheeky-whistling-parnas.md`.
+
+**Neste PR:**
+- `routers/consolidado.py`:
+  - `GET /api/consolidado/parlamentares` (ranking da carteira);
+  - `GET /api/consolidado/parlamentares/{nome}` (por município e lançamentos);
+  - `.../exportar?formato=xlsx|pdf`, que grava na trilha.
+- **Escopo sempre pelo `services/bi.resolve_scope`:** super-admin vê os municípios ativos,
+  os demais veem os seus `user_municipios`, e escopo vazio dá 403.
+- **Mesma conta da tela Parlamentares:** `aggregate_parlamentares` e o novo
+  `routers/parlamentares.py::detalhe_core`, que filtra por lista e recusa lista vazia.
+- **Tela:** `app/dashboard/consolidado/`. Some do menu para quem enxerga um município só.
+- **Concessão inicial:** `add_tela_consolidado.sql` dá tela, `ver` e `exportar` a quem tem
+  `usuarios.conceder`, e o admin do cliente repassa.
+- **A Emenda Pix entra em todo ranking de parlamentar.** O interruptor `incluir_plano_acao`
+  saiu. Ele sobrou de quando o RP9 era buscado ao vivo; desde 02/09 é uma tabela local, mas
+  o Painel, o BI e o `/comparar` ainda passavam `False`. Resultado: o ranking deles
+  omitia a maior parte do dinheiro de deputado federal, e divergia da aba Parlamentares.
+  **O top parlamentares do Painel vai subir depois do deploy — é correção, não defeito.**
+- O PDF de Parlamentares ganhou a seção de emendas federais. O cabeçalho já contava essas
+  emendas, mas a tabela não aparecia no arquivo.
+
+⚠️ **A tela Parlamentares continua sem "todos" para quem não é super-admin**, e é de
+propósito (`tests/test_export_pdf_gate.py`). Abrir o "todos" ali daria a visão da carteira a
+quem só tem `parlamentares.ver`, sem `consolidado.ver`. Para o super-admin sem município, o
+escopo passou de "tenant inteiro, inclusive inativos" para "municípios ativos".
+
+**Conferido** num Postgres 16 vazio:
+- as 138 migrations rodaram duas vezes;
+- o usuário restrito vê só os seus municípios;
+- a concessão inicial vai só ao admin.
+
 ## 1.29. O CI ficou sem crédito — o build foi para a VPS e voltou (17-18/09/2026)
 
 Em 17/09, logo depois do merge do #503, **todo job do GitHub Actions passou a falhar em 4

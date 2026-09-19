@@ -528,6 +528,10 @@ MIGRATION_FILES = [
     # e cria a tabela da fonte — esta migracao so toca as tres tabelas
     # de permissao, e por isso fica agrupada com as outras concessoes de tela.
     "add_tela_parcerias.sql",
+    # O CONSOLIDADO (18/09/2026): tela e acoes a quem tem `usuarios.conceder`,
+    # para o administrador do cliente repassar. Mesmo lugar e mesma dependencia
+    # das duas de cima (so a FK de `add_permissoes_por_acao.sql`).
+    "add_tela_consolidado.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.

@@ -826,6 +826,9 @@ async def export_parlamentares_pdf(
     # motivo de `/ai-relatorio`: `municipio_id` e opcional, e um nao-admin que
     # peca sem municipio ja leva hoje o 403 "Selecione um municipio permitido".
     ensure_tela(current, "parlamentares")
+    # Sem município, 403 a quem não é super-admin — de propósito: a carteira do
+    # cliente sai pelo CONSOLIDADO, com permissão própria
+    # (`/api/consolidado/parlamentares/{nome}/exportar`).
     ensure_municipio_access(current, municipio_id)
 
     from routers.parlamentares import listar as _listar, detalhe as _detalhe
@@ -969,7 +972,23 @@ async def export_parlamentares_pdf(
                 ["Município", "Nº Proposta", "Órgão", "Situação", "Valor Total", "Ano", "Objeto"],
                 rows, [24, 24, 34, 34, 26, 14, 97]))
 
-        if not (sig or vol or em or pa or pac or fns):
+        # A sétima fonte. O cabeçalho do parlamentar já contava "Emendas federais"
+        # (acima), mas o arquivo não tinha a seção: o total do cabeçalho passava
+        # a soma das tabelas, e o parlamentar só com emenda federal saía "sem
+        # lançamentos detalhados".
+        ef = det.get("emendas_federais", [])
+        if ef:
+            rows = [[
+                _pc(x.get("municipio_nome"), 30), _pc(x.get("codigo_emenda"), 20),
+                _pc(x.get("ano")), _pc(x.get("beneficiario_nome"), 120),
+                _pc(x.get("qualif_proponente"), 40), _pc(_br(x.get("valor_total"))),
+            ] for x in ef]
+            story.append(Paragraph(f"Emendas federais (carteira CGU) — {len(ef)} emenda(s)", sub_style))
+            story.append(_sec_table(
+                ["Município", "Emenda", "Ano", "Beneficiário", "Qualificação", "Valor"],
+                rows, [26, 26, 12, 110, 60, 28]))
+
+        if not (sig or vol or em or pa or pac or fns or ef):
             story.append(Paragraph("Sem lançamentos detalhados.", meta_style))
         story.append(Spacer(1, 6))
 

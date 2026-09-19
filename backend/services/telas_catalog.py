@@ -97,7 +97,7 @@ CATALOG_KEYS = {t["key"] for t in TELAS_CATALOG}
 TELAS_TODAS = [
     # `telegram` SAIU em 05/09/2026, pelo mesmo caminho de `suas`: modulo
     # removido do codigo, tela removida dos tres catalogos.
-    "dashboard", "ai", "parlamentares", "gestao", "agendamentos", "rm",
+    "dashboard", "ai", "parlamentares", "consolidado", "gestao", "agendamentos", "rm",
     "documentos", "convenios", "emendas", "cauc", "sismob",
     "obrasgov", "parcerias", "faf_planos",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).

@@ -24,15 +24,10 @@ from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.registro_rotas import exige
-from services.bi import anos_list
+from services.bi import anos_list, resolve_scope
 from models.user import User
 
 router = APIRouter(prefix="/api/parlamentares", tags=["parlamentares"])
-
-
-class _SkipPlanoAcao(Exception):
-    """Sentinela p/ pular o fetch AO VIVO do RP9 quando incluir_plano_acao=False.
-    Capturado pelo `except Exception` que ja envolve o bloco (degradacao silenciosa)."""
 
 
 def _norm(s: str) -> str:
@@ -86,13 +81,36 @@ async def listar(
     `contagem` com os dois lados, para o seletor da tela oferecer "outros"
     sem precisar de uma segunda chamada.
     """
+    # Sem município, só o super-admin passa (403 aos demais) — ver
+    # `escopo_de_municipios`.
     ensure_municipio_access(current, municipio_id)
+    ids = await escopo_de_municipios(db, current, municipio_id)
     ensure_tela(current, "parlamentares")
     return await aggregate_parlamentares(
-        db, municipio_id=municipio_id, q=q,
+        db, municipio_ids=ids, q=q,
         ano=anos_list((anos or []) + ([ano] if ano else [])),
         tipo=tipo,
     )
+
+
+async def escopo_de_municipios(db: AsyncSession, current: User,
+                               municipio_id: Optional[int]) -> list[int]:
+    """Os municípios que a consulta pode varrer, SEMPRE como lista explícita.
+
+    ⚠️ QUEM CHAMA FAZ `ensure_municipio_access(current, municipio_id)` ANTES, e
+    isso é de propósito: nesta tela, "sem município" continua sendo só do
+    super-admin (403 aos demais, `tests/test_export_pdf_gate.py`). A visão da
+    carteira para o cliente mora no CONSOLIDADO, com permissão própria
+    (`consolidado.ver`); abrir o "todos" aqui daria essa visão a quem só tem
+    `parlamentares.ver`.
+
+    O que mudou em 18/09/2026: o super-admin sem município passava
+    `municipio_id=None` ao agregado, que somava o TENANT INTEIRO, inclusive
+    município inativo. Agora recebe a lista dos ativos (`resolve_scope`), e o
+    agregado nunca recebe escopo vazio — as funções de agregação não têm gate.
+    """
+    ids, _ = await resolve_scope(db, current, municipio_id)
+    return ids
 
 
 async def aggregate_parlamentares(
@@ -100,15 +118,21 @@ async def aggregate_parlamentares(
     municipio_id: Optional[int] = None,
     q: Optional[str] = None,
     ano=None,
-    incluir_plano_acao: bool = True,
     municipio_ids: Optional[list[int]] = None,
     tipo: str = "todos",
 ) -> dict:
     """Nucleo da agregacao cross-fonte de parlamentares, SEM gate de auth.
 
-    Reusado pelo endpoint /api/parlamentares (apos ensure_tela) e pelo Painel
-    Executivo do prefeito (gated so por municipio). incluir_plano_acao=False pula
-    o fetch AO VIVO do RP9 federal (mais rapido, p/ telas snappy).
+    Reusado pelo endpoint /api/parlamentares (apos ensure_tela), pelo Painel
+    Executivo do prefeito (gated so por municipio), pelo BI e pelo CONSOLIDADO.
+
+    ⚠️ SEM INTERRUPTOR DA EMENDA PIX (18/09/2026). Existia `incluir_plano_acao`,
+    nascido quando o RP9 era fetch AO VIVO de 5-7s. Desde 02/09 ele vem da
+    tabela `transferegov_te` (bloco 4), uma query local — mas o Painel, o BI e o
+    /comparar continuavam passando False, e o ranking deles deixava de fora a
+    Emenda Pix, por onde chega a maior parte do dinheiro de deputado FEDERAL. A
+    aba Parlamentares incluia: mesmo dado, duas contas. Agora toda tela soma as
+    sete fontes.
 
     `municipio_ids` (lista) = escopo CONSOLIDADO da assessoria: agrega sobre esse
     CONJUNTO (`= ANY(:muns)`). Ignorado quando `municipio_id` (unico) e informado;
@@ -301,9 +325,8 @@ async def aggregate_parlamentares(
     #    lancamento de outro municipio. O `OR` preserva a linha quando falta
     #    CNPJ de um dos lados (municipio sem CNPJ perderia toda a sua TE).
     #
-    #    `incluir_plano_acao` deixa de significar "pula o fetch caro" — ficou
-    #    como interruptor da fonte, e os chamadores que passavam False (Painel,
-    #    /comparar) seguem funcionando.
+    #    O interruptor `incluir_plano_acao` que sobrou do fetch ao vivo saiu em
+    #    18/09/2026 — ver a docstring.
     ano_te = " AND substr(te.programa_codigo, 5, 4) = ANY(:anos_txt)" if anos else ""
     sql_te = f"""
         SELECT te.parlamentar,
@@ -320,8 +343,6 @@ async def aggregate_parlamentares(
           {where_extra.replace("municipio_id", "te.municipio_id")}{ano_te}
     """
     try:
-        if not incluir_plano_acao:
-            raise _SkipPlanoAcao()
         for row in (await db.execute(text(sql_te), params)).fetchall():
             autor = (row[0] or "").strip()
             if not autor or len(autor) < 3:
@@ -336,8 +357,6 @@ async def aggregate_parlamentares(
             if row[1]:
                 entry["municipios"].add(row[1])
             entry["por_fonte"]["plano_acao"] += 1
-    except _SkipPlanoAcao:
-        pass
     except Exception:
         pass
 
@@ -584,12 +603,14 @@ async def comparar(
     Reusa `aggregate_parlamentares` DUAS vezes em vez de escrever uma consulta
     propria. E mais lento (duas agregacoes) e vale a pena: a comparacao nunca
     pode discordar da lista que esta na mesma tela, e uma segunda consulta
-    "equivalente" e exatamente como as duas divergem com o tempo. Por isso
-    tambem `incluir_plano_acao=False` nos dois lados — o fetch AO VIVO do RP9
-    federal nao e reproduzivel para um ano passado, entao inclui-lo de um lado
-    so criaria uma diferenca que nao existe na realidade.
+    "equivalente" e exatamente como as duas divergem com o tempo. A Emenda Pix
+    entra nos dois lados (vem da tabela `transferegov_te`, reproduzivel para
+    qualquer ano) — ate 18/09/2026 ficava de fora dos dois.
     """
+    # Sem município, só o super-admin passa (403 aos demais) — ver
+    # `escopo_de_municipios`.
     ensure_municipio_access(current, municipio_id)
+    ids = await escopo_de_municipios(db, current, municipio_id)
     ensure_tela(current, "parlamentares")
 
     anos_a = sorted(set(a))
@@ -601,10 +622,8 @@ async def comparar(
         # variacao vira ficcao. Melhor recusar do que devolver numero bonito.
         raise HTTPException(400, "Os dois periodos nao podem compartilhar o mesmo ano.")
 
-    ra = await aggregate_parlamentares(db, municipio_id=municipio_id, q=q,
-                                       ano=anos_a, incluir_plano_acao=False)
-    rb = await aggregate_parlamentares(db, municipio_id=municipio_id, q=q,
-                                       ano=anos_b, incluir_plano_acao=False)
+    ra = await aggregate_parlamentares(db, municipio_ids=ids, q=q, ano=anos_a)
+    rb = await aggregate_parlamentares(db, municipio_ids=ids, q=q, ano=anos_b)
 
     por_a = {i["nome_normalizado"]: i for i in ra["items"]}
     por_b = {i["nome_normalizado"]: i for i in rb["items"]}
@@ -678,22 +697,34 @@ async def detalhe(
     current: User = Depends(get_current_user),
 ):
     """Retorna todos os lancamentos (convenios/propostas/emendas) desse parlamentar."""
+    # Sem município, só o super-admin passa (403 aos demais) — ver
+    # `escopo_de_municipios`.
     ensure_municipio_access(current, municipio_id)
+    ids = await escopo_de_municipios(db, current, municipio_id)
     ensure_tela(current, "parlamentares")
+    return await detalhe_core(db, nome_normalizado, ids,
+                              anos_list((anos or []) + ([ano] if ano else [])))
+
+
+async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
+                       _anos: Optional[list[int]]) -> dict:
+    """Os lançamentos do parlamentar nos municípios `muns`, SEM gate de auth.
+
+    ⚠️ `muns` É OBRIGATÓRIO E NÃO PODE VIR VAZIO: quem chama resolve o escopo
+    antes (`escopo_de_municipios`). Lista vazia aqui seria "nenhum filtro" e
+    devolveria o tenant inteiro. Reusado pela tela Parlamentares e pelo
+    CONSOLIDADO, cada um com a sua permissão.
+    """
+    if not muns:
+        raise HTTPException(403, "Nenhum município no escopo")
     # Aceita tanto chave normalizada quanto nome livre
     nome_param = nome_normalizado.replace("+", " ")
     # Busca por ILIKE em cada fonte com o nome original (case-insensitive)
-    where_extra = ""
-    params: dict = {"n": f"%{nome_param}%"}
-    if municipio_id:
-        where_extra_sigcon = " AND c.municipio_id = :mun"
-        where_extra_vol = " AND v.municipio_id = :mun"
-        where_extra_em = " AND e.municipio_id = :mun"
-        params["mun"] = municipio_id
-    else:
-        where_extra_sigcon = where_extra_vol = where_extra_em = ""
+    params: dict = {"n": f"%{nome_param}%", "muns": list(muns)}
+    where_extra_sigcon = " AND c.municipio_id = ANY(:muns)"
+    where_extra_vol = " AND v.municipio_id = ANY(:muns)"
+    where_extra_em = " AND e.municipio_id = ANY(:muns)"
     # Filtro de ano (fonte do ano difere por tabela — ver endpoint listar)
-    _anos = anos_list((anos or []) + ([ano] if ano else []))
     if _anos:
         where_extra_sigcon += " AND c.ano = ANY(:anos)"
         where_extra_vol += " AND split_part(v.numero_proposta, '/', 2) = ANY(:anos_txt)"
@@ -792,7 +823,7 @@ async def detalhe(
     plano_acao: list = []
     try:
         ano_te_d = " AND substr(te.programa_codigo, 5, 4) = ANY(:anos_txt_te)" if _anos else ""
-        mun_te_d = " AND te.municipio_id = :mun_te" if municipio_id else ""
+        mun_te_d = " AND te.municipio_id = ANY(:muns)"
         sql_pa = f"""
             SELECT te.plano_acao_id, te.municipio_id, m.nome, te.codigo, te.emenda,
                    te.parlamentar, te.objeto, te.situacao,
@@ -808,9 +839,7 @@ async def detalhe(
                   )
               {mun_te_d}{ano_te_d}
         """
-        pa_params: dict = {}
-        if municipio_id:
-            pa_params["mun_te"] = municipio_id
+        pa_params: dict = {"muns": list(muns)}
         if _anos:
             pa_params["anos_txt_te"] = [str(a) for a in _anos]
         alvo = _norm(nome_param)
@@ -846,9 +875,8 @@ async def detalhe(
             FROM transferegov_pac
             WHERE COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) ILIKE :n
         """
-        pac_params: dict = {"n": f"%{nome_param}%"}
-        if municipio_id:
-            pac_sql += " AND municipio_id = :mun"; pac_params["mun"] = municipio_id
+        pac_params: dict = {"n": f"%{nome_param}%", "muns": list(muns)}
+        pac_sql += " AND municipio_id = ANY(:muns)"
         if _anos:
             pac_sql += " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)"
             pac_params["anos_txt"] = [str(a) for a in _anos]
@@ -890,9 +918,8 @@ async def detalhe(
             WHERE c.fonte ILIKE '%FNS%'
               AND jsonb_typeof(c.raw_data->'linhaPropostas') = 'array'
         """
-        fns_params: dict = {}
-        if municipio_id:
-            fns_sql += " AND c.municipio_id = :mun"; fns_params["mun"] = municipio_id
+        fns_params: dict = {"muns": list(muns)}
+        fns_sql += " AND c.municipio_id = ANY(:muns)"
         if _anos:
             fns_sql += " AND c.ano = ANY(:anos)"; fns_params["anos"] = _anos
         for r in (await db.execute(text(fns_sql), fns_params)).fetchall():
@@ -943,9 +970,7 @@ async def detalhe(
     # de la: casamento por nome de autor apagaria emenda legitima.
     ef_list: list = []
     try:
-        where_ef = ""
-        if municipio_id:
-            where_ef += " AND ef.municipio_id = :mun"
+        where_ef = " AND ef.municipio_id = ANY(:muns)"
         if _anos:
             where_ef += " AND ef.ano = ANY(:anos)"
         sql_ef_det = f"""

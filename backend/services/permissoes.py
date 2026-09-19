@@ -488,6 +488,15 @@ _RECURSOS: tuple = (
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",
              "a base de parlamentares e a atuação deles no município", "",
              ("ver", "exportar"), tela="parlamentares"),
+    # ⭐ CONSOLIDADO (18/09/2026) — a carteira inteira do cliente, lado a lado,
+    # para as perguntas que atravessam municípios ("onde o deputado X mandou
+    # dinheiro para os nossos clientes"). Reverte a decisão de 05/08 SÓ nesta
+    # forma: área própria, com número sempre quebrado por município; o seletor
+    # de município continua sem "todos". Cada usuário vê os seus municípios
+    # (`services/bi.resolve_scope`), nunca o tenant.
+    _Recurso("consolidado", SEC_CONSULTAS, "Consolidado da carteira",
+             "os dados de todos os municípios da carteira, lado a lado", "",
+             ("ver", "exportar"), tela="consolidado"),
     # ⚠️ «PAINEIS MUNICIPAIS» NAO ENTRA AQUI, e a ausencia e deliberada — foi
     # tentada e desfeita em 05/09/2026. Ela e a unica tela do menu sem chave de
     # ACAO, e a primeira versao deste incremento lhe deu uma (`paineis.ver`) so
