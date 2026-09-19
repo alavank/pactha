@@ -82,3 +82,14 @@ def test_as_rotas_resolvem_escopo_e_cobram_a_permissao():
         bloco = bloco[:bloco.index("\n@router")]
         assert 'exige("consolidado.ver")' in bloco and "await _escopo(db, current)" in bloco
     assert '"/painel"' not in fonte, "o painel único foi dividido em abas"
+
+
+def test_radar_em_ordem_alfabetica_sem_acento_pesar():
+    """Dono, 19/09/2026: os municípios do Radar em ordem alfabética. Um `sort`
+    cru mandaria "Álvaro" para depois de "Zé" e "araújos" para depois de "Z"."""
+    nomes = ["Carandaí", "Igarapé", "Álvares Florence", "Araújos", "arcos", "Zé Doca"]
+    assert sorted(nomes, key=CP._chave_nome) == [
+        "Álvares Florence", "Araújos", "arcos", "Carandaí", "Igarapé", "Zé Doca"]
+    fonte = (RAIZ / "services" / "consolidado_painel.py").read_text(encoding="utf-8")
+    corpo = fonte[fonte.index("async def montar_radar"):]
+    assert 'linhas.sort(key=lambda l: _chave_nome(l["nome"]))' in corpo

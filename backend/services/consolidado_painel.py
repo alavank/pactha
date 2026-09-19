@@ -31,12 +31,20 @@ from __future__ import annotations
 
 import logging
 import time
+import unicodedata
 from typing import Optional
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger("consolidado")
+
+
+def _chave_nome(nome: Optional[str]) -> str:
+    """Ordem alfabética de gente: sem acento e sem caixa ("Araújos" antes de
+    "Arcos"; um "Á" não vai para depois do "Z", como no `sort` cru)."""
+    s = unicodedata.normalize("NFKD", nome or "")
+    return "".join(c for c in s if not unicodedata.combining(c)).casefold()
 
 DIAS_DOCUMENTO = 30
 LIMITE_LISTA = 80
@@ -243,10 +251,12 @@ async def montar_radar(db: AsyncSession, ids: list[int],
         programas.extend(lista)
         linhas.append({"municipio_id": m["municipio_id"], "nome": m["nome"], "uf": m["uf"],
                        "radar": radar})
-    # Quem tem dinheiro à mão primeiro: nomeado/indicado, depois o prazo.
-    linhas.sort(key=lambda l: (-(((l["radar"] or {}).get("nomeado") or 0)
-                                 + ((l["radar"] or {}).get("indicado") or 0)),
-                               (l["radar"] or {}).get("proximo_dias") or 9999, l["nome"]))
+    # ORDEM ALFABÉTICA (dono, 19/09/2026). Era "mais nomeado/indicado primeiro",
+    # e ninguém lia assim: o fim da lista, onde todos empatavam em "2 nomeado",
+    # saía alfabético, e o dono achou que a lista inteira era — e que o Carandaí
+    # (10 com dono, o primeiro) tinha sido "movido para o topo". A urgência mora
+    # no selo de prazo de cada município, não na posição.
+    linhas.sort(key=lambda l: _chave_nome(l["nome"]))
     programas.sort(key=lambda r: (r["dias"] if r["dias"] is not None else 9999, r["municipio"]))
     payload = {
         "municipios_na_carteira": len(ids),
