@@ -1795,8 +1795,17 @@ cheio, independente da fase". Agora (`services/fases_voluntaria.py`, a regra ún
 | Fase | Situações | Onde aparece |
 |---|---|---|
 | **celebrada** | as telas «Em execução» + «Encerradas» (inclui situação nula) | **o número** (`valor_total_federal`, `total_voluntarias`) |
-| **analise** | a tela «Voluntárias» menos as celebradas (`VOLUNTARIA_SQL`) | ao lado, "+ R$ X em análise, fora do valor" |
-| **rejeitada** | `rejeitad` **ou `eliminad`** | só a contagem |
+| **analise** | a tela «Voluntárias» menos as celebradas (`VOLUNTARIA_SQL`), com mudança de situação nos últimos 2 anos | ao lado, "+ R$ X em análise, fora do valor" |
+| **parada** | em análise, mas **sem mudar de situação há mais de 2 anos** (`PARADA_DIAS`, pelo `arvore._resumo.situacao_desde`) | **em tela nenhuma** — dono: "2 anos atrás, mais que isso não precisa" |
+| **rejeitada** | `rejeitad` **ou `eliminad`**, ou o histórico diz `REPROVAD`/`REJEITAD` | só a contagem |
+
+**Paradas (19/09/2026).** Na Freitas, todos os anos, a linha "em análise" tinha R$ 1,4 bi,
+e 79% disso não mudava de situação havia mais de 1 ano: 948 propostas paradas havia mais de
+5 anos, e 158 eram só de 2009. Com o corte de 2 anos, saem 1.197 propostas / R$ 1,06 bi e
+ficam 193 / R$ 317 mi. Sem histórico coletado, a proposta segue em análise, porque não se
+afirma abandono sem a data. 4 propostas de 2009 a 2011 tinham o histórico "REPROVADA" e a
+foto da proposta ainda "em análise": vale o histórico (`refinar`). As listas do TransfereGov
+continuam mostrando essas propostas; só as somas as ignoram.
 
 - Uma função (`voluntarias_por_fase`) para `bi_kpis` **e** `summary_core` (eram duas cópias
   da consulta); `voluntarias_fases` no payload; frase única no front (`subVoluntarias` em

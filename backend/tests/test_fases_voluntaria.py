@@ -14,6 +14,7 @@ Rodar: python -m pytest backend/tests/test_fases_voluntaria.py -q
 """
 import asyncio
 import re
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -80,6 +81,7 @@ def test_sql_das_fases_e_valido():
     for sql in (F.FASE_SQL, F.CATEGORIA_SQL):
         pglast.parse_sql(f"SELECT {sql} FROM transferegov_propostas")
     pglast.parse_sql(f"SELECT 1 FROM transferegov_propostas WHERE {F.VIVA_SQL}")
+    pglast.parse_sql(f"SELECT {F.FASE_SQL} AS fase, {F.RESUMO_SQL} FROM transferegov_propostas")
 
 
 def test_painel_e_bi_somam_pela_mesma_funcao():
@@ -113,13 +115,52 @@ class _Db:
         return _Res(self.rows)
 
 
+HOJE = date(2026, 9, 19)
+
+
 def test_voluntarias_por_fase_soma_e_separa_os_prazos():
-    db = _Db([("celebrada", "31/12/2026", 1_000.0), ("celebrada", None, "500.5"),
-              ("analise", None, 45_300_000.0), ("rejeitada", "01/01/2020", 9_999.0)])
-    fases, vig = asyncio.run(F.voluntarias_por_fase(db, [14], [2026]))
+    db = _Db([("celebrada", "31/12/2026", 1_000.0, None, None),
+              ("celebrada", None, "500.5", None, None),
+              ("analise", None, 45_300_000.0, "22/07/2026 11:11:41", "PROPOSTA_ENVIADA_ANALISE"),
+              ("analise", None, 305_000.0, "15/03/2009 10:00:00", "PROPOSTA_ENVIADA_ANALISE"),
+              ("rejeitada", "01/01/2020", 9_999.0, None, None)])
+    fases, vig = asyncio.run(F.voluntarias_por_fase(db, [14], [2026], hoje=HOJE))
     assert fases["celebrada"] == {"n": 2, "valor": 1_500.5}
     assert fases["analise"] == {"n": 1, "valor": 45_300_000.0}
+    assert fases["parada"] == {"n": 1, "valor": 305_000.0}
     assert fases["rejeitada"]["n"] == 1
     # a rejeitada não tem convênio que vença: fora dos alertas
-    assert vig == ["31/12/2026", None, None]
+    assert vig == ["31/12/2026", None, None, None]
     assert "municipal IS NOT FALSE" in db.sql and db.params["anos_txt"] == ["2026"]
+    assert "arvore->'_resumo'->>'situacao_desde'" in db.sql
+
+
+@pytest.mark.parametrize("fase,desde,hist,esperado", [
+    # o corte do dono: MAIS de 2 anos sem mudar de situação
+    ("analise", "19/09/2024 09:00:00", "PROPOSTA_ENVIADA_ANALISE", "analise"),   # 730 dias
+    ("analise", "18/09/2024 09:00:00", "PROPOSTA_ENVIADA_ANALISE", "parada"),    # 731
+    ("analise", "30/06/2023 21:53:26", "PROPOSTA_ENVIADA_ANALISE", "parada"),
+    ("analise", "2023-06-30", "PROPOSTA_EM_ANALISE", "parada"),                 # ISO também
+    # sem histórico coletado: não se afirma abandono
+    ("analise", None, None, "analise"),
+    ("analise", "", None, "analise"),
+    # o histórico diz reprovada e a foto da proposta nunca foi refeita
+    ("analise", "18/01/2012 09:43:52", "PROPOSTA_REPROVADA", "rejeitada"),
+    ("analise", "01/09/2026 09:00:00", "PLANO_TRABALHO_REJEITADO", "rejeitada"),
+    # celebrada e rejeitada não se mexem, por mais velho que seja o histórico
+    ("celebrada", "01/01/2009 00:00:00", "EM_EXECUCAO", "celebrada"),
+    ("celebrada", "01/01/2009 00:00:00", "PROPOSTA_REPROVADA", "celebrada"),
+    ("rejeitada", "01/01/2009 00:00:00", None, "rejeitada"),
+])
+def test_refinar_com_o_historico(fase, desde, hist, esperado):
+    assert F.refinar(fase, desde, hist, HOJE) == esperado
+
+
+def test_parada_nao_aparece_em_tela():
+    """"2 anos atrás, mais que isso não precisa" (dono, 19/09/2026): nenhuma tela
+    nem a planilha leem a fase `parada`."""
+    raiz = BACKEND.parent / "frontend" / "src"
+    for arq in list(raiz.rglob("*.tsx")) + list(raiz.rglob("*.ts")):
+        assert "parada\"]" not in arq.read_text(encoding="utf-8"), arq
+    fonte = (BACKEND / "services" / "consolidado_relatorios.py").read_text(encoding="utf-8")
+    assert '"parada"' not in fonte
