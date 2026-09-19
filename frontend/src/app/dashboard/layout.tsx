@@ -219,6 +219,13 @@ function SidebarContent({
   const isSuper = ehSuperAdmin(user);
   const allowed = allowedTelasOf(user);
   let visibleNav = filterNav(NAV_ITEMS, allowed);
+  /* CONSOLIDADO SÓ COM CARTEIRA. Com um município só (Monte Sião, Santa Maria,
+     Nova Palma, ou o usuário restrito a um) não há o que pôr lado a lado, e a
+     tela repetiria a do município com outro nome. `municipios` já é a lista do
+     usuário, não a do tenant. */
+  if (municipios.length <= 1) {
+    visibleNav = visibleNav.filter((it) => !("href" in it) || it.href !== "/dashboard/consolidado");
+  }
   /* TELAS QUE DEPENDEM DA FONTE DO ESTADO. O Diário Oficial tem provedor por UF
      (MG = Jornal Minas Gerais, ES = DOM/ES, RS = DOE-RS), então segue
      `temDiarioEstadual`: some em GO/TO até existir o provedor daquele estado —
@@ -405,11 +412,16 @@ function SidebarContent({
                no rodapé e "parecia erro na página" (dono, 09 e 10/08). No modal
                a lista tem corpo, ganha BUSCA e o aviso de troca acontece na
                mesma caixa, sem dois pop-ups em sequência.
-               ⚠️ NÃO EXISTE "Consolidado (todos)", e é decisão do dono. Numa
-               assessoria os municípios são CLIENTES DIFERENTES: somar as
-               carteiras numa tela só não tem uso legítimo e cria a chance de
+               ⚠️ ESTE SELETOR NÃO TEM "Consolidado (todos)", e é decisão do
+               dono (05/08/2026). Numa assessoria os municípios são CLIENTES
+               DIFERENTES: pôr a soma no lugar de um município cria a chance de
                ler o número de um cliente achando que é de outro — o risco que a
-               transição (aviso + remontagem) existe para fechar. */
+               transição (aviso + remontagem) existe para fechar.
+               ⭐ A pergunta que atravessa clientes ("onde o deputado X mandou
+               dinheiro para a carteira") tem lugar próprio desde 18/09/2026: o
+               item CONSOLIDADO do menu, onde todo número sai quebrado por
+               município. Revisão do dono, na forma de área separada — o seletor
+               continua sem "todos". */
             <button
               type="button"
               onClick={onAbrirTroca}

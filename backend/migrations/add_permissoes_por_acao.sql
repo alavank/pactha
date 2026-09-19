@@ -233,6 +233,11 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('simec.exportar', 'consultas', FALSE),
     ('parlamentares.ver', 'consultas', FALSE),
     ('parlamentares.exportar', 'consultas', FALSE),
+    -- CONSOLIDADO da carteira (18/09/2026). Tela nova: no bloco de
+    -- compatibilidade lá embaixo ela só completa a regra (toda chave tem a sua
+    -- tela) — ninguém a tinha antes, então não há concessão antiga a traduzir.
+    ('consolidado.ver', 'consultas', FALSE),
+    ('consolidado.exportar', 'consultas', FALSE),
     ('dou.ver', 'consultas', FALSE),
     ('dou.exportar', 'consultas', FALSE),
     ('frescor.ver', 'consultas', FALSE),
@@ -442,6 +447,8 @@ WITH marca AS (
         ('simec', 'simec.exportar', FALSE),
         ('parlamentares', 'parlamentares.ver', FALSE),
         ('parlamentares', 'parlamentares.exportar', FALSE),
+        ('consolidado', 'consolidado.ver', FALSE),
+        ('consolidado', 'consolidado.exportar', FALSE),
         ('dou', 'dou.ver', FALSE),
         ('dou', 'dou.exportar', FALSE),
         (NULL, 'frescor.ver', TRUE),

@@ -140,7 +140,7 @@ def _periodo(ano: Optional[int], anos: Optional[list[int]]) -> Optional[list[int
 
 
 # --------------------------------------------------------------------------
-# Cache TTL em memoria do overview (por-worker). Chave = escopo+ano+live.
+# Cache TTL em memoria do overview (por-worker). Chave = escopo+ano.
 # Um wallboard polando a cada 30-60s quase nao toca o banco. Stale <= TTL.
 # --------------------------------------------------------------------------
 _OVERVIEW_TTL = 45  # segundos
@@ -328,7 +328,7 @@ async def _frescor_carteira(db: AsyncSession, ids: list[int]) -> Optional[dict]:
 
 
 async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single: bool,
-                            ano: Optional[list[int]], live: bool) -> dict:
+                            ano: Optional[list[int]]) -> dict:
     """Monta o payload do overview SEQUENCIALMENTE na sessao do request. NAO usar
     asyncio.gather com sessoes proprias aqui: abrir N AsyncSession por request
     esgota o pool compartilhado (pool_size+overflow=15) e derruba TODO o app,
@@ -342,10 +342,9 @@ async def _compute_overview(db: AsyncSession, ids: list[int], cons: bool, single
     # pior erro que ele pode cometer. Regular na Uniao nao e regular em Minas.
     semaforo_cagec = await _semaforo_cagec(db, ids)
     saude = await bi_saude_rollup(db, ids)
-    if single:
-        ranking = await aggregate_parlamentares(db, municipio_id=ids[0], ano=ano, incluir_plano_acao=live)
-    else:
-        ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=ano, incluir_plano_acao=live)
+    # ⚠️ Com a Emenda Pix, sempre (18/09/2026): antes o `live=False` padrão a
+    # deixava de fora — ver a docstring de `aggregate_parlamentares`.
+    ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=ano)
     mudancas = await listar_core(db, ids, 30, 8)
     execucao = await bi_execucao(db, ids, ano)
     # So no consolidado: municipio unico ja tem o selo por tela (PR #164);
@@ -378,7 +377,6 @@ async def overview(
     municipio_id: Optional[int] = Query(None, description="1 municipio; ausente = consolidado do escopo"),
     ano: Optional[int] = Query(None, description="Filtra KPIs por ano (None=todos)"),
     anos: Optional[list[int]] = Query(None, description="Varios anos (mandato); soma-se a `ano`"),
-    live: bool = Query(False, description="Inclui o RP9 federal AO VIVO (lento; nao usar no polling da TV)"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -391,7 +389,7 @@ async def overview(
     single = (not cons) and len(ids) == 1
     ano = _periodo(ano, anos)
 
-    cache_key = f"{scope_signature(ids, cons)}|a={anos_signature(ano)}|l={int(live)}"
+    cache_key = f"{scope_signature(ids, cons)}|a={anos_signature(ano)}"
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -403,7 +401,7 @@ async def overview(
     fut = asyncio.get_event_loop().create_future()
     _INFLIGHT[cache_key] = fut
     try:
-        payload = await _compute_overview(db, ids, cons, single, ano, live)
+        payload = await _compute_overview(db, ids, cons, single, ano)
         _cache_put(cache_key, payload)
         if not fut.done():
             fut.set_result(payload)
@@ -438,7 +436,6 @@ async def parlamentares(
     municipio_id: Optional[int] = Query(None),
     ano: Optional[int] = Query(None),
     anos: Optional[list[int]] = Query(None),
-    live: bool = Query(False),
     tipo: str = Query("parlamentar", description="parlamentar (padrao) | outro | todos"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
@@ -453,11 +450,7 @@ async def parlamentares(
     _gate_bi(current)
     ids, cons = await resolve_scope(db, current, municipio_id)
     periodo = _periodo(ano, anos)
-    if (not cons) and len(ids) == 1:
-        return await aggregate_parlamentares(db, municipio_id=ids[0], ano=periodo,
-                                             incluir_plano_acao=live, tipo=tipo)
-    return await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo,
-                                         incluir_plano_acao=live, tipo=tipo)
+    return await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo, tipo=tipo)
 
 
 @router.get("/alertas", dependencies=[exige("bi.ver")])
@@ -842,13 +835,13 @@ async def narrativa(
     kpis = await bi_kpis(db, ids, periodo)
     cauc = await bi_cauc_rollup(db, ids)
     if single:
-        ranking = await aggregate_parlamentares(db, municipio_id=ids[0], ano=periodo, incluir_plano_acao=False)
+        ranking = await aggregate_parlamentares(db, municipio_id=ids[0], ano=periodo)
         mrow = (await db.execute(text("SELECT nome FROM municipios WHERE id = :m"), {"m": ids[0]})).first()
         nome = mrow[0] if mrow else f"Municipio {ids[0]}"
         cauc_regular = cauc["por_municipio"][0]["regular"] if cauc["por_municipio"] else None
         mid_key = ids[0]
     else:
-        ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo, incluir_plano_acao=False)
+        ranking = await aggregate_parlamentares(db, municipio_ids=ids, ano=periodo)
         nome = f"{len(ids)} municipios da carteira"
         cauc_regular = (cauc["com_dados"] > 0 and cauc["com_pendencia"] == 0)
         mid_key = 0

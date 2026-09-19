@@ -104,6 +104,9 @@ export const TELAS: TelaDef[] = [
   // clientes dos outros estados, e uma agenda não depende de que estado é.
   { key: "agendamentos", label: "Agendamentos" },
   { key: "parlamentares", label: "Parlamentares" },
+  // CONSOLIDADO (18/09/2026): a carteira inteira lado a lado. Sem `ufs`: vale
+  // para qualquer carteira com mais de um município.
+  { key: "consolidado", label: "Consolidado da carteira" },
   // As quatro da pasta SAÚDE, na ordem em que aparecem no grupo do menu.
   { key: "fns", label: "Fundo Nacional de Saúde" },
   { key: "sismob", label: "Obras da Saúde (SISMOB)" },

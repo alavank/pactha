@@ -424,5 +424,9 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     # repasse fundo a fundo. A tela de `fns` ja conta o dinheiro que entra;
     # esta conta o que o justifica, e a decomposicao que diz quanto daquele
     # repasse veio de emenda. UMA chave, pela mesma razao de sempre: so LE.
-    assert len(permissoes.CATALOGO) == 99
+    #
+    # 18/09/2026: 99 -> 101. `consolidado.ver` e `consolidado.exportar` — a
+    # carteira inteira lado a lado (routers/consolidado.py). `exportar` entra
+    # junto porque a rota de exportacao nasceu no MESMO PR.
+    assert len(permissoes.CATALOGO) == 101
     assert not any("propri" in c for c in permissoes.CATALOGO)

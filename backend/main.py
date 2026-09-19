@@ -17,7 +17,7 @@ from routers import (
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
-    uso, mcp_tokens,
+    uso, mcp_tokens, consolidado,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -211,6 +211,10 @@ app.include_router(gestao.router)
 # sistema mostra dado que veio de fora.
 app.include_router(agendamentos.router)
 app.include_router(parlamentares.router)
+# CONSOLIDADO (18/09/2026): a carteira inteira lado a lado, com escopo pelo
+# `resolve_scope` e permissao propria. Nao depende do BI_MODULE: so reusa
+# `services/bi.py`, que nao e gateado.
+app.include_router(consolidado.router)
 # TELEGRAM REMOVIDO em 05/09/2026 (decisão do dono). Ficou desativado atrás de
 # `TELEGRAM_MODULE` desde 09/08/2026 e a flag nunca foi ligada em tenant nenhum;
 # o canal de avisos será WhatsApp com a API oficial da Meta, e quando existir

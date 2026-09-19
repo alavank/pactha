@@ -29,7 +29,7 @@ import {
   LayoutDashboard, LayoutGrid, FileText, Newspaper, Target, Landmark,
   Sparkles, Edit2, UserCircle2, FileSignature, ShieldCheck, HeartPulse,
   BarChart3, CalendarClock, Radar, HardHat, Users, ScrollText, Activity,
-  KeyRound, SlidersHorizontal,
+  KeyRound, SlidersHorizontal, Layers,
 } from "lucide-react";
 import { hrefToTela } from "@/lib/telas";
 
@@ -131,6 +131,15 @@ export const NAV_ITEMS: NavEntry[] = [
      ⭐ `destaque` também (pedido do dono no mesmo dia): ela sai da fila e usa a
      família INFO, como o Radar. São os três itens que se olham primeiro. */
   { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck, destaque: true },
+  /* ⭐ CONSOLIDADO (pedido do dono, 18/09/2026): a carteira inteira lado a lado,
+     para as perguntas que atravessam clientes — "onde o deputado X mandou
+     dinheiro para os nossos municípios". Logo abaixo da Regularidade, fora do
+     bloco destacado, em MAIÚSCULO como FEDERAIS/ESTADUAIS.
+     ⚠️ NÃO É O "Consolidado (todos)" que saiu do seletor em 05/08/2026: o
+     seletor continua sem "todos" (ver `app/dashboard/layout.tsx`). Aqui é área
+     própria, e todo número sai quebrado por município.
+     ⚠️ Some para quem enxerga UM município só — o filtro está no layout. */
+  { href: "/dashboard/consolidado", label: "CONSOLIDADO", icon: Layers },
   /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
      sistema mostra são emendas e convênios por ESFERA. */
   {
