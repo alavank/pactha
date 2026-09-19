@@ -62,6 +62,19 @@ async def _escopo(db: AsyncSession, current: User) -> list[int]:
     return ids
 
 
+@router.get("/painel", dependencies=[exige("consolidado.ver")])
+async def painel(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """A home do CONSOLIDADO: uma linha por município com regularidade,
+    vencimentos, documentos, emendas sem pagamento e Radar — cada bloco com a
+    conta da tela que já existe (ver `services/consolidado_painel.py`)."""
+    from services.consolidado_painel import montar
+    ids = await _escopo(db, current)
+    return await montar(db, ids)
+
+
 def por_municipio(det: dict) -> list[dict]:
     """Os lançamentos do detalhe agrupados por município. Função PURA.
 
