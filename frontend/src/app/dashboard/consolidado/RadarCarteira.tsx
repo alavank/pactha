@@ -11,9 +11,17 @@
  * O dono não entendeu o bloco quando ele estava enterrado no fim do painel
  * (19/09/2026); por isso o subtítulo diz o que é, e o clique abre a ficha do
  * programa — a mesma do Radar de captação.
+ *
+ * ⭐ O DETALHE ACOMPANHA A ROLAGEM (dono, 19/09/2026). Com 42 municípios a lista
+ * da esquerda passa de uma tela; clicar em Carandaí lá embaixo trocava o painel
+ * da direita FORA DA VISTA, parado no topo, e parecia que nada tinha acontecido.
+ * Agora o painel é `sticky` (gruda no topo da área que rola — o `<main>` do
+ * layout, não a janela) e rola por dentro se a lista de programas for maior que
+ * a tela. Abaixo de `lg` as colunas empilham e o detalhe fica DEPOIS da lista
+ * inteira: lá o clique rola a página até ele.
  */
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, FileSpreadsheet, Loader2, MapPin, Radar } from "lucide-react";
 
 import api from "@/lib/api";
@@ -49,6 +57,20 @@ export function RadarCarteira() {
   const [ficha, setFicha] = useState<{ id: string; municipioId: number } | null>(null);
   const [baixando, setBaixando] = useState(false);
   const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+  const painel = useRef<HTMLDivElement>(null);
+
+  /* Trocou o município: o painel volta ao começo da lista dele. Na tela larga
+     ele já está à vista (sticky); na estreita, o detalhe mora depois da lista
+     inteira, então a página rola até ele. */
+  const escolher = (id: number | null) => {
+    setFiltro(id);
+    const el = painel.current;
+    if (!el) return;
+    el.scrollTop = 0;
+    if (id != null && !window.matchMedia("(min-width: 1024px)").matches) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   useEffect(() => {
     let vivo = true;
@@ -107,7 +129,9 @@ export function RadarCarteira() {
         </span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+      {/* `lg:items-start`: sem ele a coluna da direita estica até a altura da
+          lista, e um item esticado não tem para onde "grudar". */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:items-start">
         <Bloco className="p-3">
           <BlocoHead icon={MapPin} titulo="Por município" sub="clique para filtrar os programas" />
           <Lista>
@@ -116,7 +140,7 @@ export function RadarCarteira() {
               const ativo = filtro === l.municipio_id;
               return (
                 <ItemLinha key={l.municipio_id}
-                  onClick={() => setFiltro(ativo ? null : l.municipio_id)} expandido={ativo}
+                  onClick={() => escolher(ativo ? null : l.municipio_id)} expandido={ativo}
                   className={ativo ? "ring-1 ring-[var(--bi-accent-ink)]" : ""}
                   titulo={<span className="flex items-center gap-2">{l.nome} {l.uf && <Selo>{l.uf}</Selo>}</span>}
                   valor={r ? String(r.abertos) : "—"}
@@ -130,6 +154,8 @@ export function RadarCarteira() {
           </Lista>
         </Bloco>
 
+        <div ref={painel}
+             className="pactha-scroll scroll-mt-3 rounded-2xl lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto">
         <Bloco className="p-3">
           <BlocoHead icon={Radar}
                      titulo={nomeFiltro ? `Programas com dono — ${nomeFiltro}` : "Programas com dono na carteira"}
@@ -161,6 +187,7 @@ export function RadarCarteira() {
             </Lista>
           )}
         </Bloco>
+        </div>
       </div>
 
       {ficha && (
