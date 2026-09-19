@@ -71,23 +71,28 @@ def test_matriz_uma_coluna_por_municipio():
     assert ws.freeze_panes == "C5"
 
 
-def test_planilha_do_painel_tem_uma_aba_por_bloco():
+def test_planilha_da_regularidade():
     p = {"municipios_na_carteira": 1,
          "municipios": [{"nome": "Araújos", "uf": "MG", "cauc": {"regular": False, "pendencias": 2},
                          "estadual": {"cobertura": "sem_fonte", "regular": None},
-                         "vencimentos": {"n": 1, "proximo_dias": 5},
-                         "documentos": {"n": 0, "proximo_dias": None},
-                         "emendas": {"sem_pagamento": 1}, "radar": {"abertos": 3, "nomeado": 1, "indicado": 0}}],
-         "vencimentos": [{"municipio": "Araújos", "esfera": "estadual", "numero": "1", "objeto": "x",
-                          "orgao": "y", "fim": "2026-10-01", "dias": 5}],
-         "documentos": [],
-         "radar": [{"municipio": "Araújos", "programa": "P", "beneficiario": True, "dias": 9,
-                    "indicacoes": [{"parlamentar": "Fulano", "valor": 10.0}]}]}
-    wb = openpyxl.load_workbook(io.BytesIO(R.xlsx_painel(p).getvalue()))
-    assert wb.sheetnames == ["Município a município", "Vencimentos (90 dias)",
-                             "Documentos (30 dias)", "Radar"]
-    linha = [c.value for c in wb["Município a município"][5]]
-    assert linha[:5] == ["Araújos", "MG", "irregular", 2, "sem fonte no estado"]
+                         "documentos": {"n": 1, "proximo_dias": 5}}],
+         "documentos": [{"municipio": "Araújos", "entidade": None, "esfera": "CAUC",
+                         "label": "FGTS", "validade": "2026-10-01", "dias_restantes": 5}]}
+    wb = openpyxl.load_workbook(io.BytesIO(R.xlsx_regularidade(p).getvalue()))
+    assert wb.sheetnames == ["Situação", "Vencendo em 30 dias"]
+    assert [c.value for c in wb["Situação"][5]][:5] == ["Araújos", "MG", "irregular", 2, "sem fonte no estado"]
+
+
+def test_planilha_do_radar():
+    p = {"municipios_na_carteira": 1,
+         "municipios": [{"nome": "Araújos", "uf": "MG",
+                         "radar": {"abertos": 3, "nomeado": 1, "indicado": 0, "proximo_dias": 9}}],
+         "programas": [{"municipio": "Araújos", "programa": "P", "beneficiario": True, "dias": 9,
+                        "indicacoes": [{"parlamentar": "Fulano", "solicitante": None, "valor": 10.0}]}]}
+    wb = openpyxl.load_workbook(io.BytesIO(R.xlsx_radar(p).getvalue()))
+    assert wb.sheetnames == ["Por município", "Programas"]
+    # Aba criada com `create_sheet`: sem as linhas de título, o cabeçalho é a 1.
+    assert [c.value for c in wb["Programas"][2]][:5] == ["Araújos", "P", "sim", 9, "Fulano"]
 
 
 def test_toda_exportacao_cobra_exportar_e_grava_na_trilha():

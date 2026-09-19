@@ -1745,77 +1745,47 @@ escopo passou de "tenant inteiro, inclusive inativos" para "municípios ativos".
 **PR 1 no ar desde 19/09 (#519).** O deploy (00:35–00:58 UTC) interrompeu a
 `transferegov-lote` da Freitas. O rodízio a repetiu às 01:35.
 
-### PR 2 — o painel da carteira (19/09/2026)
+### PRs 2 e 3 (#520, #521, no ar 19/09) e a revisão por abas (PR 4, 19/09/2026)
 
-A área abre na aba **Painel da carteira**; **Parlamentares** vira a segunda aba.
-- `GET /api/consolidado/painel`, montado por `services/consolidado_painel.py`. Uma linha
-  por município com:
-  - regularidade federal (CAUC) e estadual;
-  - convênio vencendo em 90 dias;
-  - documento de regularidade vencendo em 30 dias;
-  - emenda federal **sem pagamento**;
-  - Radar: programas abertos, onde o município está nomeado e onde está indicado.
-- Embaixo, três listas que dizem qual: vencimentos, documentos e Radar nomeado/indicado.
-- A tabela vem ordenada por atenção: irregularidade, depois prazo curto, depois dinheiro
-  parado.
+O PR 2 abriu a área num "painel da carteira" que empilhava regularidade, vencimentos,
+emendas e Radar numa rolagem só. O dono conferiu e mandou dividir por assunto ("convênio
+que vence em 90 dias não tem a ver com regularidade"). **Estado atual** — cinco abas numa
+barra larga logo abaixo do título, com a aba na URL (`?aba=`):
 
-**Cada bloco é a conta de uma tela que já existe**, chamada com a lista da carteira:
+| Aba | Rota | O que é |
+|---|---|---|
+| **Regularidade** | `/api/consolidado/regularidade` (+ `/exportar`) | sub-abas **Situação** (CAUC e estadual por município) e **Vencendo em 30 dias** (documentos). Clique abre a **tela de Regularidade do município num modal** — o corpo da página saiu para `components/regularidade/RegularidadeTela.tsx` (`embutido`, `abaInicial`) |
+| **Vigências** | `/api/convenios/alertas` (sem município) | a tela de bolhas/lista que era o modal «Vigências» do Painel de Indicadores. **O botão saiu do Painel** (dono: só o Consolidado pode ignorar o município selecionado). Clique abre o convênio (estadual) ou a proposta (voluntária) |
+| **Parlamentares** | `/api/consolidado/parlamentares` | PR 1 |
+| **Radar** | `/api/consolidado/radar` (+ `/exportar`) | programas abertos em que o município foi nomeado ou tem emenda indicada — "dinheiro com dono, falta a proposta". Clique abre a ficha do programa (a do Radar de captação) |
+| **Relatórios** | `/api/consolidado/relatorios/*` | recursos por município e matriz parlamentar × município |
 
-| Bloco | Fonte |
-|---|---|
-| CAUC | `bi_cauc_rollup` |
-| Estadual | `cagec_situacao` com a regra do `_semaforo_cagec` (uma entidade irregular basta) |
-| Vencimentos | `query_alertas_vigencia` |
-| Documentos | `documentos_vencendo` |
-| Emendas | `_fontes_federais` + `emendas_unificadas`: o grupo `parado`, que a aba Federais chama de "Sem pagamento" |
-| Radar | `_CTE_ABERTOS` + `_FILTRO_ABERTOS`, o mesmo número do contador do menu |
+**Cada bloco é a conta de uma tela que já existe**, chamada com a lista da carteira
+(`services/consolidado_painel.py`): CAUC = `bi_cauc_rollup`; estadual = `cagec_situacao` com
+a regra do `_semaforo_cagec` (uma entidade irregular basta); documentos =
+`documentos_vencendo`; Radar = `_CTE_ABERTOS` + `_FILTRO_ABERTOS` (o mesmo número do contador
+do menu). Os cartões contam **municípios** ("12 de 42"); "sem coleta" e "sem fonte no
+estado" são escritos, nunca verdes; bloco que falha vira `indisponivel`. Cache de 120 s.
 
-**Regras:**
-- **Os cartões contam MUNICÍPIOS** ("3 de 42"), nunca somam dinheiro.
-- **"Sem coleta" e "sem fonte no estado" são escritos**, e nunca aparecem como verde.
-- Um bloco que falha vira `indisponivel`: a tela avisa qual ficou de fora e mostra "—".
-- Cache de 120 s por escopo, na memória de cada processo.
+**Recursos por município** (Relatórios): estaduais e voluntárias federais (`bi_kpis`) e
+emendas federais (`_fontes_federais` + `emendas_unificadas`, com o grupo `parado` = "Sem
+pagamento") lado a lado, por período. ⚠️ **Sem coluna de total, de propósito**: a voluntária
+que nasceu de emenda está nas duas colunas.
 
-"Emenda Pix parada", como estava no plano, virou **"emenda federal sem pagamento"**: é a
-regra oficial da aba Federais, com resto a pagar incluído, e cobre também as Pix.
+**Matriz parlamentar × município** (planilha): uma chamada a `aggregate_parlamentares`, que
+devolve `por_municipio`; os sete blocos do agregado somam por um helper só (`_soma`), então o
+valor por município fecha com o total (`test_consolidado_relatorios.py`).
 
-**Conferido** num Postgres 16 vazio, com dado plantado em cada bloco:
-- o município com o Fundo de Saúde irregular (e a prefeitura em dia) sai irregular e em
-  primeiro;
-- o de GO sai "sem fonte";
-- o convênio a 12 dias entra;
-- o Radar mostra o nomeado e a indicação.
+Toda planilha cobra `consolidado.exportar` e grava `export.consolidado_*` na trilha.
 
-**PR 2 mergeado em 19/09 (#520).**
+**Menu (PR 4):** os quatro itens acima da linha — PAINEL DE INDICADORES, RADAR DE CAPTAÇÃO,
+REGULARIDADE e CONSOLIDADO — em maiúsculo e cada um com uma cor (`cor` em `lib/menu.ts`,
+tokens `--menu-{verde,azul,coral,violeta}-{ink,soft}` em `globals.css`). Nada de âmbar nem
+vermelho: no sistema eles significam alerta.
 
-### PR 3 — relatórios (19/09/2026)
-
-Aba **Relatórios**, e a planilha do painel.
-
-**Recursos por município** (`GET /api/consolidado/relatorios/recursos` e `.../exportar`):
-- mostra, lado a lado e por período: estaduais e voluntárias federais (`bi_kpis`, a conta
-  do Painel de cada município) e emendas federais (`_fontes_federais` + `emendas_unificadas`
-  com o filtro de anos da aba Federais: quantidade, valor da prefeitura e sem pagamento);
-- a tela ordena por qualquer coluna.
-- ⚠️ **Não tem coluna de total, e é de propósito.** A voluntária que nasceu de emenda está
-  nas duas colunas; somar contaria o mesmo dinheiro duas vezes.
-
-**Matriz parlamentar × município** (`.../matriz/exportar`), só em planilha:
-- uma linha por parlamentar e uma coluna por município, mais o total na carteira;
-- sai de **uma** chamada a `aggregate_parlamentares`, que agora devolve `por_municipio`;
-- os sete blocos do agregado somam por um helper só (`_soma`), então o valor por
-  município fecha com o total por construção (`test_consolidado_relatorios.py`).
-
-**Planilha do painel** (`/api/consolidado/painel/exportar`): uma aba por bloco, com as listas
-**inteiras**. A tela corta cada lista em 80; o `montar(limite=None)` entrega tudo.
-
-Toda planilha cobra `consolidado.exportar` e grava `export.consolidado_*` na trilha antes de
-sair.
-
-**Conferido** num Postgres 16 vazio:
-- a Emenda Pix de um município entra nas emendas federais dele;
-- a matriz fecha (R$ 1 mi + R$ 250 mil = R$ 1,25 mi);
-- as três planilhas abrem com as abas certas.
+**Conferido** num Postgres 16 vazio com dado plantado: o município com o Fundo de Saúde
+irregular (prefeitura em dia) sai irregular e em primeiro; o de GO sai "sem fonte"; o Radar
+mostra o nomeado e a indicação; a matriz fecha (R$ 1 mi + R$ 250 mil = R$ 1,25 mi).
 
 ## 1.29. O CI ficou sem crédito — o build foi para a VPS e voltou (17-18/09/2026)
 

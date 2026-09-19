@@ -466,6 +466,20 @@
      distinguir do verde do sistema (que ali significa "item selecionado") sem
      virar alarme, que e o que o ambar e o vermelho fariam. */
   --bi-info-soft:  #e4f1fd;
+  /* ⭐ AS CORES DOS ITENS DE DESTAQUE DO MENU (19/09/2026), um por item, a
+     pedido do dono: "todos esses menus acima da linha devem ser em maiúsculo e
+     cores diferentes um do outro". Famílias do gráfico (c3 verde, c4 azul, c1
+     coral, c5 violeta), com a variante `-ink` escurecida até passar AA sobre
+     branco — a cor de exibição sozinha (ex.: #f9846a) não passa como texto.
+     ⚠️ Nada de âmbar nem vermelho: no sistema eles querem dizer alerta. */
+  --menu-verde-ink:    #0d8762;   /* 4.51 */
+  --menu-verde-soft:   #e3f6ee;
+  --menu-azul-ink:     #1477d0;   /* 4.59 */
+  --menu-azul-soft:    #e4f1fd;
+  --menu-coral-ink:    #c2410c;   /* 5.18 */
+  --menu-coral-soft:   #fdece6;
+  --menu-violeta-ink:  #6d4ed8;   /* 5.87 */
+  --menu-violeta-soft: #efeafd;
 }
 
 /* O contêiner do Painel: so aplica o que ja aplicava. Continua existindo
@@ -515,6 +529,16 @@
   /* No escuro o "suave" e transparencia, e nao um tom claro: um azul-pastel
      sobre fundo #0a0c0b brilharia mais que o texto. */
   --bi-info-soft:  rgba(99, 179, 245, 0.14);
+  /* As cores dos itens de destaque do menu — no escuro, a própria cor de
+     exibição e o fundo em transparência (ver o bloco claro). */
+  --menu-verde-ink:    #4fdcae;
+  --menu-verde-soft:   rgba(79, 220, 174, 0.14);
+  --menu-azul-ink:     #63b3f5;
+  --menu-azul-soft:    rgba(99, 179, 245, 0.14);
+  --menu-coral-ink:    #ff8a6b;
+  --menu-coral-soft:   rgba(255, 138, 107, 0.14);
+  --menu-violeta-ink:  #b39cf7;
+  --menu-violeta-soft: rgba(179, 156, 247, 0.16);
 }
 
 @layer utilities {

@@ -33,11 +33,11 @@ import {
 } from "lucide-react";
 import { hrefToTela } from "@/lib/telas";
 
-/* `destaque` marca o item que sai da fila e ganha cor propria. Hoje sao DOIS,
-   e os dois respondem o que se pergunta ANTES de olhar instrumento celebrado:
-   o Radar de Captacao ("o que ainda da para captar", o unico que olha para
-   FRENTE) e a Regularidade ("o municipio pode receber?", desde 18/09/2026).
-   Ver o comentario no NAV_ITEMS.
+/* `destaque` marca o item que sai da fila e ganha cor propria (`cor`). Desde
+   19/09/2026 sao QUATRO, o bloco acima da linha: o Painel, o Radar de Captacao
+   ("o que ainda da para captar", o unico que olha para FRENTE), a Regularidade
+   ("o municipio pode receber?") e o Consolidado (a carteira inteira). Ver o
+   comentario no NAV_ITEMS.
 
    ⚠️ QUEM DESENHA CUIDA DE DUAS COISAS (`app/dashboard/layout.tsx`): o contador
    de programas e SO do Radar, e o separador sai depois do ULTIMO destacado —
@@ -47,6 +47,10 @@ export type NavLeaf = {
   label: string;
   icon?: React.ComponentType<{ className?: string }>;
   destaque?: boolean;
+  /** A cor do item de destaque (19/09/2026): um por item, a pedido do dono —
+   *  "cores diferentes um do outro". Nome da família em `globals.css`
+   *  (`--menu-<cor>-ink` / `-soft`). */
+  cor?: "verde" | "azul" | "coral" | "violeta";
   /** ⭐ TELAS QUE NÃO TÊM ITEM PRÓPRIO NO MENU, mas são permissão separada.
    *
    *  Hoje só o Painel: «Modo Tela (TV)» e «Gerar link público» são CAPACIDADES
@@ -103,8 +107,14 @@ export const BI_ON = process.env.NEXT_PUBLIC_BI_MODULE === "1";
 export const NAV_ITEMS: NavEntry[] = [
   {
     href: "/dashboard",
-    label: BI_ON ? "Painel de Indicadores" : "Dashboard",
+    label: BI_ON ? "PAINEL DE INDICADORES" : "DASHBOARD",
     icon: BI_ON ? BarChart3 : LayoutDashboard,
+    /* ⭐ O BLOCO DE CIMA (19/09/2026, pedido do dono): os quatro itens acima da
+       linha — Painel, Radar, Regularidade e Consolidado — em MAIÚSCULO e cada
+       um com a sua cor. Eram três em azul e o Painel sem destaque; o que se
+       olha primeiro precisa se distinguir entre si, não só do resto. */
+    destaque: true,
+    cor: "verde",
     // As duas capacidades do Painel que se concedem separadas — ver
     // `telasExtras`. Jogar na TV e PUBLICAR um link sem login são decisões
     // diferentes de abrir o painel.
@@ -117,9 +127,10 @@ export const NAV_ITEMS: NavEntry[] = [
      FRENTE: programas com janela de proposta ainda aberta. */
   {
     href: "/dashboard/transferegov-radar",
-    label: "Radar de captação",
+    label: "RADAR DE CAPTAÇÃO",
     icon: Radar,
     destaque: true,
+    cor: "azul",
   },
   /* ⭐ REGULARIDADE SUBIU PARA CÁ (pedido do dono, 18/09/2026): "precisa ficar
      em local de destaque". Ela estava lá embaixo, entre SIMEC e Relatório de
@@ -128,18 +139,18 @@ export const NAV_ITEMS: NavEntry[] = [
      mostra o que dá para captar — e a REGULARIDADE diz se o município PODE
      receber. Certidão vencida trava convênio, emenda e repasse; descobrir isso
      depois de rolar o menu inteiro é tarde.
-     ⭐ `destaque` também (pedido do dono no mesmo dia): ela sai da fila e usa a
-     família INFO, como o Radar. São os três itens que se olham primeiro. */
-  { href: "/dashboard/cauc", label: "Regularidade", icon: ShieldCheck, destaque: true },
+     ⭐ `destaque` também (pedido do dono no mesmo dia): ela sai da fila e ganha
+     cor própria. */
+  { href: "/dashboard/cauc", label: "REGULARIDADE", icon: ShieldCheck, destaque: true, cor: "coral" },
   /* ⭐ CONSOLIDADO (pedido do dono, 18/09/2026): a carteira inteira lado a lado,
      para as perguntas que atravessam clientes — "onde o deputado X mandou
-     dinheiro para os nossos municípios". Logo abaixo da Regularidade, fora do
-     bloco destacado, em MAIÚSCULO como FEDERAIS/ESTADUAIS.
+     dinheiro para os nossos municípios". Logo abaixo da Regularidade e, desde
+     19/09/2026, DENTRO do bloco destacado (acima da linha), a pedido do dono.
      ⚠️ NÃO É O "Consolidado (todos)" que saiu do seletor em 05/08/2026: o
      seletor continua sem "todos" (ver `app/dashboard/layout.tsx`). Aqui é área
      própria, e todo número sai quebrado por município.
      ⚠️ Some para quem enxerga UM município só — o filtro está no layout. */
-  { href: "/dashboard/consolidado", label: "CONSOLIDADO", icon: Layers },
+  { href: "/dashboard/consolidado", label: "CONSOLIDADO", icon: Layers, destaque: true, cor: "violeta" },
   /* ⭐ FEDERAIS / ESTADUAIS, EM MAIÚSCULO (pedido do dono, 28/08/2026): o que o
      sistema mostra são emendas e convênios por ESFERA. */
   {

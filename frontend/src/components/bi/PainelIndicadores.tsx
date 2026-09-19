@@ -8,7 +8,7 @@
 // vai aparecer na TV, sem duas verdades para manter.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MonitorPlay, CalendarClock } from "lucide-react";
+import { MonitorPlay } from "lucide-react";
 import api from "@/lib/api";
 import { Municipio, getMunicipios, putTelaFiltros, type TipoParlamentar } from "@/lib/bi";
 import type { User } from "@/types";
@@ -19,7 +19,6 @@ import { ABAS, AbaId, FiltrosTela, abrirJanelaDaTela } from "@/lib/tela";
 import { useTelaControle } from "@/lib/useTela";
 import { prefetchAba, useDadosAba } from "@/lib/useAbaBi";
 import { PeriodoMultiSelect } from "./Filtros";
-import VigenciasModal from "./VigenciasModal";
 import { CabecalhoBi } from "./Marca";
 import { BotaoAjustes } from "./Ajustes";
 import BotaoRecarregar from "./BotaoRecarregar";
@@ -37,8 +36,6 @@ export function PainelIndicadores() {
   const { scope, municipioId, anos } = useBiScope();
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [user, setUser] = useState<User | null>(null);
-  // Modal das vigencias <=120d — substituiu o selo que so repetia o municipio.
-  const [vigenciasAberto, setVigenciasAberto] = useState(false);
 
   const abaUrl = params.get("aba") as AbaId | null;
   const [aba, setAbaState] = useState<AbaId>(
@@ -144,24 +141,16 @@ export function PainelIndicadores() {
         nomeMunicipio={nomeMunicipio}
         right={
           <>
-            {/* No lugar do selo que só REPETIA o município já escolhido na barra
-                lateral, um botão que abre o que é acionável: o que vence antes.
-                (pedido do dono — ver components/bi/VigenciasModal.tsx) */}
             {/* ⭐ A FILEIRA FOI REORDENADA E NOMEADA em 05/09/2026, a pedido do
                 dono. Ela tinha dois ícones mudos — uma engrenagem e um símbolo
                 de reciclagem — e ninguém adivinhava que a engrenagem era onde se
                 GERA O LINK de acesso externo, que é a coisa mais consequente
-                desta barra. A ordem agora conta a sequência de uso:
-                consultar (Vigências) › publicar (Link) › apresentar (Modo Tela)
-                › e, no fim, recarregar. */}
-            <button
-              onClick={() => setVigenciasAberto(true)}
-              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold bi-hover"
-              style={{ background: "var(--bi-surface)", border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}
-              title="Instrumentos com vigência encerrando em até 120 dias"
-            >
-              <CalendarClock className="size-3.5" /> Vigências
-            </button>
+                desta barra. A ordem conta a sequência de uso:
+                publicar (Link) › apresentar (Modo Tela) › recarregar.
+                ⚠️ O botão «Vigências» SAIU em 19/09/2026 (pedido do dono): ele
+                mostrava a carteira inteira ignorando o município selecionado — o
+                único item do sistema que fazia isso. Virou a aba VIGÊNCIAS do
+                CONSOLIDADO (`app/dashboard/consolidado/VigenciasCarteira.tsx`). */}
             <PeriodoMultiSelect />
             {/* Sem alternador de tema aqui: o do menu lateral e este mantinham
                 estados React SEPARADOS da mesma preferencia, entao clicar num
@@ -262,9 +251,6 @@ export function PainelIndicadores() {
           )}
           <ConteudoAba dados={dados} />
         </div>
-      )}
-      {vigenciasAberto && (
-        <VigenciasModal municipios={municipios} onClose={() => setVigenciasAberto(false)} />
       )}
     </div>
   );

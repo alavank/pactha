@@ -1,29 +1,27 @@
-"""O PAINEL DA CARTEIRA — a home do CONSOLIDADO (18/09/2026, PR 2 da série).
+"""OS BLOCOS DO CONSOLIDADO — Regularidade e Radar da carteira.
 
-Uma linha por município, com o que muda a semana da assessoria:
-  - regularidade FEDERAL (CAUC) e ESTADUAL (CAGEC/CHE);
-  - convênio vencendo nos próximos 90 dias;
-  - documento de regularidade vencendo nos próximos 30 dias;
-  - emenda federal empenhada e SEM PAGAMENTO;
-  - Radar: programas abertos para o município e onde ele está nomeado/indicado.
-E, embaixo, as listas que dizem QUAL: vencimentos, documentos e Radar.
+Nasceu (PR 2, 19/09/2026) como um "painel da carteira" numa página só, com
+regularidade, vencimentos, emendas e Radar empilhados. O dono conferiu e pediu
+para DIVIDIR por assunto (19/09/2026): "convênio que vence em 90 dias não tem a
+ver com regularidade". Ficou:
+  - REGULARIDADE ... CAUC e cadastro estadual por município, e os documentos de
+                     regularidade vencendo em 30 dias (aba própria na tela);
+  - RADAR .......... programas abertos por município, e onde ele está nomeado
+                     como beneficiário ou tem emenda indicada.
+Vencimentos viraram a aba VIGÊNCIAS (a mesma tela de bolhas que saiu do Painel de
+Indicadores) e "emenda sem pagamento" mora em RELATÓRIOS.
 
 ⚠️ CADA BLOCO É A CONTA DE UMA TELA QUE JÁ EXISTE, chamada com a lista da
 carteira — nada é recalculado aqui ("mesmo dado, mesma conta em toda tela"):
   - CAUC ............ `services/bi.bi_cauc_rollup`
   - estadual ........ `cagec_situacao` com a regra do `_semaforo_cagec` (routers/bi.py):
                       o município só está em dia se NENHUMA entidade está irregular
-  - vencimentos ..... `routers/convenios.query_alertas_vigencia`
   - documentos ...... `services/bi_abas.documentos_vencendo`
-  - emendas ......... `routers/emendas_parlamentares._fontes_federais` +
-                      `services/emendas_unificadas` (o grupo `parado` da aba Federais,
-                      que ela chama de "Sem pagamento")
   - Radar ........... `_CTE_ABERTOS` + `_FILTRO_ABERTOS` de routers/programas_captacao
                       (o mesmo número do contador do menu de cada município)
 
-⚠️ NUNCA TOTAL SOZINHO. O painel conta MUNICÍPIOS ("3 com pendência"), não soma
-dinheiro da carteira: o número de um cliente lido como de outro é o risco que
-tirou o "Consolidado (todos)" do seletor em 05/08/2026.
+⚠️ NUNCA TOTAL SOZINHO: os resumos contam MUNICÍPIOS ("3 de 42"), não somam
+dinheiro — o risco que tirou o "Consolidado (todos)" do seletor em 05/08/2026.
 
 ⚠️ "SEM DADO" NÃO É "EM DIA". Bloco sem coleta volta `None` e a tela escreve
 "sem coleta"; estado sem cadastro coletado é "sem fonte". Nunca verde por falta
@@ -33,7 +31,6 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date
 from typing import Optional
 
 from sqlalchemy import text
@@ -41,13 +38,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger("consolidado")
 
-DIAS_VENCIMENTO = 90
 DIAS_DOCUMENTO = 30
 LIMITE_LISTA = 80
 
-# Cache curto por escopo: o painel varre a carteira inteira (dezenas de consultas
-# por município) e a página é aberta várias vezes seguidas. Por processo, como o
-# do overview do BI — com `--workers 2`, cada worker aquece o seu.
+# Cache curto por escopo e bloco: cada bloco varre a carteira inteira e a aba é
+# aberta várias vezes seguidas. Por processo, como o do overview do BI — com
+# `--workers 2`, cada worker aquece o seu.
 _CACHE_S = 120
 _cache: dict[str, tuple[float, dict]] = {}
 
@@ -75,27 +71,24 @@ def estadual_do_municipio(uf: str, linhas: list[tuple], ufs_cobertas: set[str]) 
 
 
 def atencao(linha: dict) -> int:
-    """Quanto a linha pede atenção, para ordenar a tabela. PURA.
+    """Quanto uma linha da REGULARIDADE pede atenção, para ordenar. PURA.
 
-    Irregularidade trava repasse e vem primeiro; depois prazo curto; depois
-    dinheiro parado. Sem dado não soma: "sem coleta" não é problema do cliente.
+    Irregularidade trava repasse e vem primeiro; depois documento vencendo logo.
+    Sem dado não soma: "sem coleta" não é problema do cliente.
     """
     p = 0
     if (linha.get("cauc") or {}).get("regular") is False:
         p += 100
     if (linha.get("estadual") or {}).get("regular") is False:
         p += 100
-    v = linha.get("vencimentos") or {}
-    if v.get("proximo_dias") is not None and v["proximo_dias"] <= 30:
+    d = linha.get("documentos") or {}
+    if d.get("proximo_dias") is not None and d["proximo_dias"] <= 7:
         p += 40
-    p += 5 * int(v.get("n") or 0)
-    p += 5 * int((linha.get("documentos") or {}).get("n") or 0)
-    p += 10 * int((linha.get("emendas") or {}).get("sem_pagamento") or 0)
-    p += 3 * int((linha.get("radar") or {}).get("nomeado") or 0)
+    p += 5 * int(d.get("n") or 0)
     return p
 
 
-# ---------------------------------------------------------------- montagem ---
+# ------------------------------------------------------------- utilitários ---
 
 async def _municipios(db: AsyncSession, ids: list[int]) -> list[dict]:
     rows = (await db.execute(text(
@@ -104,6 +97,30 @@ async def _municipios(db: AsyncSession, ids: list[int]) -> list[dict]:
         "FROM municipios WHERE id = ANY(:ids) ORDER BY nome"), {"ids": ids})).fetchall()
     return [{"municipio_id": r[0], "nome": r[1], "uf": r[2], "cnpj": r[3]} for r in rows]
 
+
+def _cacheado(bloco: str, ids: list[int], limite: Optional[int]):
+    chave = f"{bloco}|{','.join(map(str, sorted(ids)))}|{limite}"
+    hit = _cache.get(chave)
+    return chave, (hit[1] if hit and time.monotonic() - hit[0] < _CACHE_S else None)
+
+
+async def _tenta(db: AsyncSession, nome: str, coro, padrao, indisponivel: list[str]):
+    """Um bloco que falha vira `indisponivel` e não derruba a aba — e a tela diz
+    qual ficou de fora, em vez de mostrar zero."""
+    try:
+        return await coro
+    except Exception as e:  # noqa: BLE001
+        log.exception(f"consolidado: bloco {nome} falhou: {e}")
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        if nome not in indisponivel:
+            indisponivel.append(nome)
+        return padrao
+
+
+# ------------------------------------------------------------ regularidade ---
 
 async def _estadual(db: AsyncSession, muns: list[dict]) -> dict[int, dict]:
     from services.cadastro_estadual import UFS_COM_CADASTRO_COLETADO
@@ -118,6 +135,59 @@ async def _estadual(db: AsyncSession, muns: list[dict]) -> dict[int, dict]:
                                                      set(UFS_COM_CADASTRO_COLETADO))
             for m in muns}
 
+
+async def montar_regularidade(db: AsyncSession, ids: list[int],
+                              limite: Optional[int] = LIMITE_LISTA) -> dict:
+    """CAUC + estadual por município e os documentos vencendo em 30 dias.
+    `limite` corta a lista de documentos para a TELA; a planilha pede `None`."""
+    chave, hit = _cacheado("regularidade", ids, limite)
+    if hit is not None:
+        return hit
+    from services.bi import bi_cauc_rollup
+    from services.bi_abas import documentos_vencendo
+
+    muns = await _municipios(db, ids)
+    indisponivel: list[str] = []
+    cauc = await _tenta(db, "cauc", bi_cauc_rollup(db, ids), {"por_municipio": []}, indisponivel)
+    cauc_por = {c["municipio_id"]: c for c in cauc.get("por_municipio", [])}
+    estadual = await _tenta(db, "estadual", _estadual(db, muns), {}, indisponivel)
+    docs = await _tenta(db, "documentos", documentos_vencendo(db, ids, DIAS_DOCUMENTO), [],
+                        indisponivel)
+
+    linhas = []
+    for m in muns:
+        mid = m["municipio_id"]
+        c = cauc_por.get(mid)
+        ds = [d for d in docs if d.get("municipio_id") == mid]
+        linha = {
+            "municipio_id": mid, "nome": m["nome"], "uf": m["uf"],
+            "cauc": ({"regular": c["regular"], "pendencias": c["pendencias"]} if c else None),
+            "estadual": estadual.get(mid),
+            "documentos": {"n": len(ds),
+                           "proximo_dias": min((d["dias_restantes"] for d in ds), default=None)},
+        }
+        linha["atencao"] = atencao(linha)
+        linhas.append(linha)
+    linhas.sort(key=lambda l: (-l["atencao"], l["nome"]))
+
+    payload = {
+        "municipios_na_carteira": len(ids),
+        "indisponivel": indisponivel,
+        "municipios": linhas,
+        "resumo": {
+            "cauc_irregulares": sum(1 for l in linhas if (l["cauc"] or {}).get("regular") is False),
+            "cauc_sem_dado": sum(1 for l in linhas if l["cauc"] is None),
+            "estadual_irregulares": sum(1 for l in linhas if (l["estadual"] or {}).get("regular") is False),
+            "com_documento_30": sum(1 for l in linhas if l["documentos"]["n"] > 0),
+        },
+        "documentos": docs[:limite],
+        "documentos_total": len(docs),
+    }
+    _cache[chave] = (time.monotonic(), payload)
+    return payload
+
+
+# ------------------------------------------------------------------- radar ---
 
 async def _radar(db: AsyncSession, m: dict) -> tuple[Optional[dict], list[dict]]:
     """Os programas abertos para UM município e onde ele está nomeado/indicado."""
@@ -158,112 +228,37 @@ async def _radar(db: AsyncSession, m: dict) -> tuple[Optional[dict], list[dict]]
     return resumo, lista
 
 
-async def _emendas(db: AsyncSession, mid: int) -> Optional[dict]:
-    from routers.emendas_parlamentares import _fontes_federais
-    from services.emendas_unificadas import totais, unificar_federais
-    f = await _fontes_federais(db, mid)
-    linhas = unificar_federais((f["carteira"] or {}).get("items") or [], f["te"],
-                               f["parcerias"], f["indicadas"], f["voluntarias"])
-    t = totais(linhas)
-    return {"n": t["emendas"], "sem_pagamento": t["parado_n"],
-            "nao_consultadas": t["nao_consultadas_n"],
-            "estado": (f["carteira"] or {}).get("estado")}
-
-
-async def montar(db: AsyncSession, ids: list[int], limite: Optional[int] = LIMITE_LISTA) -> dict:
-    """`limite` corta as três listas para a TELA; a planilha pede `None` (tudo)."""
-    chave = ",".join(map(str, sorted(ids))) + f"|{limite}"
-    agora = time.monotonic()
-    hit = _cache.get(chave)
-    if hit and agora - hit[0] < _CACHE_S:
-        return hit[1]
-
-    from routers.convenios import query_alertas_vigencia
-    from services.bi import bi_cauc_rollup
-    from services.bi_abas import documentos_vencendo
-
+async def montar_radar(db: AsyncSession, ids: list[int],
+                       limite: Optional[int] = LIMITE_LISTA) -> dict:
+    """Por município: programas abertos, nomeado, indicado; e a lista dos
+    programas onde algum cliente está nomeado ou com emenda indicada."""
+    chave, hit = _cacheado("radar", ids, limite)
+    if hit is not None:
+        return hit
     muns = await _municipios(db, ids)
     indisponivel: list[str] = []
-
-    async def bloco(nome, coro, padrao):
-        """Um bloco que falha vira `indisponivel`, e não derruba o painel — e a
-        tela diz qual ficou de fora, em vez de mostrar zero."""
-        try:
-            return await coro
-        except Exception as e:  # noqa: BLE001
-            log.exception(f"consolidado: bloco {nome} falhou: {e}")
-            try:
-                await db.rollback()
-            except Exception:
-                pass
-            if nome not in indisponivel:
-                indisponivel.append(nome)
-            return padrao
-
-    cauc = await bloco("cauc", bi_cauc_rollup(db, ids), {"por_municipio": []})
-    cauc_por = {c["municipio_id"]: c for c in cauc.get("por_municipio", [])}
-    estadual = await bloco("estadual", _estadual(db, muns), {})
-    venc = await bloco("vencimentos",
-                       query_alertas_vigencia(db, municipio_ids=ids, dias=DIAS_VENCIMENTO), [])
-    venc = [v.model_dump() if hasattr(v, "model_dump") else dict(v) for v in venc]
-    docs = await bloco("documentos", documentos_vencendo(db, ids, DIAS_DOCUMENTO), [])
-
-    linhas, radar_lista = [], []
+    linhas, programas = [], []
     for m in muns:
-        mid = m["municipio_id"]
-        c = cauc_por.get(mid)
-        vs = [v for v in venc if v.get("municipio_id") == mid]
-        ds = [d for d in docs if d.get("municipio_id") == mid]
-        radar, lista = await bloco("radar", _radar(db, m), (None, []))
-        radar_lista.extend(lista)
-        emendas = await bloco("emendas", _emendas(db, mid), None)
-        linha = {
-            "municipio_id": mid, "nome": m["nome"], "uf": m["uf"],
-            "cauc": ({"regular": c["regular"], "pendencias": c["pendencias"]} if c else None),
-            "estadual": estadual.get(mid),
-            "vencimentos": {"n": len(vs),
-                            "proximo_dias": min((v["dias_restantes"] for v in vs), default=None)},
-            "documentos": {"n": len(ds),
-                           "proximo_dias": min((d["dias_restantes"] for d in ds), default=None)},
-            "emendas": emendas,
-            "radar": radar,
-        }
-        linha["atencao"] = atencao(linha)
-        linhas.append(linha)
-
-    linhas.sort(key=lambda l: (-l["atencao"], l["nome"]))
-    radar_lista.sort(key=lambda r: (r["dias"] if r["dias"] is not None else 9999, r["municipio"]))
-
-    def _venc(v):
-        d = v.get("dt_fim_vigencia")
-        return {"municipio_id": v.get("municipio_id"), "municipio": v.get("municipio_nome"),
-                "esfera": v.get("esfera"),
-                "numero": v.get("nr_convenio") or v.get("nr_sigcon"),
-                "objeto": v.get("objeto"), "orgao": v.get("orgao_concedente"),
-                "fim": d.isoformat() if isinstance(d, date) else d,
-                "dias": v.get("dias_restantes"), "situacao": v.get("situacao")}
-
+        radar, lista = await _tenta(db, "radar", _radar(db, m), (None, []), indisponivel)
+        programas.extend(lista)
+        linhas.append({"municipio_id": m["municipio_id"], "nome": m["nome"], "uf": m["uf"],
+                       "radar": radar})
+    # Quem tem dinheiro à mão primeiro: nomeado/indicado, depois o prazo.
+    linhas.sort(key=lambda l: (-(((l["radar"] or {}).get("nomeado") or 0)
+                                 + ((l["radar"] or {}).get("indicado") or 0)),
+                               (l["radar"] or {}).get("proximo_dias") or 9999, l["nome"]))
+    programas.sort(key=lambda r: (r["dias"] if r["dias"] is not None else 9999, r["municipio"]))
     payload = {
         "municipios_na_carteira": len(ids),
-        "gerado_em": date.today().isoformat(),
         "indisponivel": indisponivel,
         "municipios": linhas,
         "resumo": {
-            "cauc_irregulares": sum(1 for l in linhas if (l["cauc"] or {}).get("regular") is False),
-            "cauc_sem_dado": sum(1 for l in linhas if l["cauc"] is None),
-            "estadual_irregulares": sum(1 for l in linhas if (l["estadual"] or {}).get("regular") is False),
-            "com_vencimento_30": sum(1 for l in linhas if (l["vencimentos"]["proximo_dias"] is not None
-                                                          and l["vencimentos"]["proximo_dias"] <= 30)),
-            "com_sem_pagamento": sum(1 for l in linhas if ((l["emendas"] or {}).get("sem_pagamento") or 0) > 0),
-            "com_radar_nomeado": sum(1 for l in linhas if ((l["radar"] or {}).get("nomeado") or 0) > 0
-                                     or ((l["radar"] or {}).get("indicado") or 0) > 0),
+            "com_nomeado_ou_indicado": sum(1 for l in linhas if ((l["radar"] or {}).get("nomeado") or 0)
+                                           + ((l["radar"] or {}).get("indicado") or 0) > 0),
+            "sem_uf": sum(1 for l in linhas if l["radar"] is None),
         },
-        "vencimentos": [_venc(v) for v in venc[:limite]],
-        "vencimentos_total": len(venc),
-        "documentos": docs[:limite],
-        "documentos_total": len(docs),
-        "radar": radar_lista[:limite],
-        "radar_total": len(radar_lista),
+        "programas": programas[:limite],
+        "programas_total": len(programas),
     }
-    _cache[chave] = (agora, payload)
+    _cache[chave] = (time.monotonic(), payload)
     return payload

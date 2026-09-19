@@ -4,7 +4,7 @@ Três relatórios da carteira, todos quebrados por município:
   - RECURSOS POR MUNICÍPIO: estaduais, voluntárias federais e emendas federais,
     lado a lado, no período escolhido;
   - MATRIZ PARLAMENTAR × MUNICÍPIO: quem mandou quanto para cada cliente;
-  - a PLANILHA DO PAINEL da carteira.
+  - as planilhas da REGULARIDADE e do RADAR da carteira.
 
 ⚠️ RECURSOS NÃO TEM COLUNA DE TOTAL, de propósito. As fontes se sobrepõem: a
 voluntária que nasceu de emenda está nas voluntárias E nas emendas federais
@@ -142,46 +142,52 @@ def xlsx_matriz(m: dict, periodo: str) -> BytesIO:
     return _salvar(wb)
 
 
-def xlsx_painel(p: dict) -> BytesIO:
-    """O painel da carteira em planilha: uma aba por bloco."""
-    wb, ws = _wb("Painel da carteira", f"{p['municipios_na_carteira']} municípios")
-    ws.title = "Município a município"
+def xlsx_regularidade(p: dict) -> BytesIO:
+    """A regularidade da carteira: situação por município e documentos vencendo."""
+    wb, ws = _wb("Regularidade da carteira", f"{p['municipios_na_carteira']} municípios")
+    ws.title = "Situação"
     _cabecalho(ws, ["Município", "UF", "CAUC", "Pendências CAUC", "Estadual",
-                    "Convênios vencendo (90d)", "Próximo em (dias)", "Documentos vencendo (30d)",
-                    "Emendas sem pagamento", "Radar: abertos", "Radar: nomeado",
-                    "Radar: indicado"])
+                    "Pendências estadual", "Documentos vencendo (30d)", "Próximo em (dias)"])
     for l in p["municipios"]:
         c, e = l.get("cauc"), l.get("estadual") or {}
         est = ("sem fonte no estado" if e.get("cobertura") == "sem_fonte"
                else "sem coleta" if e.get("regular") is None
                else "em dia" if e.get("regular") else "irregular")
-        r, em = l.get("radar") or {}, l.get("emendas") or {}
         ws.append([l["nome"], l["uf"],
                    "sem coleta" if not c or c.get("regular") is None
                    else ("em dia" if c["regular"] else "irregular"),
-                   (c or {}).get("pendencias"), est,
-                   l["vencimentos"]["n"], l["vencimentos"]["proximo_dias"],
-                   l["documentos"]["n"], em.get("sem_pagamento"),
-                   r.get("abertos"), r.get("nomeado"), r.get("indicado")])
+                   (c or {}).get("pendencias"), est, e.get("pendencias"),
+                   l["documentos"]["n"], l["documentos"]["proximo_dias"]])
     ws.column_dimensions["A"].width = 30
-
-    wv = wb.create_sheet("Vencimentos (90 dias)")
-    _cabecalho(wv, ["Município", "Esfera", "Número", "Objeto", "Órgão", "Vence em", "Dias"])
-    for v in p["vencimentos"]:
-        wv.append([v["municipio"], v["esfera"], v["numero"], v["objeto"], v["orgao"],
-                   v["fim"], v["dias"]])
-    wd = wb.create_sheet("Documentos (30 dias)")
+    wd = wb.create_sheet("Vencendo em 30 dias")
     _cabecalho(wd, ["Município", "Entidade", "Cadastro", "Documento", "Validade", "Dias"])
     for d in p["documentos"]:
         wd.append([d["municipio"], d.get("entidade"), d["esfera"], d["label"],
                    d["validade"], d["dias_restantes"]])
-    wr = wb.create_sheet("Radar")
+    wd.column_dimensions["A"].width = 30
+    wd.column_dimensions["D"].width = 60
+    return _salvar(wb)
+
+
+def xlsx_radar(p: dict) -> BytesIO:
+    """O Radar da carteira: por município e os programas com nomeação/indicação."""
+    wb, ws = _wb("Radar da carteira", f"{p['municipios_na_carteira']} municípios")
+    ws.title = "Por município"
+    _cabecalho(ws, ["Município", "UF", "Programas abertos", "Nomeado", "Com emenda indicada",
+                    "Prazo mais próximo (dias)"])
+    for l in p["municipios"]:
+        r = l.get("radar") or {}
+        ws.append([l["nome"], l["uf"], r.get("abertos"), r.get("nomeado"), r.get("indicado"),
+                   r.get("proximo_dias")])
+    ws.column_dimensions["A"].width = 30
+    wr = wb.create_sheet("Programas")
     _cabecalho(wr, ["Município", "Programa", "Município nomeado", "Fecha em (dias)",
-                    "Emenda indicada por", "Valor indicado"])
-    for x in p["radar"]:
-        ind = x["indicacoes"] or [{}]
-        for i in ind:
+                    "Emenda indicada por", "A pedido de", "Valor indicado"])
+    for x in p["programas"]:
+        for i in (x["indicacoes"] or [{}]):
             wr.append([x["municipio"], x["programa"], "sim" if x["beneficiario"] else "",
-                       x["dias"], i.get("parlamentar"), i.get("valor")])
-    _moeda(wr, [6], 2)
+                       x["dias"], i.get("parlamentar"), i.get("solicitante"), i.get("valor")])
+    _moeda(wr, [7], 2)
+    wr.column_dimensions["A"].width = 30
+    wr.column_dimensions["B"].width = 70
     return _salvar(wb)

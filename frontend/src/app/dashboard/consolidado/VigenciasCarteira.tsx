@@ -1,9 +1,12 @@
 "use client";
 
-/* VIGÊNCIAS A VENCER (<120 dias) — o que está prestes a expirar.
+/* CONSOLIDADO › VIGÊNCIAS — os instrumentos da carteira vencendo em até 120 dias.
  *
- *  Substitui o selo que só REPETIA o município já escolhido na barra lateral
- *  (informação que a tela toda já dava) por algo acionável: o que vence primeiro.
+ *  ⭐ ERA O MODAL "Vigências" DO PAINEL DE INDICADORES (`components/bi/
+ *  VigenciasModal.tsx`), e veio para cá em 19/09/2026 a pedido do dono: era a
+ *  única coisa do sistema que ignorava o município selecionado — "não faz
+ *  sentido algo não respeitar o município selecionado a não ser o Consolidado".
+ *  O botão saiu do Painel; o conteúdo é o mesmo, agora como aba.
  *
  *  DUAS VISÕES do mesmo recorte, porque as perguntas são diferentes:
  *   - BOLHAS por município: "onde está concentrado?" — o tamanho é a quantidade,
@@ -11,17 +14,22 @@
  *   - LISTA por dias: "o que vence primeiro?" — ordenável nos dois sentidos.
  *  O KPI no topo acompanha o filtro de municípios (multisseleção), então o número
  *  nunca discorda do que está logo abaixo — o erro clássico de dashboard.
+ *
+ *  ⭐ CADA INSTRUMENTO É CLICÁVEL (19/09/2026): o estadual abre o modal do
+ *  convênio e a voluntária abre o da proposta — os MESMOS das telas de origem,
+ *  para o gestor não sair procurando.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  X, CalendarClock, Circle, List, ArrowUpDown, Lock, Download,
-  FileText, Sheet, Loader2,
+  CalendarClock, Circle, List, ArrowUpDown, Lock, Download, FileText, Sheet, Loader2,
 } from "lucide-react";
 import api from "@/lib/api";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { MultiSelect } from "@/components/ui/multi-select";
-import { Modal, ModalCorpo, ModalHead } from "@/components/ui/superficies";
+import { Bloco, BlocoHead, Modal, ModalCorpo, ModalHead } from "@/components/ui/superficies";
 import { baixarVigencias, type FormatoVigencias } from "@/lib/vigenciasExport";
-import type { Municipio } from "@/types";
+import ConvenioDetailModal from "@/app/dashboard/convenios/ConvenioDetailModal";
+import { DetalheVoluntariaModal, type Detalhe as DetalheVoluntaria } from "@/components/TransfereGovPropostas";
 
 interface Alerta {
   id: number;
@@ -48,10 +56,13 @@ function tomDias(d?: number | null): { bg: string; fg: string } {
 
 /** Um instrumento a vencer. É o MESMO cartão nas duas visões — na lista solta e
  *  dentro do município na visão de bolhas — para o dado não mudar de cara. */
-function LinhaAlerta({ i, nome }: { i: Alerta; nome: string }) {
+function LinhaAlerta({ i, nome, onAbrir }: { i: Alerta; nome: string; onAbrir: (i: Alerta) => void }) {
   const tom = tomDias(i.dias_restantes);
   return (
-    <div className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ background: "var(--bi-surface-2)" }}>
+    <button type="button" onClick={() => onAbrir(i)}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left bi-hover"
+            style={{ background: "var(--bi-surface-2)" }}
+            title="Abrir o instrumento">
       <span className="shrink-0 rounded-md px-2 py-1 text-[11px] font-bold" style={{ background: tom.bg, color: tom.fg }}>
         {i.dias_restantes ?? "—"}d
       </span>
@@ -61,34 +72,35 @@ function LinhaAlerta({ i, nome }: { i: Alerta; nome: string }) {
         </div>
         <div className="truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
           {nome}
+          {i.esfera === "voluntaria" ? " · federal (voluntária)" : i.esfera ? ` · ${i.esfera}` : ""}
           {i.nr_convenio || i.nr_sigcon ? ` · ${i.nr_convenio || i.nr_sigcon}` : ""}
-          {i.dt_fim_vigencia ? ` · vence em ${new Date(i.dt_fim_vigencia).toLocaleDateString("pt-BR")}` : ""}
+          {i.dt_fim_vigencia ? ` · vence em ${new Date(`${String(i.dt_fim_vigencia).slice(0, 10)}T00:00:00`).toLocaleDateString("pt-BR")}` : ""}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
-export default function VigenciasModal({
-  municipios, onClose,
-}: { municipios: Municipio[]; onClose: () => void }) {
+export function VigenciasCarteira() {
+  const { municipios } = useMunicipio();
   const [itens, setItens] = useState<Alerta[]>([]);
   const [carregando, setCarregando] = useState(true);
   /* ⭐ SEM PERMISSAO ≠ SEM NADA VENCENDO, e confundir os dois foi o defeito que
      motivou este bloco (pedido do dono, 08/2026): quem não tinha acesso levava
-     403, o `catch` zerava a lista em silêncio e o modal anunciava «Nenhum
-     instrumento vencendo em 120 dias». A pessoa fechava tranquila achando que
-     estava tudo em dia — quando na verdade não estava vendo nada.
-
-     Hoje quem libera é a caixinha «Vigências a vencer» do modal de Permissões
-     (ou o módulo de Convênios Estaduais, para quem já o tinha). */
+     403, o `catch` zerava a lista em silêncio e a tela anunciava «Nenhum
+     instrumento vencendo em 120 dias». Hoje quem libera é a caixinha
+     «Vigências a vencer» do modal de Permissões. */
   const [semAcesso, setSemAcesso] = useState(false);
   const [visao, setVisao] = useState<"bolhas" | "lista">("bolhas");
   const [asc, setAsc] = useState(true);
   const [munSel, setMunSel] = useState<string[]>([]);
-  // Bolha CLICADA: a visao de bolhas mostra os mesmos itens da lista,
-  // so que agrupados — clicar abre os convenios daquele municipio.
+  // Bolha CLICADA: a visão de bolhas mostra os mesmos itens da lista,
+  // só que agrupados — clicar abre os convênios daquele município.
   const [munAberto, setMunAberto] = useState<string | null>(null);
+  // O instrumento aberto no modal de detalhe.
+  const [convAberto, setConvAberto] = useState<{ id: number; esfera: string } | null>(null);
+  const [vol, setVol] = useState<{ municipioId: number | null; detalhe: DetalheVoluntaria | null;
+                                   carregando: boolean } | null>(null);
 
   const nomePorId = useMemo(() => {
     const m: Record<string, string> = {};
@@ -96,9 +108,8 @@ export default function VigenciasModal({
     return m;
   }, [municipios]);
 
-  /** Nome do município do alerta. A API passou a mandar `municipio_nome` junto —
-   *  antes a tela cruzava por id e, quando a API nem devolvia o id, a bolha saía
-   *  como "—" e o filtro nascia vazio. O cruzamento fica como queda. */
+  /** Nome do município do alerta. A API manda `municipio_nome` junto — o
+   *  cruzamento por id fica como queda. */
   const nomeDo = useCallback(
     (a: Alerta) => a.municipio_nome || nomePorId[String(a.municipio_id)] || "—",
     [nomePorId],
@@ -122,6 +133,23 @@ export default function VigenciasModal({
       })
       .finally(() => { if (vivo) setCarregando(false); });
     return () => { vivo = false; };
+  }, []);
+
+  const abrir = useCallback(async (i: Alerta) => {
+    if (i.esfera === "voluntaria") {
+      const numero = i.nr_sigcon || i.nr_convenio;
+      if (!numero) return;
+      setVol({ municipioId: i.municipio_id ?? null, detalhe: null, carregando: true });
+      try {
+        const r = await api.get<DetalheVoluntaria>(`/transferegov/voluntarias/${encodeURIComponent(numero)}`,
+          { params: { municipio_id: i.municipio_id } });
+        setVol({ municipioId: i.municipio_id ?? null, detalhe: r.data, carregando: false });
+      } catch {
+        setVol({ municipioId: i.municipio_id ?? null, detalhe: null, carregando: false });
+      }
+      return;
+    }
+    if (i.id) setConvAberto({ id: i.id, esfera: i.esfera || "estadual" });
   }, []);
 
   const visiveis = useMemo(() => {
@@ -152,11 +180,8 @@ export default function VigenciasModal({
   );
   const maxQtd = Math.max(1, ...porMunicipio.map((p) => p.qtd));
 
-  /* EXPORTAÇÃO — botão que abre um modal, e não dois botões soltos na barra.
-     A barra já carrega KPI, filtro de municípios, duas visões e a ordenação;
-     mais dois botões ali empurrariam o conteúdo para baixo. O modal ainda
-     resolve um problema que os botões soltos não resolvem: dizer, ANTES de
-     baixar, qual é o recorte que vai para o arquivo. */
+  /* EXPORTAÇÃO — botão que abre um modal: ele diz, ANTES de baixar, qual é o
+     recorte que vai para o arquivo. */
   const [exportAberto, setExportAberto] = useState(false);
   const [baixando, setBaixando] = useState<FormatoVigencias | null>(null);
 
@@ -164,16 +189,8 @@ export default function VigenciasModal({
     setBaixando(formato);
     try {
       /* ⚠️ MANDA `munSel`, NÃO os municípios visíveis. O backend entende lista
-         vazia como "todos os do meu alcance" e refaz o mesmo recorte da tela.
-         Enviar a lista derivada de `visiveis` daria no mesmo hoje e passaria a
-         divergir no dia em que a tela ganhar outro filtro — o arquivo sairia
-         com um recorte que ninguém pediu. */
-      await baixarVigencias({
-        dias: DIAS,
-        municipios: munSel,
-        ordem: asc ? "asc" : "desc",
-        formato,
-      });
+         vazia como "todos os do meu alcance" e refaz o mesmo recorte da tela. */
+      await baixarVigencias({ dias: DIAS, municipios: munSel, ordem: asc ? "asc" : "desc", formato });
       setExportAberto(false);
     } finally {
       setBaixando(null);
@@ -182,35 +199,19 @@ export default function VigenciasModal({
 
   return (
     <>
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-         style={{ background: "rgba(15,23,42,.55)" }} onClick={onClose}>
-      <div className="bi-card w-full max-w-4xl max-h-[86vh] overflow-hidden flex flex-col"
-           onClick={(e) => e.stopPropagation()}>
-        {/* cabeçalho + KPI (acompanha o filtro — nunca discorda da lista abaixo) */}
-        <div className="flex items-start justify-between gap-3 border-b p-4"
-             style={{ borderColor: "var(--bi-line)" }}>
-          <div>
-            <h2 className="flex items-center gap-2 text-base font-bold" style={{ color: "var(--bi-text)" }}>
-              <CalendarClock className="size-4" /> Vigências a vencer
-            </h2>
-            <p className="mt-0.5 text-xs" style={{ color: "var(--bi-muted)" }}>
-              Instrumentos com vigência encerrando em até {DIAS} dias.
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-md p-1.5 bi-hover" aria-label="Fechar">
-            <X className="size-4" />
-          </button>
-        </div>
+      <Bloco className="p-3">
+        <BlocoHead icon={CalendarClock} titulo="Vigências a vencer"
+                   sub={`instrumentos da carteira com vigência encerrando em até ${DIAS} dias · clique para abrir`} />
 
-        <div className="flex flex-wrap items-end gap-3 p-4 pb-2">
+        <div className="flex flex-wrap items-end gap-3 px-1 pb-3">
           <div className="rounded-lg px-4 py-2"
                style={{ background: "var(--bi-surface-2)", border: "1px solid var(--bi-line)" }}>
             <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--bi-muted)" }}>
               {munSel.length ? `${munSel.length} município(s)` : "Todos os municípios"}
             </div>
             <div className="text-2xl font-bold" style={{ color: "var(--bi-text)" }}>
-              {/* "—" tambem no bloqueio: um "0" garboso ao lado do aviso de
-                  permissao seria a mesma mentira, so que em numero. */}
+              {/* "—" também no bloqueio: um "0" ao lado do aviso de permissão
+                  seria a mesma mentira, só que em número. */}
               {carregando || semAcesso ? "—" : visiveis.length}
             </div>
           </div>
@@ -242,9 +243,7 @@ export default function VigenciasModal({
                 <ArrowUpDown className="size-3" /> {asc ? "menor→maior" : "maior→menor"}
               </button>
             )}
-            {/* Desabilitado (e não escondido) quando não há o que exportar: um
-                botão que some deixa a pessoa procurando onde ele estava. O
-                `title` diz o porquê em cada caso. */}
+            {/* Desabilitado (e não escondido) quando não há o que exportar. */}
             <button
               onClick={() => setExportAberto(true)}
               disabled={carregando || semAcesso || visiveis.length === 0}
@@ -261,7 +260,7 @@ export default function VigenciasModal({
           </div>
         </div>
 
-        <div className="flex-1 overflow-auto p-4 pt-2">
+        <div className="px-1">
           {carregando ? (
             <div className="space-y-1.5">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -310,7 +309,7 @@ export default function VigenciasModal({
                 })}
               </div>
               {/* Os MESMOS itens da lista, do município escolhido. Sem clicar,
-                  mostra o município com o prazo mais curto — a bolha sozinha
+                  mostra o município com mais instrumentos — a bolha sozinha
                   dizia "quantos" e nunca "quais". */}
               {(() => {
                 const alvo = munAberto || (porMunicipio[0]?.nome ?? null);
@@ -323,7 +322,8 @@ export default function VigenciasModal({
                     </div>
                     <div className="space-y-1.5">
                       {doMun.map((i) => (
-                        <LinhaAlerta key={`${i.esfera || ""}-${i.id}-${i.nr_convenio || i.nr_sigcon}`} i={i} nome={alvo} />
+                        <LinhaAlerta key={`${i.esfera || ""}-${i.id}-${i.nr_convenio || i.nr_sigcon}`}
+                                     i={i} nome={alvo} onAbrir={abrir} />
                       ))}
                     </div>
                   </div>
@@ -332,34 +332,31 @@ export default function VigenciasModal({
             </>
           ) : (
             <div className="space-y-1.5">
-              {visiveis.map((i) => <LinhaAlerta key={`${i.esfera || ""}-${i.id}-${i.nr_convenio || i.nr_sigcon}`} i={i} nome={nomeDo(i)} />)}
+              {visiveis.map((i) => (
+                <LinhaAlerta key={`${i.esfera || ""}-${i.id}-${i.nr_convenio || i.nr_sigcon}`}
+                             i={i} nome={nomeDo(i)} onAbrir={abrir} />
+              ))}
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </Bloco>
 
-      {/* ⚠️ IRMÃO do overlay de vigências, NUNCA filho dele — e isto não é
-          estética. O overlay de cima tem `onClick={onClose}` no backdrop, e o
-          único filho protegido por `stopPropagation` é o cartão. Dentro dele,
-          QUALQUER clique aqui (escolher formato, fechar) subiria até aquele
-          `onClick` e fecharia o modal de vigências por baixo — o arquivo até
-          baixaria, e a tela sumiria junto.
+      {convAberto && <ConvenioDetailModal conv={convAberto} onClose={() => setConvAberto(null)} />}
+      {vol && (
+        <DetalheVoluntariaModal detalhe={vol.detalhe} carregando={vol.carregando}
+                                municipioId={vol.municipioId} onFechar={() => setVol(null)} />
+      )}
 
-          `nivel={2}` (z-[60]) põe este por cima do z-50 feito à mão do outro.
-          `esc={false}`: o Esc fecharia os DOIS de uma vez. */}
       <Modal aberto={exportAberto} onFechar={() => setExportAberto(false)}
-             maxW="max-w-md" nivel={2} esc={false}
-             podeFechar={() => baixando === null} rotulo="Exportar vigências">
+             maxW="max-w-md" podeFechar={() => baixando === null} rotulo="Exportar vigências">
         <ModalHead
           titulo="Exportar vigências"
           sub="O arquivo sai com o mesmo recorte que está na tela."
           onFechar={() => setExportAberto(false)}
         />
         <ModalCorpo>
-          {/* O QUE VAI NO ARQUIVO, escrito antes de baixar. É a razão de isto ser
-              um modal e não dois botões: exportação que não diz o próprio
-              recorte vira PDF errado circulando por e-mail, e ninguém descobre. */}
+          {/* O QUE VAI NO ARQUIVO, escrito antes de baixar: exportação que não
+              diz o próprio recorte vira PDF errado circulando por e-mail. */}
           <div className="rounded-lg p-3 text-xs leading-relaxed"
                style={{ background: "var(--bi-surface-2)", color: "var(--bi-muted)" }}>
             <div>
@@ -383,9 +380,7 @@ export default function VigenciasModal({
             <button onClick={() => exportar("pdf")} disabled={baixando !== null}
                     className="flex flex-col items-center gap-1 rounded-lg p-3 text-xs font-medium bi-hover disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
-              {baixando === "pdf"
-                ? <Loader2 className="size-5 animate-spin" />
-                : <FileText className="size-5" />}
+              {baixando === "pdf" ? <Loader2 className="size-5 animate-spin" /> : <FileText className="size-5" />}
               PDF
               <span className="text-[10px] font-normal" style={{ color: "var(--bi-muted)" }}>
                 para ler e circular
@@ -394,9 +389,7 @@ export default function VigenciasModal({
             <button onClick={() => exportar("xlsx")} disabled={baixando !== null}
                     className="flex flex-col items-center gap-1 rounded-lg p-3 text-xs font-medium bi-hover disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ border: "1px solid var(--bi-line)", color: "var(--bi-text)" }}>
-              {baixando === "xlsx"
-                ? <Loader2 className="size-5 animate-spin" />
-                : <Sheet className="size-5" />}
+              {baixando === "xlsx" ? <Loader2 className="size-5 animate-spin" /> : <Sheet className="size-5" />}
               Excel
               <span className="text-[10px] font-normal" style={{ color: "var(--bi-muted)" }}>
                 valores somáveis

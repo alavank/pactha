@@ -550,6 +550,11 @@ function SidebarContent({
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
           const Icon = item.icon;
+          /* ⭐ A COR DE CADA ITEM DE DESTAQUE (19/09/2026): uma família por item
+             (`cor` em lib/menu.ts, tokens `--menu-*` em globals.css). Antes era
+             o azul INFO para todos, e o bloco de cima não se distinguia entre si. */
+          const tinta = `var(--menu-${item.cor ?? "azul"}-ink)`;
+          const fundo = `var(--menu-${item.cor ?? "azul"}-soft)`;
           if (recolhida) {
             return (
               <Link
@@ -563,8 +568,8 @@ function SidebarContent({
                 }`}
                 style={item.destaque
                   ? {
-                      background: isActive ? "var(--bi-info-soft)" : undefined,
-                      color: "var(--bi-info-ink)",
+                      background: isActive ? fundo : undefined,
+                      color: tinta,
                     }
                   : undefined}
               >
@@ -581,21 +586,21 @@ function SidebarContent({
                   <span
                     aria-hidden
                     className="absolute right-1.5 top-1.5 size-1.5 rounded-full"
-                    style={{ background: "var(--bi-info-ink)" }}
+                    style={{ background: tinta }}
                   />
                 )}
               </Link>
             );
           }
-          /* ⭐ O ITEM EM DESTAQUE (o Radar e, desde 18/09/2026, a Regularidade)
-             usa a família INFO em vez do verde do sistema — inclusive quando
-             ativo, senão ele perderia a identidade justamente na tela dele. O
-             trilho à esquerda, que marca o item selecionado, acompanha a mesma
-             cor. */
+          /* ⭐ O ITEM EM DESTAQUE (Painel, Radar, Regularidade e Consolidado)
+             usa a SUA cor em vez do verde do sistema — inclusive quando ativo,
+             senão ele perderia a identidade justamente na tela dele. O trilho à
+             esquerda, que marca o item selecionado, acompanha a mesma cor. */
           if (item.destaque) {
             return (
               /* ⚠️ O SEPARADOR VEM DEPOIS, e não antes: ele agrupa o Painel, o
-                 Radar e a Regularidade como "o que se olha primeiro" e os
+                 Radar, a Regularidade e o Consolidado como "o que se olha
+                 primeiro" e os
                  distingue dos grupos por esfera que vêm abaixo. Posto acima,
                  separaria o Radar do Painel — sugerindo que ele é de outra
                  natureza que a tela de abertura.
@@ -606,8 +611,8 @@ function SidebarContent({
                 href={`${item.href}${qs}`}
                 className="relative mt-1 flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-base-200"
                 style={{
-                  background: isActive ? "var(--bi-info-soft)" : undefined,
-                  color: "var(--bi-info-ink)",
+                  background: isActive ? fundo : undefined,
+                  color: tinta,
                   fontWeight: isActive ? 600 : 500,
                 }}
               >
@@ -615,7 +620,7 @@ function SidebarContent({
                   <span
                     aria-hidden
                     className="absolute -left-2 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full"
-                    style={{ background: "var(--bi-info-ink)" }}
+                    style={{ background: tinta }}
                   />
                 )}
                 {Icon && <Icon className="size-4" />}
@@ -623,7 +628,7 @@ function SidebarContent({
                 {ehRadar && !!radar && radar.total > 0 && (
                   <span
                     className="rounded-full px-1.5 py-px text-[11px] font-semibold tabular-nums"
-                    style={{ background: "var(--bi-info-soft)", color: "var(--bi-info-ink)" }}
+                    style={{ background: fundo, color: tinta }}
                     title={radar.dias != null
                       ? `${radar.total} programa(s) com janela aberta — o mais próximo fecha em ${radar.dias} dia(s)`
                       : `${radar.total} programa(s) com janela aberta`}
