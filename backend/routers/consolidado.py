@@ -62,17 +62,28 @@ async def _escopo(db: AsyncSession, current: User) -> list[int]:
     return ids
 
 
-@router.get("/painel", dependencies=[exige("consolidado.ver")])
-async def painel(
+@router.get("/regularidade", dependencies=[exige("consolidado.ver")])
+async def regularidade(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """A home do CONSOLIDADO: uma linha por município com regularidade,
-    vencimentos, documentos, emendas sem pagamento e Radar — cada bloco com a
-    conta da tela que já existe (ver `services/consolidado_painel.py`)."""
-    from services.consolidado_painel import montar
+    """Aba REGULARIDADE: CAUC e cadastro estadual por município, e os documentos
+    vencendo em 30 dias — a conta da tela Regularidade de cada município."""
+    from services.consolidado_painel import montar_regularidade
     ids = await _escopo(db, current)
-    return await montar(db, ids)
+    return await montar_regularidade(db, ids)
+
+
+@router.get("/radar", dependencies=[exige("consolidado.ver")])
+async def radar(
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Aba RADAR: programas abertos por município e onde ele está nomeado ou tem
+    emenda indicada — o mesmo filtro do Radar de captação de cada município."""
+    from services.consolidado_painel import montar_radar
+    ids = await _escopo(db, current)
+    return await montar_radar(db, ids)
 
 
 # ------------------------------------------------------------ relatórios ---
@@ -98,20 +109,36 @@ async def _arquivo(db, request, current, tipo: str, arquivo: str, registros: int
                              headers={"Content-Disposition": f"attachment; filename={arquivo}"})
 
 
-@router.get("/painel/exportar", dependencies=[exige("consolidado.exportar")])
-async def exportar_painel(
+@router.get("/regularidade/exportar", dependencies=[exige("consolidado.exportar")])
+async def exportar_regularidade(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """O painel da carteira em planilha, com as listas INTEIRAS (a tela corta em 80)."""
-    from services.consolidado_painel import montar
-    from services.consolidado_relatorios import xlsx_painel
+    """A regularidade da carteira em planilha, com a lista de documentos INTEIRA."""
+    from services.consolidado_painel import montar_regularidade
+    from services.consolidado_relatorios import xlsx_regularidade
     ids = await _escopo(db, current)
-    p = await montar(db, ids, limite=None)
-    return await _arquivo(db, request, current, "consolidado_painel", "painel_da_carteira.xlsx",
-                          len(p["municipios"]), {"escopo": f"{len(ids)} municípios"},
-                          xlsx_painel(p))
+    p = await montar_regularidade(db, ids, limite=None)
+    return await _arquivo(db, request, current, "consolidado_regularidade",
+                          "regularidade_da_carteira.xlsx", len(p["municipios"]),
+                          {"escopo": f"{len(ids)} municípios"}, xlsx_regularidade(p))
+
+
+@router.get("/radar/exportar", dependencies=[exige("consolidado.exportar")])
+async def exportar_radar(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """O Radar da carteira em planilha, com a lista de programas INTEIRA."""
+    from services.consolidado_painel import montar_radar
+    from services.consolidado_relatorios import xlsx_radar
+    ids = await _escopo(db, current)
+    p = await montar_radar(db, ids, limite=None)
+    return await _arquivo(db, request, current, "consolidado_radar", "radar_da_carteira.xlsx",
+                          len(p["programas"]), {"escopo": f"{len(ids)} municípios"},
+                          xlsx_radar(p))
 
 
 @router.get("/relatorios/recursos", dependencies=[exige("consolidado.ver")])
