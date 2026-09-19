@@ -12,17 +12,21 @@
  * (19/09/2026); por isso o subtítulo diz o que é, e o clique abre a ficha do
  * programa — a mesma do Radar de captação.
  *
- * ⭐ O DETALHE ACOMPANHA A ROLAGEM (dono, 19/09/2026). Com 42 municípios a lista
- * da esquerda passa de uma tela; clicar em Carandaí lá embaixo trocava o painel
- * da direita FORA DA VISTA, parado no topo, e parecia que nada tinha acontecido.
- * Agora o painel é `sticky` (gruda no topo da área que rola — o `<main>` do
- * layout, não a janela) e rola por dentro se a lista de programas for maior que
- * a tela. Abaixo de `lg` as colunas empilham e o detalhe fica DEPOIS da lista
- * inteira: lá o clique rola a página até ele.
+ * ⭐ SANFONA, E NÃO DUAS COLUNAS (dono, 19/09/2026). Era lista à esquerda e
+ * programas à direita: clicar num município lá embaixo trocava o painel FORA DA
+ * VISTA. O painel fixo ao rolar (#527) resolveu isso, mas criou uma caixa com
+ * barra de rolagem própria colada na da página — "ficou muito estranho". Agora o
+ * município ABRE ali mesmo, um por vez, e os programas aparecem logo abaixo dele.
+ * Municípios em ORDEM ALFABÉTICA (o backend ordena, `_chave_nome`); a urgência
+ * mora no selo de prazo de cada um, não na posição.
+ *
+ * ⚠️ Os programas ficam num `<li>` IRMÃO do cartão, e não dentro dele: o
+ * `ItemLinha` põe `children` dentro do próprio `<button>`, e o programa também é
+ * clicável (abre a ficha) — botão dentro de botão não funciona.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, FileSpreadsheet, Loader2, MapPin, Radar } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ChevronDown, FileSpreadsheet, Loader2, MapPin, Radar } from "lucide-react";
 
 import api from "@/lib/api";
 import { formatCurrencyShort } from "@/lib/bi-format";
@@ -50,27 +54,16 @@ interface Resp {
   programas_total: number;
 }
 
+const tomPrazo = (dias: number) => (dias <= 7 ? "critico" : dias <= 30 ? "atencao" : "neutro");
+const textoPrazo = (dias: number) => (dias === 0 ? "fecha hoje" : `${dias} dias`);
+
 export function RadarCarteira() {
   const [d, setD] = useState<Resp | null>(null);
   const [erro, setErro] = useState(false);
-  const [filtro, setFiltro] = useState<number | null>(null);
+  const [aberto, setAberto] = useState<number | null>(null);
   const [ficha, setFicha] = useState<{ id: string; municipioId: number } | null>(null);
   const [baixando, setBaixando] = useState(false);
   const [erroArquivo, setErroArquivo] = useState<string | null>(null);
-  const painel = useRef<HTMLDivElement>(null);
-
-  /* Trocou o município: o painel volta ao começo da lista dele. Na tela larga
-     ele já está à vista (sticky); na estreita, o detalhe mora depois da lista
-     inteira, então a página rola até ele. */
-  const escolher = (id: number | null) => {
-    setFiltro(id);
-    const el = painel.current;
-    if (!el) return;
-    el.scrollTop = 0;
-    if (id != null && !window.matchMedia("(min-width: 1024px)").matches) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
 
   useEffect(() => {
     let vivo = true;
@@ -80,8 +73,23 @@ export function RadarCarteira() {
     return () => { vivo = false; };
   }, []);
 
-  const programas = useMemo(
-    () => (d?.programas ?? []).filter((p) => filtro == null || p.municipio_id === filtro), [d, filtro]);
+  /* Abriu um município no fim da tela: os programas nascem abaixo da dobra.
+     `nearest` rola só o necessário para eles aparecerem — e nada, se já estão. */
+  useEffect(() => {
+    if (aberto == null) return;
+    document.getElementById(`radar-programas-${aberto}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [aberto]);
+
+  const porMunicipio = useMemo(() => {
+    const m = new Map<number, Programa[]>();
+    for (const p of d?.programas ?? []) {
+      const xs = m.get(p.municipio_id) ?? [];
+      xs.push(p);
+      m.set(p.municipio_id, xs);
+    }
+    return m;
+  }, [d]);
 
   if (erro) return <Vazio>Não foi possível montar o Radar da carteira.</Vazio>;
   if (!d) {
@@ -92,7 +100,6 @@ export function RadarCarteira() {
     );
   }
   const n = d.municipios_na_carteira;
-  const nomeFiltro = d.municipios.find((m) => m.municipio_id === filtro)?.nome;
   const baixar = async () => {
     setBaixando(true);
     setErroArquivo(null);
@@ -129,66 +136,69 @@ export function RadarCarteira() {
         </span>
       </div>
 
-      {/* `lg:items-start`: sem ele a coluna da direita estica até a altura da
-          lista, e um item esticado não tem para onde "grudar". */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:items-start">
-        <Bloco className="p-3">
-          <BlocoHead icon={MapPin} titulo="Por município" sub="clique para filtrar os programas" />
-          <Lista>
-            {d.municipios.map((l) => {
-              const r = l.radar;
-              const ativo = filtro === l.municipio_id;
-              return (
-                <ItemLinha key={l.municipio_id}
-                  onClick={() => escolher(ativo ? null : l.municipio_id)} expandido={ativo}
+      <Bloco className="p-3">
+        <BlocoHead icon={MapPin} titulo="Programas com dono, por município"
+                   sub="em ordem alfabética · clique no município para ver os programas; no programa, para a ficha" />
+        <Lista>
+          {d.municipios.map((l) => {
+            const r = l.radar;
+            const ativo = aberto === l.municipio_id;
+            const progs = porMunicipio.get(l.municipio_id) ?? [];
+            const prazos = progs.map((p) => p.dias).filter((x): x is number => x != null);
+            const proximo = prazos.length ? Math.min(...prazos) : null;
+            return (
+              <React.Fragment key={l.municipio_id}>
+                <ItemLinha
+                  onClick={() => setAberto(ativo ? null : l.municipio_id)} expandido={ativo}
                   className={ativo ? "ring-1 ring-[var(--bi-accent-ink)]" : ""}
-                  titulo={<span className="flex items-center gap-2">{l.nome} {l.uf && <Selo>{l.uf}</Selo>}</span>}
-                  valor={r ? String(r.abertos) : "—"}
+                  titulo={<span className="flex items-center gap-2">
+                    <ChevronDown className="size-3.5 shrink-0 transition-transform"
+                                 style={{ transform: ativo ? "rotate(0deg)" : "rotate(-90deg)",
+                                          color: "var(--bi-muted)" }} />
+                    {l.nome} {l.uf && <Selo>{l.uf}</Selo>}
+                  </span>}
+                  valor={proximo != null
+                    ? <Selo tom={tomPrazo(proximo)}>{`próximo prazo: ${textoPrazo(proximo)}`}</Selo>
+                    : undefined}
                   meta={!r ? <span>sem UF cadastrada</span> : <>
-                    <span>programas abertos</span>
+                    <span>{progs.length} programa{progs.length === 1 ? "" : "s"} com dono</span>
                     {r.nomeado > 0 && <Selo tom="acento">{r.nomeado} nomeado</Selo>}
                     {r.indicado > 0 && <Selo tom="ok">{r.indicado} com emenda</Selo>}
                   </>} />
-              );
-            })}
-          </Lista>
-        </Bloco>
-
-        <div ref={painel}
-             className="pactha-scroll scroll-mt-3 rounded-2xl lg:sticky lg:top-3 lg:max-h-[calc(100vh-1.5rem)] lg:overflow-y-auto">
-        <Bloco className="p-3">
-          <BlocoHead icon={Radar}
-                     titulo={nomeFiltro ? `Programas com dono — ${nomeFiltro}` : "Programas com dono na carteira"}
-                     sub="o município foi nomeado ou tem emenda indicada; falta cadastrar a proposta no prazo · clique para a ficha" />
-          {programas.length === 0 ? (
-            <Vazio>{nomeFiltro
-              ? `${nomeFiltro} não está nomeado nem com emenda indicada em programa aberto.`
-              : "Nenhum município da carteira está nomeado ou com emenda indicada em programa aberto."}</Vazio>
-          ) : (
-            <Lista>
-              {programas.map((x, i) => (
-                <ItemLinha key={`${x.municipio_id}:${x.id_programa}:${i}`}
-                  onClick={() => setFicha({ id: x.id_programa, municipioId: x.municipio_id })}
-                  titulo={x.programa}
-                  valor={x.dias != null ? <Selo tom={x.dias <= 7 ? "critico" : x.dias <= 30 ? "atencao" : "neutro"}>
-                    {x.dias === 0 ? "fecha hoje" : `${x.dias} dias`}</Selo> : "—"}
-                  meta={<>
-                    <span className="font-medium" style={{ color: "var(--bi-text)" }}>{x.municipio}</span>
-                    {x.beneficiario && <Selo tom="acento">município nomeado</Selo>}
-                    {x.indicacoes.map((ind, k) => (
-                      <span key={k}>
-                        · emenda de {ind.parlamentar || "—"}
-                        {ind.solicitante && ind.solicitante !== ind.parlamentar ? ` (a pedido de ${ind.solicitante})` : ""}
-                        {ind.valor != null ? ` · ${formatCurrencyShort(ind.valor)}` : ""}
-                      </span>
-                    ))}
-                  </>} />
-              ))}
-            </Lista>
-          )}
-        </Bloco>
-        </div>
-      </div>
+                {ativo && (
+                  <li id={`radar-programas-${l.municipio_id}`} className="scroll-mb-3 ml-4 border-l-2 pl-3"
+                      style={{ borderColor: "var(--bi-accent-ink)" }}>
+                    {progs.length === 0 ? (
+                      <Vazio>{`${l.nome} não está nomeado nem com emenda indicada em programa aberto.`}</Vazio>
+                    ) : (
+                      <Lista>
+                        {progs.map((x, i) => (
+                          <ItemLinha key={`${x.id_programa}:${i}`}
+                            onClick={() => setFicha({ id: x.id_programa, municipioId: x.municipio_id })}
+                            titulo={x.programa}
+                            valor={x.dias != null
+                              ? <Selo tom={tomPrazo(x.dias)}>{textoPrazo(x.dias)}</Selo> : "—"}
+                            meta={<>
+                              {x.beneficiario && <Selo tom="acento">município nomeado</Selo>}
+                              {x.indicacoes.map((ind, k) => (
+                                <span key={k}>
+                                  emenda de {ind.parlamentar || "—"}
+                                  {ind.solicitante && ind.solicitante !== ind.parlamentar
+                                    ? ` (a pedido de ${ind.solicitante})` : ""}
+                                  {ind.valor != null ? ` · ${formatCurrencyShort(ind.valor)}` : ""}
+                                </span>
+                              ))}
+                            </>} />
+                        ))}
+                      </Lista>
+                    )}
+                  </li>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </Lista>
+      </Bloco>
 
       {ficha && (
         <FichaPrograma key={`${ficha.municipioId}:${ficha.id}`} idPrograma={ficha.id}

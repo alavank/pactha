@@ -83,7 +83,11 @@ async def radar(
     emenda indicada — o mesmo filtro do Radar de captação de cada município."""
     from services.consolidado_painel import montar_radar
     ids = await _escopo(db, current)
-    return await montar_radar(db, ids)
+    # ⚠️ A LISTA INTEIRA (19/09/2026). Com o corte de 80, a tela abria o
+    # município e mostrava só os programas que caíram dentro dos 80 de prazo
+    # mais curto — na Freitas eram 118, e o cartão dizia "7 nomeado" com menos
+    # programas embaixo. São poucas centenas de linhas pequenas.
+    return await montar_radar(db, ids, limite=None)
 
 
 # ------------------------------------------------------------ relatórios ---
