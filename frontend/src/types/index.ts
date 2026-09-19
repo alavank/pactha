@@ -1,3 +1,5 @@
+import type { VoluntariasFases } from "@/lib/bi-format";
+
 export interface User {
   id: number;
   email: string;
@@ -31,9 +33,10 @@ export interface Municipio {
 export interface MunicipioSummary {
   municipio: Municipio;
   total_convenios_estadual: number;
-  total_voluntarias: number;       // propostas TransfereGov Voluntarias
+  total_voluntarias: number;       // voluntárias CELEBRADAS (19/09/2026)
   valor_total_estadual: number;
-  valor_total_federal: number;     // soma valor_global/repasse das Voluntarias
+  valor_total_federal: number;     // soma valor_global/repasse das CELEBRADAS
+  voluntarias_fases?: VoluntariasFases; // análise e rejeitadas, AO LADO do número
   alertas_vigencia: number;        // 120 dias (estadual + voluntarias)
   alertas_vigencia_60d: number;    // 60 dias (critico)
   alertas_prestacao_contas: number; // vencidos ha +90 dias (total estadual + federal)

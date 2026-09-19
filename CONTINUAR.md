@@ -1773,16 +1773,41 @@ emendas federais (`_fontes_federais` + `emendas_unificadas`) lado a lado, por pe
   os botões de ordenar — a coluna que ordena fica destacada no topo e em cada município (os
   chips "Ordenar por" foram lidos como filtro). Soma **dentro** da coluna, nunca entre elas.
 - ⚠️ **Sem total geral, de propósito**: a voluntária que nasceu de emenda está nas duas
-  colunas (`voluntarias_n` conta quantas; na Freitas, 2026: 24 de 42 municípios, R$ 16,7 mi).
+  colunas (`voluntarias_n` conta as CELEBRADAS nessa situação; na Freitas, 2026, contando
+  qualquer fase: 24 de 42 municípios, R$ 16,7 mi).
 - **"Empenhadas sem pagamento" tem denominador** (`com_execucao_n` em `totais`): só a emenda
   da carteira com execução no Portal mede pagamento — em 2026 eram 33 de 354 linhas na
   Freitas. Pix e Saúde não entram.
 - **Emendas: `n` conta todas, `valor` só a Prefeitura** (os dois cartões da aba Federais);
   `fora_n`/`fora_valor` dizem quanto foi a entidade.
-- **Voluntárias contam a proposta em qualquer fase** (a regra do Painel): na Freitas, 2026,
-  das 162, 102 estavam "enviada para análise", 19 em execução e 4 rejeitadas/eliminadas.
+- **Voluntárias: o número é o CELEBRADO** (regra do Painel, abaixo); "em análise" vem entre
+  parênteses e as rejeitadas só no detalhe.
   Conferido em 19/09 contra a aba Federais e as listas do TransfereGov nos 42 municípios:
   nenhuma divergência e nenhuma emenda duplicada dentro da coluna.
+
+### Voluntárias POR FASE em toda tela (19/09/2026)
+
+O valor de voluntárias somava a proposta em **qualquer fase**. Na Freitas, 2026: das 162,
+102 "enviada para análise", 19 em execução, 4 rejeitadas/eliminadas; Conceição do Pará
+mostrava R$ 45,3 mi que eram seis pedidos de asfalto. Dono: "pra quem bate o olho, é um valor
+cheio, independente da fase". Agora (`services/fases_voluntaria.py`, a regra única):
+
+| Fase | Situações | Onde aparece |
+|---|---|---|
+| **celebrada** | as telas «Em execução» + «Encerradas» (inclui situação nula) | **o número** (`valor_total_federal`, `total_voluntarias`) |
+| **analise** | a tela «Voluntárias» menos as celebradas (`VOLUNTARIA_SQL`) | ao lado, "+ R$ X em análise, fora do valor" |
+| **rejeitada** | `rejeitad` **ou `eliminad`** | só a contagem |
+
+- Uma função (`voluntarias_por_fase`) para `bi_kpis` **e** `summary_core` (eram duas cópias
+  da consulta); `voluntarias_fases` no payload; frase única no front (`subVoluntarias` em
+  `lib/bi-format.ts`) para Painel, BI/TV, aba TransfereGov do BI e Consolidado.
+- "Total captado" (BI e narrativas) agora é estadual + **celebrado**. IA, MCP e narrativas
+  dizem "celebrado" e citam a análise à parte.
+- Alertas de prazo ignoram proposta rejeitada.
+- **Defeito corrigido junto:** "Eliminada em Análise Preliminar" não tinha "rejeitad" e caía
+  no ELSE — aparecia em «Em execução». Agora é rejeitada nas telas também.
+- `fase_de` (Python) espelha o `FASE_SQL`; `test_categorias_transferegov.py` executa os dois
+  no sqlite sobre as mesmas situações.
 
 **Matriz parlamentar × município** (planilha): uma chamada a `aggregate_parlamentares`, que
 devolve `por_municipio`; os sete blocos do agregado somam por um helper só (`_soma`), então o

@@ -1,4 +1,5 @@
 import api from "./api";
+import type { VoluntariasFases } from "./bi-format";
 
 // Tipos + fetchers do Painel de Indicadores (BI) — backend routers/bi.py (/api/bi/*).
 // Escopo: municipioId = null => CONSOLIDADO (omite o param, backend usa o escopo do
@@ -14,9 +15,10 @@ export interface Municipio {
 
 export interface BiKpis {
   total_convenios_estadual: number;
-  total_voluntarias: number;
+  total_voluntarias: number;        // só as CELEBRADAS (19/09/2026)
   valor_total_estadual: number;
-  valor_total_federal: number;
+  valor_total_federal: number;      // só as CELEBRADAS
+  voluntarias_fases?: VoluntariasFases;
   alertas_vigencia: number;
   alertas_vigencia_60d: number;
   alertas_prestacao_contas: number;
@@ -290,6 +292,8 @@ export interface AbaTransfereGov {
     total: number;
     valor_total: number;
     valor_repasse: number;
+    // Por fase (19/09/2026): o número da tela é o CELEBRADO; análise ao lado.
+    fases?: Record<keyof VoluntariasFases, { n: number; valor: number; repasse: number }>;
     em_execucao: number;
     por_situacao: Rollup[];
     por_orgao: Rollup[];

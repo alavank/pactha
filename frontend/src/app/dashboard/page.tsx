@@ -34,6 +34,7 @@ import {
   diasRestantesBadge,
 } from "@/lib/utils";
 import type { MunicipioSummary, AlertaVigencia, ConvenioStats } from "@/types";
+import { subVoluntarias } from "@/lib/bi-format";
 import { BiScopeProvider } from "@/contexts/BiScopeContext";
 import { PainelIndicadores } from "@/components/bi/PainelIndicadores";
 import { TituloTela } from "@/components/TituloTela";
@@ -79,6 +80,7 @@ function MetricCard({
   value,
   valueClass = "text-2xl text-base-content",
   right,
+  sub,
   onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
@@ -88,6 +90,8 @@ function MetricCard({
   value: React.ReactNode;
   valueClass?: string;
   right?: React.ReactNode;
+  /** A linha miúda sob o número — o que NÃO está nele (ex.: o que ainda está em análise). */
+  sub?: React.ReactNode;
   onClick?: () => void;
 }) {
   return (
@@ -102,6 +106,7 @@ function MetricCard({
       </div>
       <p className="mt-4 text-xs font-medium text-base-content/50">{label}</p>
       <h4 className={`mt-1.5 font-bold leading-tight break-words ${valueClass}`}>{value}</h4>
+      {sub && <p className="mt-1 text-[11px] leading-snug text-base-content/50">{sub}</p>}
       {right && <div className="mt-3">{right}</div>}
     </div>
   );
@@ -377,11 +382,15 @@ function DashboardOperacional() {
                 right={<EsferaTag tipo="estadual" />}
                 onClick={() => goConvenios()}
               />
+              {/* ⚠️ SÓ AS CELEBRADAS (19/09/2026). O cartão contava a proposta em
+                  qualquer fase — o pedido em análise e a rejeitada inclusive; o
+                  resto vai na linha de baixo, nunca no número. */}
               <MetricCard
                 icon={FileText} iconBg="bg-info/15" iconText="text-info"
-                label="TransfereGov Voluntárias"
+                label="Voluntárias celebradas"
                 value={summary?.total_voluntarias ?? 0}
                 valueClass="text-3xl text-base-content"
+                sub={subVoluntarias(summary?.voluntarias_fases, "n")}
                 right={<EsferaTag tipo="federal" />}
                 onClick={() => goVoluntarias()}
               />
@@ -394,9 +403,10 @@ function DashboardOperacional() {
               />
               <MetricCard
                 icon={DollarSign} iconBg="bg-success/15" iconText="text-success"
-                label="Valor Federal"
+                label="Valor Federal (celebrado)"
                 value={formatCurrency(summary?.valor_total_federal ?? 0)}
                 valueClass="text-lg text-base-content"
+                sub={subVoluntarias(summary?.voluntarias_fases, "valor")}
                 right={<EsferaTag tipo="federal" />}
               />
             </div>

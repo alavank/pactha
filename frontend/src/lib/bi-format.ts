@@ -33,6 +33,30 @@ export function formatInt(v: number | null | undefined): string {
   return new Intl.NumberFormat("pt-BR").format(Math.round(Number(v || 0)));
 }
 
+/** As voluntárias por FASE (`services/fases_voluntaria.py`, 19/09/2026). O número
+ *  principal de toda tela é o das CELEBRADAS; análise e rejeitadas vêm ao lado. */
+export interface VoluntariasFases {
+  celebrada: { n: number; valor: number };
+  analise: { n: number; valor: number };
+  rejeitada: { n: number; valor: number };
+}
+
+/** A linha sob o número de voluntárias: o que NÃO está nele. Uma frase só para
+ *  Painel, BI/TV e Consolidado — três telas escrevendo a mesma coisa de três
+ *  jeitos é como o dono deixa de confiar no número. */
+export function subVoluntarias(f: VoluntariasFases | null | undefined,
+                               modo: "n" | "valor"): string | undefined {
+  if (!f) return undefined;
+  const partes: string[] = [];
+  if (f.analise?.n) {
+    partes.push(modo === "valor"
+      ? `+ ${formatCurrencyShort(f.analise.valor)} em análise, fora do valor`
+      : `+ ${formatInt(f.analise.n)} em análise`);
+  }
+  if (f.rejeitada?.n) partes.push(`${formatInt(f.rejeitada.n)} rejeitada${f.rejeitada.n === 1 ? "" : "s"}`);
+  return partes.length ? partes.join(" · ") : undefined;
+}
+
 /** ISO / dd/mm/yyyy -> "12 fev 2026". */
 export function formatDate(v: string | null | undefined): string {
   if (!v) return "—";

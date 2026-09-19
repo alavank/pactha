@@ -517,25 +517,13 @@ async def _tool_municipio_summary(db: AsyncSession, inp: dict) -> str:
     prest = (await db.execute(select(func.count()).select_from(ConvenioEstadual)
         .where(ConvenioEstadual.municipio_id == mun_id).where(_nao_fns)
         .where(ConvenioEstadual.dt_vigencia_atual < v90))).scalar()
-    # Voluntarias
-    vol = await db.execute(text("""
-        SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0), situacao
-        FROM transferegov_propostas WHERE municipio_id = :m
-          AND municipal IS NOT FALSE  -- so a prefeitura (services/natureza.py)
-    """), {"m": mun_id})
-    vol_rows = vol.fetchall()
-    total_vol = len(vol_rows); vol_valor = 0.0; vol_120 = vol_60 = vol_prest = 0
-    n_voluntarias = n_rejeitadas = n_geral = 0
-    for dtf, val, sit in vol_rows:
-        try: vol_valor += float(val or 0)
-        except (TypeError, ValueError): pass
-        sit_l = (sit or "").lower()
-        if "rejeitad" in sit_l:
-            n_rejeitadas += 1
-        elif "enviado para an" in sit_l and ("lise" in sit_l or "alise" in sit_l):
-            n_voluntarias += 1
-        else:
-            n_geral += 1
+    # Voluntarias POR FASE — a mesma conta do Painel (services/fases_voluntaria.py).
+    # A IA dizia "Valor total" somando pedido em analise e proposta rejeitada.
+    from services.fases_voluntaria import voluntarias_por_fase
+    fases, vigencias = await voluntarias_por_fase(db, [mun_id])
+    cel, ana, rej = fases["celebrada"], fases["analise"], fases["rejeitada"]
+    vol_120 = vol_60 = vol_prest = 0
+    for dtf in vigencias:
         d = None
         for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
             try: d = datetime.strptime(str(dtf).strip()[:10], fmt).date(); break
@@ -555,11 +543,13 @@ async def _tool_municipio_summary(db: AsyncSession, inp: dict) -> str:
         f"  Vencendo em 120d: {a120}\n"
         f"  Vencidos +90d (prestacao de contas): {prest}\n"
         f"FEDERAL (SICONV - TransfereGov Voluntarias):\n"
-        f"  Total propostas: {total_vol}\n"
-        f"    - Voluntarias (enviado p/ analise): {n_voluntarias}\n"
-        f"    - Geral (em execucao/aprovado/etc): {n_geral}\n"
-        f"    - Rejeitadas: {n_rejeitadas}\n"
-        f"  Valor total: {_fmt_money(vol_valor)}\n"
+        f"  Total propostas: {cel['n'] + ana['n'] + rej['n']}\n"
+        f"    - Celebradas (em execucao, prestacao de contas, encerradas): {cel['n']} "
+        f"— {_fmt_money(cel['valor'])}\n"
+        f"    - Em analise (antes da celebracao, ainda NAO e dinheiro): {ana['n']} "
+        f"— {_fmt_money(ana['valor'])}\n"
+        f"    - Rejeitadas/eliminadas (valor nao conta): {rej['n']}\n"
+        f"  Valor celebrado (o que se diz 'captado'): {_fmt_money(cel['valor'])}\n"
         f"  Vencendo em 60d: {vol_60}\n"
         f"  Vencendo em 120d: {vol_120}\n"
         f"  Vencidos +90d (prestacao de contas): {vol_prest}\n"

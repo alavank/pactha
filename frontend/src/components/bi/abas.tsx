@@ -25,7 +25,7 @@ import {
 } from "@/lib/estadual";
 import {
   formatCurrencyShort, formatInt, formatDate, formatDataCurta, formatDataHora, horasDesde,
-  diasLabel, parseDate, diasSeveridade,
+  diasLabel, parseDate, diasSeveridade, subVoluntarias,
 } from "@/lib/bi-format";
 import {
   BI_CORES, Chip, DotMeter, Gauge, ListaRollup, Metric, Painel, PainelHead,
@@ -118,8 +118,12 @@ export function AbaGeral({ ov, alertas, tv }: AbaProps & { ov: Overview; alertas
           sub={ov.consolidado ? `${ov.municipios_count} municípios` : undefined} />
         <Metric icon={Landmark} label="Estadual" valor={formatCurrencyShort(k.valor_total_estadual)}
           sub={`${formatInt(k.total_convenios_estadual)} convênios`} grande={tv} />
+        {/* Só as CELEBRADAS (19/09/2026): o "Total captado" ao lado somava pedido
+            em análise. O que está em análise vai no sub, fora do número. */}
         <Metric icon={Coins} label="Federal (voluntárias)" valor={formatCurrencyShort(k.valor_total_federal)}
-          sub={`${formatInt(k.total_voluntarias)} propostas`} grande={tv} />
+          sub={[`${formatInt(k.total_voluntarias)} celebradas`,
+                subVoluntarias(k.voluntarias_fases, "valor")].filter(Boolean).join(" · ")}
+          grande={tv} />
         <Metric icon={CalendarClock} tom="warn" label="Vigências ≤120d" valor={formatInt(k.alertas_vigencia)}
           sub={`${formatInt(k.alertas_vigencia_60d)} em 60 dias`} grande={tv} />
         <Metric icon={FileWarning} tom="crit" label="Prestação vencida" valor={formatInt(k.alertas_prestacao_contas)}
@@ -653,9 +657,17 @@ export function AbaTransfereGovView({ d, tv }: AbaProps & { d: AbaTransfereGov }
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric icon={Coins} tom="accent" label="Propostas federais" valor={formatInt(v.total)} grande={tv} />
-        <Metric icon={Wallet} label="Valor global" valor={formatCurrencyShort(v.valor_total)} grande={tv} />
-        <Metric icon={Landmark} label="Repasse da União" valor={formatCurrencyShort(v.valor_repasse)} grande={tv} />
+        {/* POR FASE (19/09/2026): "Valor global" somava o pedido em análise e o
+            rejeitado junto com o convênio assinado. O valor é o CELEBRADO; o
+            que está em análise vai no sub, fora do número. */}
+        <Metric icon={Coins} tom="accent" label="Propostas federais" valor={formatInt(v.total)} grande={tv}
+          sub={v.fases ? [`${formatInt(v.fases.celebrada.n)} celebradas`,
+                          subVoluntarias(v.fases, "n")].filter(Boolean).join(" · ") : undefined} />
+        <Metric icon={Wallet} label="Valor celebrado"
+          valor={formatCurrencyShort(v.fases ? v.fases.celebrada.valor : v.valor_total)} grande={tv}
+          sub={subVoluntarias(v.fases, "valor")} />
+        <Metric icon={Landmark} label="Repasse da União (celebradas)"
+          valor={formatCurrencyShort(v.fases ? v.fases.celebrada.repasse : v.valor_repasse)} grande={tv} />
         <Metric icon={Activity} tom="ok" label="Em execução" valor={formatInt(v.em_execucao)}
           sub={d.pac.total ? `${formatInt(d.pac.total)} no Novo PAC` : undefined} grande={tv} />
       </div>

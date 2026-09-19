@@ -262,11 +262,25 @@ async def bi_transferegov(db: AsyncSession, ids: list[int], anos: Optional[list[
 
     execucao = [v for v in voluntarias if _em_execucao(v["situacao"])]
 
+    # POR FASE (19/09/2026) — a regra do Painel (`services/fases_voluntaria`).
+    # `valor_total`/`valor_repasse` seguem sendo o acervo INTEIRO (a aba é de
+    # propostas); a tela mostra o celebrado como número e a análise ao lado.
+    from services.fases_voluntaria import fase_de, fases_vazias
+    fases = fases_vazias()
+    for f in fases.values():
+        f["repasse"] = 0.0
+    for v in voluntarias:
+        f = fases[fase_de(v["situacao"])]
+        f["n"] += 1
+        f["valor"] += v["valor"]
+        f["repasse"] += v["repasse"]
+
     return {
         "voluntarias": {
             "total": len(voluntarias),
             "valor_total": sum(v["valor"] for v in voluntarias),
             "valor_repasse": sum(v["repasse"] for v in voluntarias),
+            "fases": fases,
             "em_execucao": len(execucao),
             "por_situacao": _rollup(voluntarias, "situacao"),
             "por_orgao": _rollup(voluntarias, "orgao"),

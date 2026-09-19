@@ -175,8 +175,10 @@ async def narrativa(
         "municipio": summary.municipio.nome,
         "ano": ano,
         "estadual": summary.valor_total_estadual,
-        "federal": summary.valor_total_federal,
+        "federal": summary.valor_total_federal,        # só as CELEBRADAS
         "voluntarias": summary.total_voluntarias,
+        "federal_analise": (summary.voluntarias_fases.get("analise") or {}).get("valor", 0),
+        "voluntarias_analise": (summary.voluntarias_fases.get("analise") or {}).get("n", 0),
         "convenios_est": summary.total_convenios_estadual,
         "prestacao": summary.alertas_prestacao_contas,
         "vigencia": summary.alertas_vigencia,
@@ -240,7 +242,10 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
         f"Municipio: {dados['municipio']}. Periodo: {ano_txt}.\n"
         f"Total captado: {_money_br(total)} (estadual {_money_br(dados['estadual'])}, "
         f"federal {_money_br(dados['federal'])}).\n"
-        f"{dados['voluntarias']} propostas federais; {dados['convenios_est']} convenios estaduais.\n"
+        f"{dados['voluntarias']} convenios federais celebrados; {dados['convenios_est']} convenios estaduais.\n"
+        f"Ainda em analise (NAO e dinheiro captado, nao some ao total): "
+        f"{dados.get('voluntarias_analise', 0)} proposta(s) federal(is), "
+        f"{_money_br(dados.get('federal_analise', 0))}.\n"
         f"CAUC (documentacao federal): {cauc_txt}.\n"
         f"Prestacoes de contas vencidas: {dados['prestacao']}. Convenios vencendo: {dados['vigencia']}.\n"
         f"Parlamentares que mais destinaram recurso: {top_txt}.\n\n"

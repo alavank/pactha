@@ -26,7 +26,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ArrowDownAZ, FileSpreadsheet, Grid3x3, Loader2, TableProperties } from "lucide-react";
 
 import api from "@/lib/api";
-import { formatCurrencyShort, formatInt } from "@/lib/bi-format";
+import { formatCurrencyShort, formatInt, subVoluntarias } from "@/lib/bi-format";
 import { anosOpcoes, atalhosAnos, resumoAnos } from "@/lib/periodo";
 import { MultiSelect } from "@/components/ui/multi-select";
 import {
@@ -37,7 +37,9 @@ import { baixarArquivo, mensagemDeErro } from "./baixar";
 interface Linha {
   municipio_id: number; nome: string; uf: string;
   estaduais: { n: number; valor: number };
-  voluntarias: { n: number; valor: number };
+  // `n`/`valor` = CELEBRADAS (a conta do Painel desde 19/09/2026); o pipeline e as
+  // rejeitadas vêm ao lado e nunca entram no número nem na soma.
+  voluntarias: { n: number; valor: number; analise?: { n: number; valor: number }; rejeitadas_n?: number };
   emendas: {
     n: number; valor: number; fora_n: number; fora_valor: number;
     sem_pagamento: number; com_execucao: number; voluntarias_n: number;
@@ -51,7 +53,7 @@ const ATALHOS = atalhosAnos();
 
 const ROTULO: Record<Exclude<Ordem, "nome">, string> = {
   estaduais: "Convênios estaduais",
-  voluntarias: "Voluntárias federais",
+  voluntarias: "Voluntárias celebradas",
   emendas: "Emendas federais (à Prefeitura)",
   sem_pagamento: "Empenhadas sem pagamento",
 };
@@ -123,11 +125,14 @@ export function RecursosCarteira() {
 
   /* A SOMA DE CADA COLUNA — nunca entre colunas (ver o cabeçalho). */
   const soma = useMemo(() => {
-    const s = { est_n: 0, est_v: 0, vol_n: 0, vol_v: 0, em_n: 0, em_v: 0, fora_n: 0,
-                fora_v: 0, sp: 0, com_exec: 0, vol_em: 0, mun_vol_em: 0 };
+    const s = { est_n: 0, est_v: 0, vol_n: 0, vol_v: 0, an_n: 0, an_v: 0, rej_n: 0,
+                em_n: 0, em_v: 0, fora_n: 0, fora_v: 0, sp: 0, com_exec: 0, vol_em: 0,
+                mun_vol_em: 0 };
     for (const l of linhas ?? []) {
       s.est_n += l.estaduais.n; s.est_v += l.estaduais.valor;
       s.vol_n += l.voluntarias.n; s.vol_v += l.voluntarias.valor;
+      s.an_n += l.voluntarias.analise?.n ?? 0; s.an_v += l.voluntarias.analise?.valor ?? 0;
+      s.rej_n += l.voluntarias.rejeitadas_n ?? 0;
       s.em_n += l.emendas.n; s.em_v += l.emendas.valor;
       s.fora_n += l.emendas.fora_n ?? 0; s.fora_v += l.emendas.fora_valor ?? 0;
       s.sp += l.emendas.sem_pagamento; s.com_exec += l.emendas.com_execucao ?? 0;
@@ -206,7 +211,11 @@ export function RecursosCarteira() {
                         sub={fmtN(soma.est_n, "convênio", "convênios")} />
             <CartaoSoma ativo={ordem === "voluntarias"} onClick={() => setOrdem("voluntarias")}
                         rotulo={ROTULO.voluntarias} valor={formatCurrencyShort(soma.vol_v)}
-                        sub={`${fmtN(soma.vol_n, "proposta", "propostas")}, em qualquer fase`} />
+                        sub={[fmtN(soma.vol_n, "convênio", "convênios"),
+                              subVoluntarias({ celebrada: { n: soma.vol_n, valor: soma.vol_v },
+                                               analise: { n: soma.an_n, valor: soma.an_v },
+                                               rejeitada: { n: soma.rej_n, valor: 0 } }, "valor"),
+                             ].filter(Boolean).join(" · ")} />
             <CartaoSoma ativo={ordem === "emendas"} onClick={() => setOrdem("emendas")}
                         rotulo={ROTULO.emendas} valor={formatCurrencyShort(soma.em_v)}
                         sub={fmtN(soma.em_n, "emenda", "emendas") + (soma.fora_n
@@ -222,7 +231,7 @@ export function RecursosCarteira() {
           </div>
           {soma.vol_em > 0 && (
             <p className="mt-2 px-1 text-[10.5px] leading-relaxed" style={{ color: "var(--bi-muted)" }}>
-              ⚠️ {fmtN(soma.vol_em, "voluntária aparece", "voluntárias aparecem")} também nas emendas
+              ⚠️ {fmtN(soma.vol_em, "voluntária celebrada aparece", "voluntárias celebradas aparecem")} também nas emendas
               ({fmtN(soma.mun_vol_em, "município", "municípios")}): é o convênio que nasceu de emenda.
               Por isso não há total geral — somar os cartões contaria esse dinheiro duas vezes.
             </p>
@@ -249,11 +258,18 @@ export function RecursosCarteira() {
                     valor: destaque("estaduais", l.estaduais.n
                       ? `${formatInt(l.estaduais.n)} · ${formatCurrencyShort(l.estaduais.valor)}` : "nenhum") },
                   { rotulo: rotulo("voluntarias"),
-                    valor: destaque("voluntarias", l.voluntarias.n
-                      ? `${formatInt(l.voluntarias.n)} · ${formatCurrencyShort(l.voluntarias.valor)}` : "nenhuma"),
-                    title: l.emendas.voluntarias_n
-                      ? `${l.emendas.voluntarias_n} destas também estão na coluna de emendas`
-                      : undefined },
+                    valor: destaque("voluntarias",
+                      (l.voluntarias.n
+                        ? `${formatInt(l.voluntarias.n)} · ${formatCurrencyShort(l.voluntarias.valor)}` : "nenhuma")
+                      + (l.voluntarias.analise?.n ? ` (+${formatInt(l.voluntarias.analise.n)} em análise)` : "")),
+                    title: [
+                      l.voluntarias.analise?.n
+                        ? `${l.voluntarias.analise.n} em análise somam ${formatCurrencyShort(l.voluntarias.analise.valor)}, fora do valor`
+                        : "",
+                      l.voluntarias.rejeitadas_n ? `${l.voluntarias.rejeitadas_n} rejeitada(s)` : "",
+                      l.emendas.voluntarias_n
+                        ? `${l.emendas.voluntarias_n} celebrada(s) também na coluna de emendas` : "",
+                    ].filter(Boolean).join(" · ") || undefined },
                   { rotulo: rotulo("emendas"),
                     valor: destaque("emendas", l.emendas.n
                       ? `${formatInt(l.emendas.n)} · ${formatCurrencyShort(l.emendas.valor)}`
@@ -275,8 +291,8 @@ export function RecursosCarteira() {
         )}
         <p className="mt-2 px-1 text-[10px] leading-relaxed" style={{ color: "var(--bi-faint)" }}>
           Cada coluna é a conta da tela do município: estaduais e voluntárias como no Painel, emendas
-          como na aba Federais. Voluntárias contam a proposta em qualquer fase — da enviada para
-          análise à em execução.
+          como na aba Federais. Voluntárias somam só o convênio celebrado (em execução, prestação de
+          contas ou encerrado); a proposta em análise aparece entre parênteses e a rejeitada não conta.
         </p>
       </Bloco>
     </div>

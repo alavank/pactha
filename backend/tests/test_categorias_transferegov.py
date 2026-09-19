@@ -17,8 +17,13 @@ import sqlite3
 import pytest
 
 from routers.transferegov import (
-    _ENCERRADA_SQL, _REJEITADA_LIKE, _VIVA_SQL, _VOLUNTARIA_SQL,
+    _ENCERRADA_SQL, _REJEITADA_SQL, _VIVA_SQL, _VOLUNTARIA_SQL,
 )
+from services.fases_voluntaria import FASE_SQL, fase_de
+
+# O ramo `geral` do router («Em execução»), escrito uma vez só aqui.
+GERAL = (f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} "
+         f"AND NOT {_REJEITADA_SQL} AND NOT {_ENCERRADA_SQL}))")
 
 # Situações reais do SICONV, uma por linha, com o que cada uma É.
 SITUACOES = [
@@ -31,6 +36,9 @@ SITUACOES = [
     "Assinado",
     "Rejeitados",
     "Rejeitados por Impedimento Técnico",
+    # ⚠️ Sem "rejeitad" e sem "plano de trabalho": até 19/09/2026 caía no ELSE e
+    # aparecia em «Em execução» como convênio vivo (1 na Freitas, 2026).
+    "Eliminada em Análise Preliminar",
     "Anulado",
     "Rescindido",
     "Prestação de Contas Concluída",
@@ -85,7 +93,7 @@ def test_voluntarias_NAO_traz_rejeitada_nem_encerrada(con):
     aba própria. Trazê-las faria a tela duplicar duas outras."""
     vivas = _quais(con, _VIVA_SQL)
     for s in ("Rejeitados", "Rejeitados por Impedimento Técnico",
-              "Anulado", "Rescindido",
+              "Eliminada em Análise Preliminar", "Anulado", "Rescindido",
               "Prestação de Contas Concluída",
               "Prestação de Contas Aprovada com Ressalvas"):
         assert s not in vivas, s
@@ -112,9 +120,10 @@ def test_encerradas_pega_so_o_que_acabou(con):
     }
 
 
-def test_rejeitadas_pega_as_duas_formas(con):
-    assert _quais(con, "situacao ILIKE :r", r=_REJEITADA_LIKE) == {
+def test_rejeitadas_pega_as_tres_formas(con):
+    assert _quais(con, _REJEITADA_SQL) == {
         "Rejeitados", "Rejeitados por Impedimento Técnico",
+        "Eliminada em Análise Preliminar",
     }
 
 
@@ -122,10 +131,9 @@ def test_em_execucao_NAO_ganhou_o_pipeline_de_analise(con):
     """⚠️ O teste que impede as duas telas de virarem a mesma. Se alguém trocar o
     `_VOLUNTARIA_SQL` do ramo `geral` por `_VIVA_SQL`, «Em execução» passa a
     mostrar proposta que nunca foi celebrada — e este teste cai."""
-    geral = (f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} "
-             f"AND situacao NOT ILIKE :r AND NOT {_ENCERRADA_SQL}))")
-    em_exec = _quais(con, geral, r=_REJEITADA_LIKE)
+    em_exec = _quais(con, GERAL)
     assert "Em execução" in em_exec
+    assert "Eliminada em Análise Preliminar" not in em_exec
     for s in SITUACOES[:4]:
         assert s not in em_exec, s
 
@@ -133,18 +141,39 @@ def test_em_execucao_NAO_ganhou_o_pipeline_de_analise(con):
 def test_as_duas_telas_se_SOBREPOEM_e_isso_e_intencional(con):
     """«Em execução» virou um SUBCONJUNTO de «Voluntárias». Nenhuma proposta some
     de aba nenhuma por causa disso — são perguntas diferentes sobre o mesmo dado."""
-    geral = (f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} "
-             f"AND situacao NOT ILIKE :r AND NOT {_ENCERRADA_SQL}))")
-    assert _quais(con, geral, r=_REJEITADA_LIKE) <= _quais(con, _VIVA_SQL)
+    assert _quais(con, GERAL) <= _quais(con, _VIVA_SQL)
 
 
 def test_nenhuma_situacao_fica_sem_tela(con):
     """Toda linha da base tem de caber em ALGUMA das telas — senão existe dado
     que o sistema coleta e nunca mostra."""
-    geral = (f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} "
-             f"AND situacao NOT ILIKE :r AND NOT {_ENCERRADA_SQL}))")
     cobertas = (_quais(con, _VIVA_SQL)
-                | _quais(con, geral, r=_REJEITADA_LIKE)
+                | _quais(con, GERAL)
                 | _quais(con, _ENCERRADA_SQL)
-                | _quais(con, "situacao ILIKE :r", r=_REJEITADA_LIKE))
+                | _quais(con, _REJEITADA_SQL))
     assert cobertas == set(SITUACOES)
+
+
+def test_o_ramo_geral_do_router_e_o_deste_teste():
+    """O `GERAL` acima só prova algo se for o que o router executa."""
+    from pathlib import Path
+    fonte = (Path(__file__).resolve().parents[1] / "routers" / "transferegov.py").read_text(
+        encoding="utf-8")
+    assert ('f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} AND NOT {_REJEITADA_SQL} '
+            'AND NOT {_ENCERRADA_SQL}))"') in fonte
+
+
+# ------------------------------------------------------- a fase do Painel ------
+def test_a_fase_do_painel_no_sql_e_a_mesma_do_python(con):
+    """`FASE_SQL` soma o Painel; `fase_de` conta a sobreposição no Consolidado.
+    Executados sobre as MESMAS linhas, têm de dar a mesma resposta."""
+    sql = f"SELECT situacao, {_sqlite(FASE_SQL)} FROM p"
+    for situacao, fase in con.execute(sql).fetchall():
+        assert fase_de(situacao) == fase, situacao
+
+
+def test_celebrada_e_em_execucao_mais_encerradas(con):
+    """A fase `celebrada` = as telas «Em execução» + «Encerradas», e nada mais."""
+    celebradas = {s for s, f in con.execute(f"SELECT situacao, {_sqlite(FASE_SQL)} FROM p")
+                  if f == "celebrada"}
+    assert celebradas == _quais(con, GERAL) | _quais(con, _ENCERRADA_SQL)
