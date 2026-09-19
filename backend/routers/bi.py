@@ -784,7 +784,10 @@ async def _gerar_narrativa(dados: dict, kind: str, api_key: str) -> str:
         f"Carteira: {dados['municipio']}. Periodo: {ano_txt}.\n"
         f"Total captado: {_money_br(total)} (estadual {_money_br(dados['estadual'])}, "
         f"federal {_money_br(dados['federal'])}).\n"
-        f"{dados['voluntarias']} propostas federais; {dados['convenios_est']} convenios estaduais.\n"
+        f"{dados['voluntarias']} convenios federais celebrados; {dados['convenios_est']} convenios estaduais.\n"
+        f"Ainda em analise (NAO e dinheiro captado, nao some ao total): "
+        f"{dados.get('voluntarias_analise', 0)} proposta(s) federal(is), "
+        f"{_money_br(dados.get('federal_analise', 0))}.\n"
         f"CAUC (documentacao federal): {cauc_txt}.\n"
         f"Prestacoes de contas vencidas: {dados['prestacao']}. Convenios vencendo: {dados['vigencia']}.\n"
         f"Parlamentares que mais destinaram recurso: {top_txt}.\n\n"
@@ -857,8 +860,10 @@ async def narrativa(
         "ano": ano,
         "anos": periodo or [],
         "estadual": kpis["valor_total_estadual"],
-        "federal": kpis["valor_total_federal"],
+        "federal": kpis["valor_total_federal"],        # só as CELEBRADAS
         "voluntarias": kpis["total_voluntarias"],
+        "federal_analise": kpis["voluntarias_fases"]["analise"]["valor"],
+        "voluntarias_analise": kpis["voluntarias_fases"]["analise"]["n"],
         "convenios_est": kpis["total_convenios_estadual"],
         "prestacao": kpis["alertas_prestacao_contas"],
         "vigencia": kpis["alertas_vigencia"],
@@ -948,7 +953,16 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
                  "propostas": v["total"], "valor": v["valor_total"],
                  "em_execucao": v.get("em_execucao", 0),
                  "situacoes": v["por_situacao"][:4], "pac": d["pac"]["total"]}
-        tpl = [f"{v['total']} propostas federais somando {_money_br(v['valor_total'])} ({periodo_txt})."]
+        fs = v["fases"]
+        fatos["valor_celebrado"] = fs["celebrada"]["valor"]
+        fatos["valor_em_analise"] = fs["analise"]["valor"]
+        tpl = [f"{v['total']} propostas federais ({periodo_txt}): {fs['celebrada']['n']} "
+               f"celebrada(s), {_money_br(fs['celebrada']['valor'])}."]
+        if fs["analise"]["n"]:
+            tpl.append(f"{fs['analise']['n']} ainda em análise, "
+                       f"{_money_br(fs['analise']['valor'])} — ainda não é recurso garantido.")
+        if fs["rejeitada"]["n"]:
+            tpl.append(f"{fs['rejeitada']['n']} rejeitada(s).")
         if v.get("em_execucao"):
             tpl.append(f"{v['em_execucao']} instrumento(s) em execução neste momento.")
         return fatos, tpl
@@ -1096,9 +1110,15 @@ async def _fatos_da_aba(db: AsyncSession, ids: list[int], cons: bool, aba: str,
         "prestacao_vencida": kpis["alertas_prestacao_contas"],
         "cauc_pendencias": cauc["pendencias_total"],
         "em_execucao": exe["total"], "valor_em_execucao": exe["valor_total"],
+        "federal_em_analise": kpis["voluntarias_fases"]["analise"]["valor"],
     }
+    # `federal` são só as voluntárias CELEBRADAS (19/09/2026): o pedido em análise
+    # não é "captado" e vai numa frase à parte.
     total = (kpis["valor_total_estadual"] or 0) + (kpis["valor_total_federal"] or 0)
     tpl = [f"Total captado no período ({periodo_txt}): {_money_br(total)}."]
+    if fatos["federal_em_analise"]:
+        tpl.append(f"Mais {_money_br(fatos['federal_em_analise'])} em propostas federais "
+                   "ainda em análise, fora do total.")
     if kpis["alertas_vigencia_60d"]:
         tpl.append(f"{kpis['alertas_vigencia_60d']} convênio(s) vencem nos próximos 60 dias.")
     if kpis["alertas_prestacao_contas"]:

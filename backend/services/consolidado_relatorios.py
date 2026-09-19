@@ -10,8 +10,9 @@ Três relatórios da carteira, todos quebrados por município:
 voluntária que nasceu de emenda está nas voluntárias E nas emendas federais
 (`emendas_unificadas` casa as duas pelo código). Somar as colunas contaria o
 mesmo dinheiro duas vezes — e o total de um cliente seria o número errado.
-Medido na Freitas (2026, 19/09): 24 de 42 municípios têm voluntária nas duas
-colunas, R$ 16,7 mi. `voluntarias_n` diz quantas, para a tela avisar.
+Medido na Freitas (2026, 19/09): 24 de 42 municípios tinham voluntária nas duas
+colunas, R$ 16,7 mi — contando propostas em qualquer fase. `voluntarias_n` diz
+quantas CELEBRADAS se sobrepõem (a coluna de voluntárias só soma essas).
 
 O que SOMA é cada coluna na VERTICAL (a carteira inteira, pedido do dono em
 19/09/2026): município é disjunto, então a soma dos estaduais da carteira é
@@ -34,14 +35,19 @@ MOEDA = '"R$" #,##0.00'
 
 
 def voluntarias_nas_emendas(linhas: list[dict]) -> int:
-    """Quantas propostas voluntárias da Prefeitura também estão na coluna de
-    emendas — como linha própria ou casada a uma emenda da carteira."""
+    """Quantas voluntárias CELEBRADAS da Prefeitura também estão na coluna de
+    emendas — como linha própria ou casada a uma emenda da carteira. Só as
+    celebradas: desde 19/09/2026 é só isso que a coluna de voluntárias soma, e a
+    proposta em análise não se sobrepõe a nada."""
+    from services.fases_voluntaria import fase_de
     n = 0
     for l in linhas:
         if not l["municipal"]:
             continue
-        n += (l["origem"] == "voluntaria") + sum(
-            1 for i in l["instrumentos"] if i["origem"] == "voluntaria")
+        if l["origem"] == "voluntaria" and fase_de(l.get("situacao")) == "celebrada":
+            n += 1
+        n += sum(1 for i in l["instrumentos"]
+                 if i["origem"] == "voluntaria" and fase_de(i.get("situacao")) == "celebrada")
     return n
 
 
@@ -64,7 +70,11 @@ async def recursos_por_municipio(db: AsyncSession, ids: list[int],
         linhas.append({
             "municipio_id": mid, "nome": m["nome"], "uf": m["uf"],
             "estaduais": {"n": k["total_convenios_estadual"], "valor": k["valor_total_estadual"]},
-            "voluntarias": {"n": k["total_voluntarias"], "valor": k["valor_total_federal"]},
+            # `n`/`valor` são as CELEBRADAS (a conta do Painel desde 19/09/2026);
+            # o pipeline e as rejeitadas vêm ao lado, nunca somados.
+            "voluntarias": {"n": k["total_voluntarias"], "valor": k["valor_total_federal"],
+                            "analise": k["voluntarias_fases"]["analise"],
+                            "rejeitadas_n": k["voluntarias_fases"]["rejeitada"]["n"]},
             # `n` conta TODAS as emendas e `valor` só o da Prefeitura — os dois
             # cartões da aba Federais ("Emendas" e "À Prefeitura"). O `fora_*` é
             # o sub do segundo cartão: sem ele, "23 · R$ 12,1 mi" esconde que uma
@@ -136,30 +146,36 @@ def xlsx_recursos(linhas: list[dict], periodo: str) -> BytesIO:
                  f"sobrepõem (voluntária que nasceu de emenda aparece nas duas)")
     ws.title = "Recursos por município"
     _cabecalho(ws, ["Município", "UF", "Convênios estaduais", "Valor estadual",
-                    "Voluntárias federais (todas as fases)", "Valor voluntárias",
+                    "Voluntárias celebradas", "Valor celebrado",
+                    "Voluntárias em análise", "Valor em análise (ainda não é dinheiro)",
+                    "Voluntárias rejeitadas",
                     "Emendas federais", "Valor das emendas (prefeitura)",
                     "Emendas a entidades (fora do valor)",
                     "Emendas com execução no Portal", "Empenhadas sem pagamento",
-                    "Voluntárias também nas emendas"])
+                    "Voluntárias celebradas também nas emendas"])
     ini = ws.max_row + 1
     for l in linhas:
-        e = l["emendas"]
+        e, v = l["emendas"], l["voluntarias"]
+        analise = v.get("analise") or {}
         ws.append([l["nome"], l["uf"], l["estaduais"]["n"], l["estaduais"]["valor"],
-                   l["voluntarias"]["n"], l["voluntarias"]["valor"], e["n"], e["valor"],
+                   v["n"], v["valor"], analise.get("n", 0), analise.get("valor", 0.0),
+                   v.get("rejeitadas_n", 0), e["n"], e["valor"],
                    e.get("fora_n", 0), e.get("com_execucao", 0), e["sem_pagamento"],
                    e.get("voluntarias_n", 0)])
     fim = ws.max_row
+    ncols = ws.max_column
     if linhas:
         # A soma de CADA COLUNA (a carteira inteira). Nunca uma soma entre colunas.
         from openpyxl.styles import Font
         from openpyxl.utils import get_column_letter
         ws.append(["Soma da carteira", None] + [
             f"=SUM({get_column_letter(c)}{ini}:{get_column_letter(c)}{fim})"
-            for c in range(3, 13)])
+            for c in range(3, ncols + 1)])
         for c in ws[ws.max_row]:
             c.font = Font(bold=True)
-    _moeda(ws, [4, 6, 8], ini)
-    for col, w in zip("ABCDEFGHIJKL", (30, 5, 12, 18, 14, 18, 12, 22, 14, 14, 14, 14)):
+    _moeda(ws, [4, 6, 8, 11], ini)
+    for col, w in zip("ABCDEFGHIJKLMNO",
+                      (30, 5, 12, 18, 12, 18, 12, 20, 12, 12, 22, 14, 14, 14, 14)):
         ws.column_dimensions[col].width = w
     return _salvar(wb)
 

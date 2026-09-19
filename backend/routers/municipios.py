@@ -8,7 +8,7 @@ from models.user import User
 from schemas.municipio import MunicipioResponse, MunicipioSummary
 from services.auth import get_current_user, ensure_municipio_access
 from services import authz
-from services.natureza import SQL_SO_PREFEITURA
+from services.fases_voluntaria import voluntarias_por_fase
 from services.registro_rotas import declarado
 
 router = APIRouter(prefix="/api/municipios", tags=["municipios"])
@@ -112,8 +112,6 @@ async def summary_core(
         q = q.where(or_(ConvenioEstadual.fonte.is_(None),
                         ~ConvenioEstadual.fonte.ilike("%FNS%")))
         return q.where(ConvenioEstadual.ano.in_(_anos)) if _anos else q
-    anos_txt = [str(a) for a in _anos]
-    vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
 
     est_count = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual).where(ConvenioEstadual.municipio_id == municipio_id)
@@ -146,27 +144,13 @@ async def summary_core(
         .where(ConvenioEstadual.dt_vigencia_atual < venc90)
     ))
 
-    # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
-    vol_params: dict = {"m": municipio_id}
-    if _anos:
-        vol_params["anos_txt"] = anos_txt
-    vol = await db.execute(text(
-        "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
-        # ⚠️ So a PREFEITURA entra na conta (15/09/2026): o filtro por IBGE traz o
-        # que esta sediado na cidade — 75% do valor de Goiania e do Estado de
-        # Goias. Ver `services/natureza.py`.
-        "FROM transferegov_propostas WHERE municipio_id = :m AND "
-        + SQL_SO_PREFEITURA + vol_ano_sql
-    ), vol_params)
-    vol_rows = vol.fetchall()
-    total_vol = len(vol_rows)
+    # TransfereGov Voluntarias POR FASE (19/09/2026): a MESMA funcao do `bi_kpis`,
+    # e nao uma copia da consulta — as duas somas divergiam a cada mudanca. So a
+    # Prefeitura entra (ver `services/natureza.py`); o valor principal e o das
+    # CELEBRADAS, e analise/rejeitadas vao em `voluntarias_fases`.
+    fases, vigencias = await voluntarias_por_fase(db, [municipio_id], _anos)
     vol_120 = vol_60 = vol_prest = 0
-    vol_valor = 0.0
-    for (dtf, val) in vol_rows:
-        try:
-            vol_valor += float(val or 0)
-        except (TypeError, ValueError):
-            pass
+    for dtf in vigencias:
         d = _parse_dt(dtf)
         if not d:
             continue
@@ -182,8 +166,9 @@ async def summary_core(
         municipio=MunicipioResponse.model_validate(mun),
         total_convenios_estadual=est_count.scalar(),
         valor_total_estadual=float(est_valor.scalar()),
-        valor_total_federal=vol_valor,
-        total_voluntarias=total_vol,
+        valor_total_federal=fases["celebrada"]["valor"],
+        total_voluntarias=fases["celebrada"]["n"],
+        voluntarias_fases=fases,
         alertas_vigencia=alertas120.scalar() + vol_120,
         alertas_vigencia_60d=alertas60.scalar() + vol_60,
         alertas_prestacao_contas=prest_est + vol_prest,

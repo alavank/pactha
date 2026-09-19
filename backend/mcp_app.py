@@ -165,8 +165,12 @@ async def visao_municipio(ctx: Context, municipio_id: int | None = None) -> str:
         "",
         f"  Convênios estaduais: {_num(s.total_convenios_estadual)} "
         f"({_reais(s.valor_total_estadual)})",
-        f"  Convênios federais (voluntárias): {_num(s.total_voluntarias)} "
+        f"  Convênios federais (voluntárias) celebrados: {_num(s.total_voluntarias)} "
         f"({_reais(s.valor_total_federal)})",
+        f"  Propostas federais em análise (ainda não é dinheiro): "
+        f"{_num((s.voluntarias_fases.get('analise') or {}).get('n', 0))} "
+        f"({_reais((s.voluntarias_fases.get('analise') or {}).get('valor', 0))}); "
+        f"rejeitadas: {_num((s.voluntarias_fases.get('rejeitada') or {}).get('n', 0))}",
         f"  Vigências vencendo em até 120 dias: {_num(s.alertas_vigencia)} "
         f"(em até 60 dias: {_num(s.alertas_vigencia_60d)})",
         f"  Prestação de contas vencida (+90 dias): "

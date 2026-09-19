@@ -403,67 +403,17 @@ async def por_cnpj(
     }
 
 
-# Status que identifica uma proposta VOLUNTARIA (FREITAS). Alem do classico
-# "Proposta/Plano de Trabalho enviado para Analise", a Freitas considera tambem
-# voluntarias todas as propostas/planos no PIPELINE de analise/aprovacao/
-# complementacao (antes da celebracao): "Aprovados", "em Analise", "em
-# Complementacao", "complementado enviada para Analise", "Proposta Aprovada e
-# Plano de Trabalho ...", etc. NAO inclui: Prestacao de Contas, Rejeitadas,
-# "Em execucao" (convenio ja celebrado). O acento corrompido (U+FFFD) e tratado
-# com curinga (an%lise).
-_VOLUNTARIA_LIKE = "%enviado para an%lise%"  # mantido p/ compat
-_VOLUNTARIA_SQL = (
-    "(situacao ILIKE '%plano de trabalho%' "
-    "AND (situacao ILIKE '%an%lise%' OR situacao ILIKE '%aprovad%' OR situacao ILIKE '%complementa%') "
-    "AND situacao NOT ILIKE '%presta%' AND situacao NOT ILIKE '%rejeitad%')"
-)
-# REJEITADAS: qualquer status contendo "rejeitad" (Rejeitados / Rejeitados por
-# Impedimento tecnico). Tratamos como categoria propria; nao entram na Geral.
-_REJEITADA_LIKE = "%rejeitad%"
-# ENCERRADAS: instrumento finalizado. Inclui Anulado, Rescindido e Prestacao
-# de Contas finalizada (Concluida/Aprovada/Aprovada com Ressalvas).
-# Usamos SQL composto pra excluir do Geral.
-_ENCERRADA_SQL = (
-    "(situacao ILIKE '%anulad%' OR situacao ILIKE '%rescind%' OR "
-    "(situacao ILIKE '%presta%' AND (situacao ILIKE '%conclu%' OR situacao ILIKE '%aprovad%')))"
-)
-# ⭐ VIVA = o CICLO DE VIDA ATIVO: tudo que NAO foi rejeitado nem encerrado.
-# E o recorte da tela «Voluntarias» desde 08/2026 (pedido do dono).
-#
-# O QUE MUDOU E POR QUE. Antes «Voluntarias» era so o PIPELINE DE ANALISE
-# (_VOLUNTARIA_SQL) e parava exatamente onde a proposta vira instrumento: no dia
-# em que o convenio era celebrado ele SUMIA da tela e reaparecia noutra, chamada
-# «Geral». Quem acompanha uma proposta do inicio ao fim tinha de trocar de aba no
-# meio do caminho — e, pior, o filtro de situacao da tela e montado a partir das
-# LINHAS CARREGADAS (frontend/src/components/TransfereGovPropostas.tsx), entao a
-# opcao "Em execucao" nunca podia aparecer ali: as linhas nao chegavam.
-#
-# ⚠️ NAO INCLUI rejeitadas nem encerradas, de proposito. As duas sao DESFECHO,
-# nao trabalho em curso, e cada uma tem aba propria — traze-las para ca faria
-# «Voluntarias» duplicar duas telas inteiras e contradizer o proprio nome.
-#
-# ⚠️ `situacao IS NULL` ENTRA. Linha sem situacao coletada nao e desfecho — e
-# ausencia de informacao, e sumir com ela seria afirmar um encerramento que
-# ninguem viu. E o mesmo criterio do ramo `geral`, logo abaixo.
-_VIVA_SQL = (
-    "(situacao IS NULL OR (situacao NOT ILIKE '%rejeitad%' "
-    f"AND NOT {_ENCERRADA_SQL}))"
-)
-# EM QUAL DAS QUATRO TELAS de propostas um instrumento aparece, como expressao SQL.
-# Existe para o vinculo do /pac poder LINKAR para a tela certa usando AS MESMAS
-# regras que o /voluntarias usa para montar cada categoria — se divergissem, o
-# link do PAC levaria a uma tela onde o convenio nao esta, que e pior que nao
-# linkar. A ordem repete a do handler `voluntarias`: voluntarias -> rejeitadas ->
-# encerradas -> o que sobra. `situacao` NULA cai no ELSE ('geral'), igual ao
-# ramo `situacao IS NULL` de la.
-# ⚠️ `situacao` sem qualificador: so pode ser usado em consulta onde
-# transferegov_propostas e a unica tabela com essa coluna.
-_CATEGORIA_SQL = (
-    "CASE "
-    f"WHEN {_VOLUNTARIA_SQL} THEN 'voluntarias' "
-    "WHEN situacao ILIKE '%rejeitad%' THEN 'rejeitadas' "
-    f"WHEN {_ENCERRADA_SQL} THEN 'encerradas' "
-    "ELSE 'geral' END"
+# As regras de categoria (qual das quatro telas mostra cada proposta) moram em
+# `services/fases_voluntaria.py` desde 19/09/2026 — o Painel passou a usá-las para
+# dividir o valor por fase, e duas cópias da mesma regra divergem. Os comentários
+# de cada uma (VIVA, CATEGORIA, a "Eliminada" que caía em Em execução) estão lá.
+from services.fases_voluntaria import (  # noqa: E402
+    CATEGORIA_SQL as _CATEGORIA_SQL,
+    ENCERRADA_SQL as _ENCERRADA_SQL,
+    REJEITADA_SQL as _REJEITADA_SQL,
+    VIVA_SQL as _VIVA_SQL,
+    VOLUNTARIA_LIKE as _VOLUNTARIA_LIKE,  # noqa: F401 — citado no docstring acima
+    VOLUNTARIA_SQL as _VOLUNTARIA_SQL,
 )
 
 
@@ -574,14 +524,13 @@ async def voluntarias(
         # as duas telas devolverem a mesma coisa.
         where.append(_VIVA_SQL)
     elif categoria == "rejeitadas":
-        where.append("situacao ILIKE :rejpat"); params["rejpat"] = _REJEITADA_LIKE
+        where.append(_REJEITADA_SQL)
     elif categoria == "encerradas":
         where.append(_ENCERRADA_SQL)
     elif categoria == "geral":
         # Geral = o que sobra: nem voluntaria (pipeline de analise), nem rejeitada,
         # nem encerrada/prestacao. Sobra basicamente "Em execucao" + legados.
-        where.append(f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} AND situacao NOT ILIKE :rejpat AND NOT {_ENCERRADA_SQL}))")
-        params["rejpat"] = _REJEITADA_LIKE
+        where.append(f"(situacao IS NULL OR (NOT {_VOLUNTARIA_SQL} AND NOT {_REJEITADA_SQL} AND NOT {_ENCERRADA_SQL}))")
     if situacao:
         where.append("situacao ILIKE :sit"); params["sit"] = f"%{situacao}%"
     if orgao:

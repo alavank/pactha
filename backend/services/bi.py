@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models import ConvenioEstadual
 from models.user import User
 from services.auth import ensure_municipio_access
-from services.natureza import SQL_SO_PREFEITURA
+from services.fases_voluntaria import fases_vazias, voluntarias_por_fase
 
 
 # --------------------------------------------------------------------------
@@ -136,6 +136,7 @@ async def bi_kpis(db: AsyncSession, ids: list[int], ano=None) -> dict:
         return {
             "total_convenios_estadual": 0, "total_voluntarias": 0,
             "valor_total_estadual": 0.0, "valor_total_federal": 0.0,
+            "voluntarias_fases": fases_vazias(),
             "alertas_vigencia": 0, "alertas_vigencia_60d": 0,
             "alertas_prestacao_contas": 0, "alertas_prestacao_contas_estadual": 0,
             "alertas_prestacao_contas_federal": 0, "municipios_count": 0,
@@ -149,8 +150,6 @@ async def bi_kpis(db: AsyncSession, ids: list[int], ano=None) -> dict:
         q = q.where(or_(ConvenioEstadual.fonte.is_(None),
                         ~ConvenioEstadual.fonte.ilike("%FNS%")))
         return q.where(ConvenioEstadual.ano.in_(anos)) if anos else q
-
-    vol_ano_sql = " AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if anos else ""
 
     est_count = await db.execute(_ano_est(
         select(func.count()).select_from(ConvenioEstadual)
@@ -179,25 +178,13 @@ async def bi_kpis(db: AsyncSession, ids: list[int], ano=None) -> dict:
         .where(ConvenioEstadual.municipio_id.in_(ids))
         .where(ConvenioEstadual.dt_vigencia_atual < venc90)))
 
-    # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy -> parse em Python)
-    vol_params: dict = {"ids": ids}
-    if anos:
-        vol_params["anos_txt"] = [str(a) for a in anos]
-    vol = await db.execute(text(
-        "SELECT dt_fim_vigencia, COALESCE(valor_global, valor_repasse, 0) "
-        # So a PREFEITURA entra na conta (15/09/2026) — ver `services/natureza.py`.
-        "FROM transferegov_propostas WHERE municipio_id = ANY(:ids) AND "
-        + SQL_SO_PREFEITURA + vol_ano_sql
-    ), vol_params)
-    vol_rows = vol.fetchall()
-    total_vol = len(vol_rows)
+    # TransfereGov Voluntarias POR FASE (19/09/2026) — ver `services/fases_voluntaria`.
+    # ⚠️ `valor_total_federal`/`total_voluntarias` são SÓ AS CELEBRADAS: somavam a
+    # proposta em qualquer fase, e o "Total captado" do BI somava pedido em análise.
+    # O que está em análise e o que foi rejeitado vão em `voluntarias_fases`.
+    fases, vigencias = await voluntarias_por_fase(db, ids, anos)
     vol_120 = vol_60 = vol_prest = 0
-    vol_valor = 0.0
-    for (dtf, val) in vol_rows:
-        try:
-            vol_valor += float(val or 0)
-        except (TypeError, ValueError):
-            pass
+    for dtf in vigencias:
         d = _parse_dt(dtf)
         if not d:
             continue
@@ -212,8 +199,9 @@ async def bi_kpis(db: AsyncSession, ids: list[int], ano=None) -> dict:
     return {
         "total_convenios_estadual": est_count.scalar(),
         "valor_total_estadual": float(est_valor.scalar()),
-        "valor_total_federal": vol_valor,
-        "total_voluntarias": total_vol,
+        "valor_total_federal": fases["celebrada"]["valor"],
+        "total_voluntarias": fases["celebrada"]["n"],
+        "voluntarias_fases": fases,
         "alertas_vigencia": alertas120.scalar() + vol_120,
         "alertas_vigencia_60d": alertas60.scalar() + vol_60,
         "alertas_prestacao_contas": prest_est + vol_prest,
