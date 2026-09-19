@@ -1742,6 +1742,50 @@ escopo passou de "tenant inteiro, inclusive inativos" para "municípios ativos".
 - o usuário restrito vê só os seus municípios;
 - a concessão inicial vai só ao admin.
 
+**PR 1 no ar desde 19/09 (#519).** O deploy (00:35–00:58 UTC) interrompeu a
+`transferegov-lote` da Freitas. O rodízio a repetiu às 01:35.
+
+### PR 2 — o painel da carteira (19/09/2026)
+
+A área abre na aba **Painel da carteira**; **Parlamentares** vira a segunda aba.
+- `GET /api/consolidado/painel`, montado por `services/consolidado_painel.py`. Uma linha
+  por município com:
+  - regularidade federal (CAUC) e estadual;
+  - convênio vencendo em 90 dias;
+  - documento de regularidade vencendo em 30 dias;
+  - emenda federal **sem pagamento**;
+  - Radar: programas abertos, onde o município está nomeado e onde está indicado.
+- Embaixo, três listas que dizem qual: vencimentos, documentos e Radar nomeado/indicado.
+- A tabela vem ordenada por atenção: irregularidade, depois prazo curto, depois dinheiro
+  parado.
+
+**Cada bloco é a conta de uma tela que já existe**, chamada com a lista da carteira:
+
+| Bloco | Fonte |
+|---|---|
+| CAUC | `bi_cauc_rollup` |
+| Estadual | `cagec_situacao` com a regra do `_semaforo_cagec` (uma entidade irregular basta) |
+| Vencimentos | `query_alertas_vigencia` |
+| Documentos | `documentos_vencendo` |
+| Emendas | `_fontes_federais` + `emendas_unificadas`: o grupo `parado`, que a aba Federais chama de "Sem pagamento" |
+| Radar | `_CTE_ABERTOS` + `_FILTRO_ABERTOS`, o mesmo número do contador do menu |
+
+**Regras:**
+- **Os cartões contam MUNICÍPIOS** ("3 de 42"), nunca somam dinheiro.
+- **"Sem coleta" e "sem fonte no estado" são escritos**, e nunca aparecem como verde.
+- Um bloco que falha vira `indisponivel`: a tela avisa qual ficou de fora e mostra "—".
+- Cache de 120 s por escopo, na memória de cada processo.
+
+"Emenda Pix parada", como estava no plano, virou **"emenda federal sem pagamento"**: é a
+regra oficial da aba Federais, com resto a pagar incluído, e cobre também as Pix.
+
+**Conferido** num Postgres 16 vazio, com dado plantado em cada bloco:
+- o município com o Fundo de Saúde irregular (e a prefeitura em dia) sai irregular e em
+  primeiro;
+- o de GO sai "sem fonte";
+- o convênio a 12 dias entra;
+- o Radar mostra o nomeado e a indicação.
+
 ## 1.29. O CI ficou sem crédito — o build foi para a VPS e voltou (17-18/09/2026)
 
 Em 17/09, logo depois do merge do #503, **todo job do GitHub Actions passou a falhar em 4
