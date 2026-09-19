@@ -15,7 +15,8 @@
  * backend (`services/bi.resolve_scope`).
  *
  * Abas: o PAINEL (PR 2) abre, porque é o que se olha toda semana; PARLAMENTARES
- * (PR 1) responde à pergunta que originou a área.
+ * (PR 1) responde à pergunta que originou a área; RELATÓRIOS (PR 3) é o que vai
+ * para fora em planilha.
  */
 
 import React, { useState } from "react";
@@ -24,8 +25,9 @@ import { TituloTela } from "@/components/TituloTela";
 import { Abas } from "@/components/ui/superficies";
 import { PainelCarteira } from "./PainelCarteira";
 import { ParlamentaresCarteira } from "./ParlamentaresCarteira";
+import { RelatoriosCarteira } from "./RelatoriosCarteira";
 
-type Aba = "painel" | "parlamentares";
+type Aba = "painel" | "parlamentares" | "relatorios";
 
 export default function ConsolidadoPage() {
   const [aba, setAba] = useState<Aba>("painel");
@@ -40,9 +42,12 @@ export default function ConsolidadoPage() {
         </div>
         <Abas<Aba> valor={aba} onChange={setAba} tamanho="md"
                    opcoes={[{ valor: "painel", label: "Painel da carteira" },
-                            { valor: "parlamentares", label: "Parlamentares" }]} />
+                            { valor: "parlamentares", label: "Parlamentares" },
+                            { valor: "relatorios", label: "Relatórios" }]} />
       </div>
-      {aba === "painel" ? <PainelCarteira /> : <ParlamentaresCarteira />}
+      {aba === "painel" && <PainelCarteira />}
+      {aba === "parlamentares" && <ParlamentaresCarteira />}
+      {aba === "relatorios" && <RelatoriosCarteira />}
     </div>
   );
 }

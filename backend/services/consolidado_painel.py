@@ -170,8 +170,9 @@ async def _emendas(db: AsyncSession, mid: int) -> Optional[dict]:
             "estado": (f["carteira"] or {}).get("estado")}
 
 
-async def montar(db: AsyncSession, ids: list[int]) -> dict:
-    chave = ",".join(map(str, sorted(ids)))
+async def montar(db: AsyncSession, ids: list[int], limite: Optional[int] = LIMITE_LISTA) -> dict:
+    """`limite` corta as três listas para a TELA; a planilha pede `None` (tudo)."""
+    chave = ",".join(map(str, sorted(ids))) + f"|{limite}"
     agora = time.monotonic()
     hit = _cache.get(chave)
     if hit and agora - hit[0] < _CACHE_S:
@@ -257,11 +258,11 @@ async def montar(db: AsyncSession, ids: list[int]) -> dict:
             "com_radar_nomeado": sum(1 for l in linhas if ((l["radar"] or {}).get("nomeado") or 0) > 0
                                      or ((l["radar"] or {}).get("indicado") or 0) > 0),
         },
-        "vencimentos": [_venc(v) for v in venc[:LIMITE_LISTA]],
+        "vencimentos": [_venc(v) for v in venc[:limite]],
         "vencimentos_total": len(venc),
-        "documentos": docs[:LIMITE_LISTA],
+        "documentos": docs[:limite],
         "documentos_total": len(docs),
-        "radar": radar_lista[:LIMITE_LISTA],
+        "radar": radar_lista[:limite],
         "radar_total": len(radar_lista),
     }
     _cache[chave] = (agora, payload)

@@ -1786,6 +1786,37 @@ regra oficial da aba Federais, com resto a pagar incluído, e cobre também as P
 - o convênio a 12 dias entra;
 - o Radar mostra o nomeado e a indicação.
 
+**PR 2 mergeado em 19/09 (#520).**
+
+### PR 3 — relatórios (19/09/2026)
+
+Aba **Relatórios**, e a planilha do painel.
+
+**Recursos por município** (`GET /api/consolidado/relatorios/recursos` e `.../exportar`):
+- mostra, lado a lado e por período: estaduais e voluntárias federais (`bi_kpis`, a conta
+  do Painel de cada município) e emendas federais (`_fontes_federais` + `emendas_unificadas`
+  com o filtro de anos da aba Federais: quantidade, valor da prefeitura e sem pagamento);
+- a tela ordena por qualquer coluna.
+- ⚠️ **Não tem coluna de total, e é de propósito.** A voluntária que nasceu de emenda está
+  nas duas colunas; somar contaria o mesmo dinheiro duas vezes.
+
+**Matriz parlamentar × município** (`.../matriz/exportar`), só em planilha:
+- uma linha por parlamentar e uma coluna por município, mais o total na carteira;
+- sai de **uma** chamada a `aggregate_parlamentares`, que agora devolve `por_municipio`;
+- os sete blocos do agregado somam por um helper só (`_soma`), então o valor por
+  município fecha com o total por construção (`test_consolidado_relatorios.py`).
+
+**Planilha do painel** (`/api/consolidado/painel/exportar`): uma aba por bloco, com as listas
+**inteiras**. A tela corta cada lista em 80; o `montar(limite=None)` entrega tudo.
+
+Toda planilha cobra `consolidado.exportar` e grava `export.consolidado_*` na trilha antes de
+sair.
+
+**Conferido** num Postgres 16 vazio:
+- a Emenda Pix de um município entra nas emendas federais dele;
+- a matriz fecha (R$ 1 mi + R$ 250 mil = R$ 1,25 mi);
+- as três planilhas abrem com as abas certas.
+
 ## 1.29. O CI ficou sem crédito — o build foi para a VPS e voltou (17-18/09/2026)
 
 Em 17/09, logo depois do merge do #503, **todo job do GitHub Actions passou a falhar em 4
