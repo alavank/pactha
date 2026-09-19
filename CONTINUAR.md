@@ -1757,7 +1757,7 @@ barra larga logo abaixo do título, com a aba na URL (`?aba=`):
 | **Regularidade** | `/api/consolidado/regularidade` (+ `/exportar`) | sub-abas **Situação** (CAUC e estadual por município) e **Vencendo em 30 dias** (documentos). Clique abre a **tela de Regularidade do município num modal** — o corpo da página saiu para `components/regularidade/RegularidadeTela.tsx` (`embutido`, `abaInicial`) |
 | **Vigências** | `/api/convenios/alertas` (sem município) | a tela de bolhas/lista que era o modal «Vigências» do Painel de Indicadores. **O botão saiu do Painel** (dono: só o Consolidado pode ignorar o município selecionado). Clique abre o convênio (estadual) ou a proposta (voluntária) |
 | **Parlamentares** | `/api/consolidado/parlamentares` | PR 1 |
-| **Radar** | `/api/consolidado/radar` (+ `/exportar`) | programas abertos em que o município foi nomeado ou tem emenda indicada — "dinheiro com dono, falta a proposta". Clique abre a ficha do programa (a do Radar de captação) |
+| **Radar** | `/api/consolidado/radar` (+ `/exportar`) | programas abertos em que o município foi nomeado ou tem emenda indicada — "dinheiro com dono, falta a proposta". Municípios em **ordem alfabética**, em **sanfona**: clicar abre os programas logo abaixo, um por vez, com o próximo prazo no cartão. Clicar no programa abre a ficha (a do Radar de captação). O painel ao lado, mesmo fixo ao rolar (#527), foi rejeitado pelo dono (19/09) |
 | **Recursos** (era "Relatórios"; `?aba=relatorios` ainda abre) | `/api/consolidado/relatorios/*` | soma da carteira + recursos por município, e matriz parlamentar × município |
 
 **Cada bloco é a conta de uma tela que já existe**, chamada com a lista da carteira
