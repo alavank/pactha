@@ -66,6 +66,11 @@
   .amb-linha label { flex:0 0 44%; font-size:11px; opacity:.85; }
   .amb-linha input { flex:1 1 auto; min-width:0; }
   .status { white-space: pre-line; }
+  .saude { margin: 10px 0; padding: 8px; border-radius: 4px; background: #edf2f7; font-size: 11px; }
+  .saude.caiu { background: #fed7d7; color: #742a2a; }
+  .saude.viva { background: #c6f6d5; color: #22543d; }
+  .saude .linha { margin: 2px 0; }
+  .porta-link { display:block; margin:2px 0; font-size:11px; color:#2b6cb0; cursor:pointer; text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -84,6 +89,22 @@
         <label for="toggle-auto">Modo automático</label>
       </div>
       <div class="info" id="last-capture-info">Aguardando primeira captura...</div>
+    </div>
+
+    <!-- A SESSÃO DO SERVIDOR, e não a do Chrome: "capturei" não é "está viva lá".
+         É aqui que a pessoa vê que caiu — e resolve, com um clique. -->
+    <div class="saude" id="saude-card">
+      <strong id="saude-titulo">Sessão gov.br nos servidores</strong>
+      <div class="info" id="saude-info">Consultando…</div>
+      <button id="btn-completa" style="margin-top:6px">Captura completa (abre as 4 portas)</button>
+      <details style="margin-top:6px">
+        <summary style="cursor:pointer; font-size:11px; color:#4a5568;">Abrir uma porta por vez</summary>
+        <div id="portas-lista" style="margin-top:4px"></div>
+      </details>
+      <div class="info" style="margin-top:6px">
+        Não clique em <strong>Sair</strong> no TransfereGov nem no gov.br: é a mesma
+        sessão que os servidores usam — sair derruba os seis de uma vez.
+      </div>
     </div>
 
     <div class="domain-info" id="domain-info">Carregando dominio atual...</div>

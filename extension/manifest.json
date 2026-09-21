@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PACTHA - Captura Automática",
-  "version": "2.3.0",
-  "description": "Captura a sessão gov.br/TransfereGov/FNS e envia a TODOS os ambientes PACTHA de uma vez, mostrando o resultado por ambiente. Keep-alive a cada 15min mantém a sessão viva enquanto o Chrome estiver aberto.",
+  "version": "2.4.0",
+  "description": "Captura a sessão gov.br/TransfereGov/FNS e envia a TODOS os ambientes PACTHA de uma vez, mostrando o resultado por ambiente. Mostra no ícone quando a sessão do SERVIDOR cai e abre as 4 portas da captura completa. Não captura na tela de login.",
   "permissions": [
     "cookies",
     "activeTab",

@@ -14,7 +14,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from pydantic import BaseModel
 
 from database import get_db
@@ -49,6 +49,95 @@ def conteudo_e_sessao(claro: str | None) -> bool:
     return (claro or "").startswith("{")
 
 
+# =====================================================================
+# SESSAO VIVA NAO E SOBRESCRITA — a captura vira CANDIDATA
+# =====================================================================
+#
+# ⚠️ POR QUE ISTO EXISTE (21/09/2026). A sessao gov.br morreu nos SEIS tenants
+# ao mesmo tempo tres vezes em duas semanas (09/09, 14/09, 17/09), com tempos de
+# vida de 11h a 79h — variavel demais para ser teto do SSO. O mecanismo estava
+# aqui: a extensao espelha o jar do Chrome do dono para os seis Cofres em TODA
+# navegacao em gov.br (inclusive www.gov.br e a propria tela de login) e a cada
+# 12 minutos, sem saber se o Chrome esta logado; e este endpoint gravava por
+# cima da sessao viva conferindo so `len(cookie) >= 10`. Chrome fechado (cookie
+# de sessao some), "Sair" no portal ou gov.br aberto deslogado => jar MORTO por
+# cima da sessao BOA, nos seis de uma vez.
+#
+# ⚠️ A GUARDA NAO OLHA NOME DE COOKIE. Seria o jeito barato ("tem
+# Session_Gov_Br_Prod?"), mas o nome e o dominio do cookie de SSO nunca foram
+# medidos em producao, e uma guarda por nome errado recusaria a captura BOA —
+# o defeito oposto, e pior. Quem sabe se um jar esta logado e quem o USA: o
+# worker (govbr_renew.processa_candidata) navega com ele e so promove se
+# autenticar. Aqui so se decide ONDE guardar:
+#   sessao atual VIVA  -> linha `govbr_candidata`; a viva nao e tocada.
+#   sessao atual MORTA (ou nunca medida) -> grava direto, como sempre. E o
+#       caminho da RECAPTURA, que tem de valer na hora.
+#
+# "Viva" = a ultima linha de `govbr_sso` (o renew horario do worker) e success
+# e tem menos de SESSAO_VIVA_MIN. 180 = tres renews perdidos, o mesmo prazo do
+# vigia (watchdog_coleta._sessao_govbr_caida). Sem linha nenhuma, ou se a
+# consulta falhar, NAO esta viva: o lado seguro e o comportamento antigo, que
+# nunca impede uma recaptura.
+CHAVE_GOVBR = "govbr"
+CHAVE_CANDIDATA = "govbr_candidata"
+SOURCE_SSO = "govbr_sso"          # o mesmo nome de govbr_renew.SOURCE_SSO
+SESSAO_VIVA_MIN = 180
+
+
+def sessao_esta_viva(status: str | None, idade_min: float | None) -> bool:
+    """A ultima medicao do login gov.br diz que ele esta VIVO? Funcao pura."""
+    if status != "success" or idade_min is None:
+        return False
+    return 0 <= float(idade_min) <= SESSAO_VIVA_MIN
+
+
+async def _ultima_medicao(db: AsyncSession, source: str) -> tuple:
+    """(status, idade em minutos, mensagem) da ultima linha da fonte no
+    ingestion_log, ou (None, None, None). Best-effort: falha vira 'nao sei'."""
+    try:
+        # ⚠️ EM SAVEPOINT. No Postgres uma query que falha ABORTA a transacao, e o
+        # `except` sozinho nao a conserta: o commit da captura, logo depois na
+        # MESMA sessao, levantaria InFailedSQLTransaction e a recaptura viraria
+        # 500 — por causa de uma consulta que se diz "best-effort".
+        async with db.begin_nested():
+            row = (await db.execute(text(
+                "SELECT status, EXTRACT(EPOCH FROM (NOW() - finished_at)) / 60, error_message "
+                "FROM ingestion_log WHERE source = :s ORDER BY id DESC LIMIT 1"
+            ), {"s": source})).first()
+        if not row:
+            return None, None, None
+        return row[0], (float(row[1]) if row[1] is not None else None), row[2]
+    except Exception as e:  # tabela ausente, banco ocupado: nao impede a captura
+        log.info("session-capture: ultima medicao de %s indisponivel (%s)", source, str(e)[:80])
+        return None, None, None
+
+
+# Estado do auto-scrape DESTE processo (ver o bloco AUTO-DISPATCH no POST).
+_AUTO_SCRAPE = {"rodando": False, "ultimo": 0.0}
+AUTO_SCRAPE_INTERVALO_S = 6 * 3600
+
+
+def _agora_s() -> float:
+    import time
+    return time.monotonic()
+
+
+def pode_auto_scrape(agora: float | None = None) -> bool:
+    """O POST de captura pode disparar o scraper dentro da API?
+
+    So com `SESSION_CAPTURE_AUTO_SCRAPE=1` (default DESLIGADO), sem outro rodando
+    neste processo e com o ultimo disparo ha mais de AUTO_SCRAPE_INTERVALO_S. A
+    env e lida a cada chamada: liga e desliga por tenant sem deploy."""
+    import os
+    if (os.getenv("SESSION_CAPTURE_AUTO_SCRAPE", "0") or "0").strip() not in ("1", "true", "yes"):
+        return False
+    if _AUTO_SCRAPE["rodando"]:
+        return False
+    agora = _agora_s() if agora is None else agora
+    ult = _AUTO_SCRAPE["ultimo"]
+    return not ult or (agora - ult) >= AUTO_SCRAPE_INTERVALO_S
+
+
 class _CapturePrincipal:
     """Resultado da autenticacao flexivel: JWT de usuario OU service token.
     Expoe .user_id (None se service token) e .label para auditoria."""
@@ -58,10 +147,36 @@ class _CapturePrincipal:
         self.via = via  # 'jwt' | 'service_token'
 
 
+async def get_capture_principal_leitura(
+    request: Request,
+    x_service_token: Optional[str] = Header(None, alias="X-Service-Token"),
+    db: AsyncSession = Depends(get_db),
+) -> "_CapturePrincipal":
+    """A MESMA autenticacao de `get_capture_principal`, sem carimbar o uso do token.
+
+    `last_used_at` do token `extensao-captura` e o diagnostico de "este tenant
+    esta RECEBENDO captura" (foi assim que se achou o BGK sem token em 09/09). A
+    consulta de saude roda de 12 em 12 minutos nos seis: se ela carimbasse, o
+    campo passaria a dizer "em uso" com nenhuma captura chegando."""
+    return await _resolve_principal(request, x_service_token, db, marcar_uso=False)
+
+
 async def get_capture_principal(
     request: Request,
     x_service_token: Optional[str] = Header(None, alias="X-Service-Token"),
     db: AsyncSession = Depends(get_db),
+) -> _CapturePrincipal:
+    return await _resolve_principal(request, x_service_token, db, marcar_uso=True)
+
+
+# ⚠️ FUNCAO COMUM, e nao um parametro a mais na dependencia: todo parametro
+# simples de uma dependencia do FastAPI vira QUERY PARAM publico — `marcar_uso`
+# apareceria como `?marcar_uso=false` na rota de captura.
+async def _resolve_principal(
+    request: Request,
+    x_service_token: Optional[str],
+    db: AsyncSession,
+    marcar_uso: bool,
 ) -> _CapturePrincipal:
     """Aceita DOIS modos de auth para captura de sessao:
 
@@ -82,10 +197,11 @@ async def get_capture_principal(
         if tok.expires_at and tok.expires_at < datetime.now(timezone.utc):
             raise HTTPException(401, "Service token expirado")
         require_scope(tok, "session:write")
-        tok.last_used_at = datetime.now(timezone.utc)
-        if request.client:
-            tok.last_used_ip = request.client.host
-        await db.commit()
+        if marcar_uso:
+            tok.last_used_at = datetime.now(timezone.utc)
+            if request.client:
+                tok.last_used_ip = request.client.host
+            await db.commit()
         return _CapturePrincipal(user_id=None, label=f"service:{tok.name}", via="service_token")
 
     # Modo 2: JWT de usuario (web app) — aceita Bearer header OU cookie
@@ -195,8 +311,13 @@ async def capture_session(
     # Encontra credencial existente para esse automation_key + municipio
     q = select(CofreSenha).where(CofreSenha.automation_key == payload.automation_key)
     q = q.where(CofreSenha.municipio_id.is_(None) if mid is None else CofreSenha.municipio_id == mid)
-    res = await db.execute(q)
-    item = res.scalar_one_or_none()
+    # ⚠️ A MAIS RECENTE, e nao `scalar_one_or_none()`: nao ha indice unico em
+    # (automation_key, municipio_id), e com duas linhas aquele metodo LEVANTA — a
+    # captura passaria a responder 500 naquele tenant ate alguem limpar o banco a
+    # mao. E a mesma linha que `govbr_renew._load_govbr_v` escolhe (ORDER BY
+    # updated_at DESC), entao captura e renovador continuam falando da mesma.
+    res = await db.execute(q.order_by(CofreSenha.updated_at.desc()))
+    item = res.scalars().first()
 
     # ⚠️ NUNCA GRAVA SESSAO POR CIMA DE UMA CREDENCIAL. Isto ja aconteceu em
     # producao: a extensao antiga mandava `municipio_id`, o casamento por
@@ -236,6 +357,66 @@ async def capture_session(
         f"ua={(payload.user_agent or '?')[:60]}"
     )
 
+    # ⭐ SESSAO gov.br VIVA NAO E SOBRESCRITA: a captura vira CANDIDATA e o worker
+    # so a promove se ela AUTENTICAR. Ver o bloco "SESSAO VIVA NAO E SOBRESCRITA"
+    # no topo. So vale para a sessao de instancia do gov.br e so quando ja existe
+    # uma sessao gravada — primeira captura e recaptura de sessao morta seguem
+    # direto, como sempre.
+    if payload.automation_key == CHAVE_GOVBR and mid is None and item is not None:
+        st, idade, _msg = await _ultima_medicao(db, SOURCE_SSO)
+        if sessao_esta_viva(st, idade):
+            cand = (await db.execute(
+                select(CofreSenha).where(CofreSenha.automation_key == CHAVE_CANDIDATA)
+                .where(CofreSenha.municipio_id.is_(None))
+                # a MAIS NOVA, como o worker le (`_load_candidata`): dois POSTs
+                # simultaneos podem ter criado duas linhas; o worker limpa as velhas.
+                .order_by(CofreSenha.updated_at.desc())
+            )).scalars().first()
+            if cand:
+                cand.senha_encrypted = crypto.encrypt(storage_payload)
+                cand.observacao = obs
+                cand.atualizado_por_id = principal.user_id
+                await db.commit()
+            else:
+                cand = CofreSenha(
+                    municipio_id=None,
+                    sistema="Sessao GOVBR — candidata (aguardando validacao do worker)",
+                    url=payload.url_atual,
+                    usuario="(cookie)",
+                    senha_encrypted=crypto.encrypt(storage_payload),
+                    observacao=obs,
+                    categoria="Sessao",
+                    automation_key=CHAVE_CANDIDATA,
+                    atualizado_por_id=principal.user_id,
+                )
+                db.add(cand)
+                await db.commit()
+                await db.refresh(cand)
+            await log_event(
+                db, action="session.candidata", user=None, request=request,
+                target_type="cofre_session", target_id=cand.id,
+                details={
+                    "automation_key": payload.automation_key,
+                    "municipio_id": payload.municipio_id,
+                    "cookie_size": len(cookie_clean),
+                    "auth_via": principal.via,
+                    "principal": principal.label,
+                },
+            )
+            # ⚠️ SEM auto-scrape: nada mudou na sessao em uso, e o scraper rodar a
+            # cada navegacao do dono era carga sem proposito.
+            return {
+                "status": "candidata",
+                "id": cand.id,
+                "automation_key": payload.automation_key,
+                "auto_scrape_started": False,
+                "message": (
+                    "A sessão gov.br do servidor está VIVA e não foi tocada. Esta "
+                    "captura ficou como candidata: o worker a testa em até ~10 min "
+                    "e só a promove se ela autenticar."
+                ),
+            }
+
     if item:
         # Atualiza observacao + senha (com cookie cifrado)
         item.senha_encrypted = crypto.encrypt(storage_payload)
@@ -273,15 +454,32 @@ async def capture_session(
         },
     )
 
-    # AUTO-DISPATCH: se for gov.br OU siconv_legado, dispara scraper TransfereGov
-    # em background imediatamente. A janela do JWT user-id (parcerias) e ~20min,
-    # JSESSIONID do siconv_legado tambem expira rapido por inatividade.
-    # captura+scrape automatico maximiza o aproveitamento.
+    # AUTO-DISPATCH do scraper TransfereGov — ⛔ DESLIGADO POR PADRAO (21/09/2026).
+    #
+    # ISTO DERRUBOU A PRODUCAO. Cada captura disparava `transferegov_voluntarias
+    # .run()` DENTRO DO PROCESSO DA API — e uma recaptura nao e uma captura: a
+    # extensao manda uma por navegacao e por cookie trocado, para os SEIS
+    # tenants. Medido em 21/09/2026, na recaptura do dono pelas 4 portas: ~20
+    # rodadas do scraper por tenant em uma hora (o normal e 1 a 3), o event loop
+    # das seis APIs travou, o healthcheck falhou e o proxy respondeu **503 nos
+    # seis clientes** por varios minutos. E o `run()` de hoje nao e o de quando
+    # isto foi escrito: desde 15/09 ele monta a arvore dos dumps (~12 min por
+    # tenant). Pior: com a API fora, as capturas das portas seguintes da MESMA
+    # recaptura voltavam 503 e se perdiam.
+    #
+    # Nao se perde coleta: o worker roda o TransfereGov toda noite (task
+    # `transferegov` + `transferegov_lote`), com trava e orcamento proprios, e o
+    # keepalive segura a sessao ate la. `SESSION_CAPTURE_AUTO_SCRAPE=1` religa
+    # por tenant, sem deploy — e mesmo ligado roda UM por vez, com intervalo
+    # minimo (`pode_auto_scrape`).
     auto_scrape = False
-    if payload.automation_key in ("govbr", "siconv_legado"):
+    if payload.automation_key in ("govbr", "siconv_legado") and pode_auto_scrape():
         try:
             import asyncio as _aio
             from ingestion.transferegov_voluntarias import run as _run_tg
+
+            _AUTO_SCRAPE["rodando"] = True
+            _AUTO_SCRAPE["ultimo"] = _agora_s()
 
             async def _bg_scrape():
                 try:
@@ -289,10 +487,13 @@ async def capture_session(
                 except Exception as ex:
                     import logging
                     logging.getLogger("auto-scrape").exception(f"erro: {ex}")
+                finally:
+                    _AUTO_SCRAPE["rodando"] = False
 
             _aio.create_task(_bg_scrape())
             auto_scrape = True
         except Exception as e:
+            _AUTO_SCRAPE["rodando"] = False
             import logging
             logging.getLogger("auto-scrape").warning(f"nao disparou: {e}")
 
@@ -304,9 +505,57 @@ async def capture_session(
         "message": (
             "Sessão capturada + scraper TransfereGov iniciado em background "
             "(janela 20min). Acompanhe via /dashboard/sessoes."
-            if auto_scrape else "Sessão capturada."
+            if auto_scrape else
+            "Sessão capturada. O servidor a confirma em até ~10 min (keepalive); "
+            "a coleta do TransfereGov roda na janela noturna do worker."
         ),
     }
+
+
+def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool) -> dict:
+    """O que a extensao mostra ao dono, NO CHROME, que e onde ele resolve.
+
+    Funcao pura sobre as duas ultimas medicoes `(status, idade_min, mensagem)`.
+    Sem valor de cookie, sem observacao do Cofre — so estado e horario.
+
+    `precisa_recapturar` so e True com MEDICAO dizendo que o login caiu: tenant
+    que nunca mediu (`status None`) nao cobra recaptura de ninguem, a mesma
+    disciplina do vigia (`FRASE_SEM_SESSAO`)."""
+    st, idade, msg = sso
+    sp_st, sp_idade, sp_msg = sps
+    viva = sessao_esta_viva(st, idade)
+    nunca_capturou = bool(msg) and "nenhuma sessao" in str(msg).lower()
+    caiu = (st is not None) and (st != "success") and not nunca_capturou
+    return {
+        "login": "vivo" if viva else ("caiu" if caiu else "sem_medicao"),
+        "login_medido_ha_min": round(idade) if idade is not None else None,
+        "modulos": sp_msg if sp_st and sp_st != "success" else ("private=vivo, execucao=vivo, prestacao=vivo" if sp_st == "success" else None),
+        "modulos_medidos_ha_min": round(sp_idade) if sp_idade is not None else None,
+        "candidata_pendente": bool(tem_candidata),
+        "precisa_recapturar": bool(caiu),
+    }
+
+
+# `declarado`, como o POST: o token da extensao nao tem usuario de quem cobrar
+# permissao, e o caminho do JWT a cobra dentro de `get_capture_principal`.
+# Devolve SO estado e horario — nada do Cofre — para a extensao pintar o aviso
+# no Chrome do dono. O vigia ja avisa no Telegram desde 16/09; a sessao ficou
+# morta mais quatro dias mesmo assim. O aviso tem de chegar onde se resolve.
+@router.get("/saude", dependencies=[declarado("sessoes.capturar")])
+async def saude_da_sessao(
+    db: AsyncSession = Depends(get_db),
+    _principal: _CapturePrincipal = Depends(get_capture_principal_leitura),
+):
+    sso = await _ultima_medicao(db, SOURCE_SSO)
+    sps = await _ultima_medicao(db, "govbr_sessao")
+    try:
+        tem = (await db.execute(
+            select(CofreSenha.id).where(CofreSenha.automation_key == CHAVE_CANDIDATA)
+            .where(CofreSenha.municipio_id.is_(None))
+        )).first() is not None
+    except Exception:
+        tem = False
+    return resumo_saude(sso, sps, tem)
 
 
 # So o GET declara. O POST acima autentica por SERVICE TOKEN (a extensao do

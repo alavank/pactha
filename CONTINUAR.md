@@ -1979,6 +1979,119 @@ existia, então ninguém ganha nem perde acesso e não há migration de acesso p
   - Colegiado sem `tipo` é reconhecido pelo nome.
   - Cada autor vem com `pessoa`: a SECRETARIA no SIGCON não vira parlamentar.
 
+## 1.32. A sessão gov.br parava de ser derrubada por NÓS (21/09/2026)
+
+**O relato:** "os login do transfere gov caiu?" — caiu, nos seis, e era a terceira vez em duas
+semanas (09/09, 14/09, 17/09). O dono pediu o link da captura e "garanta que não caia mais".
+
+**O que foi medido** (5 agentes; linha do tempo pelos 19 runs do `resumo-coleta`, auditoria de agosto,
+código): o tempo de vida de uma captura **não é teto fixo** — 79h, 20h, 63h e 48h em agosto;
+≤50h e ~60–70h em setembro. Três de quatro mortes de agosto foram entre 23:05 e 02:05 BRT. As quedas
+**não acompanham deploy** (a de 14/09 aconteceu sem deploy na janela) e o PR #494 subiu **depois** da
+morte. ⚠️ O "caiu em 17/09 00:20–01:04" do alerta é o **nascimento da fonte `govbr_sso`**, não a queda:
+sem nenhum success o vigia mostra a primeira linha; a sessão estava morta desde **14/09** (~165h, não
+102h). E o tempo MORTO (41 % em agosto) é dominado pela **demora em recapturar**: o alarme do Telegram
+tocou quatro dias sem ninguém agir.
+
+**O mecanismo que estava no código** (medido no código; que ele tenha matado cada sessão em produção é
+hipótese — ninguém leu `audit_log`): a sessão do servidor era um **espelho do Chrome do dono**. A
+extensão capturava em toda navegação em `www.gov.br` e na própria tela de login `sso.acesso.gov.br`, em
+toda troca de `JSESSIONID`, e a cada 12 min — o alarme tratava a tela de login (HTTP 200) como "sessão
+viva" —, sem saber se o Chrome estava logado; `POST /api/session-capture` gravava por cima da sessão
+viva conferindo só `len(cookie) >= 10`; e o `keepalive` regravava o jar mesmo com as quatro navegações
+caídas no login. Chrome fechado (cookie de sessão some), "Sair" ou gov.br aberto deslogado ⇒ jar morto
+por cima da sessão boa, **nos seis de uma vez**.
+
+**As guardas** (`tests/test_sessao_govbr_guardas.py` — comportamento do endpoint, do worker
+(`processa_candidata`, `keepalive`, `renew` com Playwright e banco falsos) e da rota de saúde ponta a
+ponta; cada correção foi conferida por mutação: desfeita, a suíte fica vermelha):
+1. **Captura com a sessão VIVA vira CANDIDATA.** "Viva" = última linha de `govbr_sso` é success com
+   ≤ 180 min. A captura vai para uma linha `automation_key='govbr_candidata'` (invisível aos leitores,
+   que filtram `='govbr'`); a viva não é tocada; sem auto-scrape. Sessão morta ou nunca medida grava
+   **direto, na hora** — é a recaptura. ⚠️ A guarda **não olha nome de cookie**: o nome/domínio do
+   cookie de SSO nunca foi medido em produção, e guarda por nome errado recusaria a captura boa.
+2. **O worker só PROMOVE a candidata que autentica** (`govbr_renew.processa_candidata`, no começo do
+   `renew` e do `keepalive` → na rodada seguinte do keepalive, */10): navega a entrada com o jar dela;
+   autenticou → **grava** a sessão em uso (jar fresco) e **depois** apaga a candidata; caiu no login →
+   apagada, sessão em uso intocada. O veredito fica na `observacao` da sessão em uso **e** no
+   `ingestion_log` (fonte `govbr_candidata`: success = promovida, partial = recusada) — o log do
+   container some. **Falha não é veredito** (rede, banco fora, linha que mudou no meio): a candidata
+   fica para a próxima rodada. O DELETE é **versionado** (`updated_at` lido): o endpoint atualiza a
+   mesma linha a cada captura, e apagar por id levaria junto a captura nova que chegou durante o teste.
+   ⚠️ "Banco fora" ≠ "não existe linha `govbr`" (`_id_da_sessao_em_uso` levanta): confundir os dois
+   criava uma segunda linha `govbr`, e o POST de captura respondia 500 dali em diante (o POST hoje usa
+   `.scalars().first()`, não `scalar_one_or_none()`).
+3. **`keepalive` só regrava com prova de vida** (`tem_prova_de_vida`); jar que não carrega aborta sem
+   gravar, e o lote que falha é refeito cookie a cookie (`_add_cookies_tolerante`). **Login provado
+   vivo no keepalive vira `govbr_sso` success na hora** — é essa fonte que liga a guarda 1; sem isso,
+   depois de uma recaptura a guarda ficava desligada até o `renew` horário (até ~60 min). Só o
+   positivo: quem declara o login morto continua sendo o `renew`.
+   **Veredito de TRÊS valores** (`veredito_login`: `logado` | `login` | `nao_sei`), no `renew` e na
+   candidata: "não autenticou" ≠ "caiu no login". `page.goto` não levanta para 502/503 nem página de
+   manutenção, e `evaluate` que falha no meio do SAML deixa o corpo vazio — com o bool de antes isso
+   virava "SSO expirou — recapturar" no Telegram **e desligava a guarda 1** (portal fora por minutos
+   reabria a porta para o jar deslogado). Só há veredito negativo com **prova positiva** da tela de
+   login (URL `/idp/`/`sso.acesso`, ou "identifique-se"/"acesso restrito" no corpo); o resto é
+   `inconclusivo` e não escreve em `govbr_sso`. Para não ficar mudo se o layout mudar (sumir o
+   "Sair"), a rodada do renew vai para a fonte **`govbr_renew`** (partial = última rodada
+   inconclusiva; volta a success sozinha) — não liga nem desliga guarda nenhuma. Candidata que não
+   se consegue testar espera a próxima rodada, e é descartada com motivo próprio depois de
+   `CANDIDATA_MAX_H` (6h). Duplicatas mais antigas da candidata (dois POSTs simultâneos, API com 2
+   workers, SELECT+INSERT sem trava) são apagadas junto com a testada; endpoint e worker leem
+   sempre a mais nova.
+4. **Gravação condicional** (`_load_govbr_v` + `_save_cookies(..., visto_em)`): rodada que leu o jar
+   velho não engole a recaptura feita no meio (`updated_at` tem `onupdate` no modelo).
+5. **Extensão 2.4.0:** `www.gov.br` e `sso.acesso` deixam de ser GATILHO (os cookies deles seguem no
+   jar). **Porteiro único dentro de `capture()`** (`chromeEstaLogado`, em `ambientes.js`): sonda a
+   porta 1 e olha o **corpo**, não só a URL — deslogado, o TransfereGov pode responder 200 **na mesma
+   URL** com o form SAML de auto-envio (o mesmo muro de 3469 bytes do backend), e `fetch` não roda JS.
+   Três valores: `false` (marcador de login) barra; `true` ("Sair" na página, a mesma régua de
+   `_is_authenticated`); `null` (não sei) **não barra** — o servidor tem a guarda 1, e travar por
+   dúvida impediria a recaptura. Vale para navegação, cookie, alarme e captura manual; vem **antes**
+   do debounce (senão a página SAML do meio do login engolia a captura boa). Botão **"Captura
+   completa (abre as 4 portas)"** — roteiro no service worker, estado no storage, **para e espera**
+   na tela de login (não automatiza login), só avança com a aba `complete` e na mesma URL, e fecha
+   com duas capturas forçadas (a 2ª em 12s, para a sessão da última porta) — forçada = ação da
+   pessoa: o toggle "Modo automático" desligado **não** a barra (barrando, o botão virava no-op
+   silencioso); **selo vermelho "!" no
+   ícone** quando algum servidor MEDIU que o login caiu (`GET /api/session-capture/saude`, mesmo
+   service token, só estado e horário, **sem** carimbar `last_used_at` — "token usado hoje" tem de
+   continuar significando "houve captura hoje"). Sem nenhuma resposta de servidor o selo não muda.
+   ⚠️ O Chrome do dono carrega a extensão de `C:\CONVPREF\extension`: precisa copiar os arquivos e
+   recarregar em `chrome://extensions`. As guardas 1–4 e o item 7 são do **servidor**: valem com o
+   deploy, com qualquer versão da extensão instalada.
+6. Alerta do vigia e do resumo passam a dar o roteiro do botão, em vez de "abrir o TransfereGov".
+7. ⛔ **O scraper saiu de dentro da API** (`SESSION_CAPTURE_AUTO_SCRAPE`, default **desligado**).
+   **Isto derrubou a produção em 21/09/2026, durante a recaptura do dono:** cada `POST
+   /api/session-capture` de `govbr` disparava `transferegov_voluntarias.run()` no event loop da API, e
+   uma recaptura não é *uma* captura — a extensão manda uma por navegação e por cookie trocado, para
+   os SEIS tenants. Medido pelo `resumo-coleta`: **~20 rodadas do scraper por tenant em 1 hora** (o
+   normal é 1–3), `/api/health` **503 nos seis** de ~09:20 a 09:42 BRT (voltou sozinho), sem deploy
+   nenhum na janela. O `run()` de hoje monta a árvore dos dumps (~12 min por tenant, §1.26) — não é
+   mais o de quando o auto-dispatch nasceu. E o estrago se realimenta: com a API fora, as capturas
+   das portas 2–4 da MESMA recaptura voltam 503 e se perdem. Não se perde coleta: o worker roda o
+   TransfereGov toda noite. Mesmo religado por env, roda **um por vez** com intervalo mínimo de 6h
+   (`pode_auto_scrape`).
+
+**O que NÃO dá para garantir:** o login gov.br tem reCAPTCHA (não se automatiza, não se guarda senha) e
+o teto do SSO não é publicado nem foi medido isolado — as "vidas" de agosto podem ser sessões emendadas
+por recapturas silenciosas. "Sair" no portal ou logar outro CPF no Chrome derruba os seis (é a mesma
+sessão). Com as guardas no ar, a **próxima morte sai com causa separável**: se acontecer sem nenhuma
+`session.update` antes (só `session.candidata`), é teto do gov.br ou logout — e dá para medir o teto.
+**Pendências que pedem decisão do dono:** forense no `audit_log` de 13–15/09 (SQL por task); apagar o
+bloco do auto-scrape de vez (hoje só desligado por default — item 7); apagar
+`renovar_sessao_govbr.py` (login programático sem chamador); encolher o que ainda depende da sessão
+(histórico de comunicações, termos de notificação, anexos do Projeto Básico).
+
+**Conferir produção sem credencial:** `gh workflow run resumo-coleta.yml --ref main -f dry_run=1 -f
+janela_horas=1`. ⚠️ A mensagem corta em 4.096 (Telegram) **tirando itens do tenant com mais
+problemas** — em 21/09, com "22 itens que não couberam", a lista visível não respondia se o
+`govbr_sso` do trust tinha voltado (o bloco dele foi o cortado). No dry run o log agora imprime a
+**lista completa** depois da mensagem. Leitura: `govbr_sso` = login (renew horário, minuto diferente
+por tenant — erro "há 0.8h" pode ser só a medição velha); `govbr_sessao` = as 3 portas (keepalive
+*/10); item ausente = último estado é success. Recusa de `govbr_candidata` mais velha que a janela
+não é listada (é evento, não coleta periódica — viraria item fixo nos seis).
+
 ## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
 
 Teste de aceite do dono sobre o RM: três achados, duas decisões dele, um PR (#496, branch

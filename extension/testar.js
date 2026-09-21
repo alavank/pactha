@@ -145,6 +145,86 @@ const chk = (cond, msg) => {
       "o ✓ só aparece quando não houve falha");
   }
 
+  console.log("\n7) a tela de LOGIN não conta como sessão viva, e o selo só acende com medição");
+  {
+    const { ctx } = montar({});
+    chk(ctx.pareceLogin("https://sso.acesso.gov.br/login?client_id=x") === true, "sso.acesso é login");
+    chk(ctx.pareceLogin("https://idp.transferegov.sistema.gov.br/idp/profile/SAML2") === true, "/idp/ é login");
+    chk(ctx.pareceLogin("https://discricionarias.transferegov.sistema.gov.br/voluntarias/") === false,
+      "o TransfereGov autenticado não é login");
+    chk(ctx.algumPrecisaRecapturar([{ ok: true, precisa_recapturar: true }]) === true, "medição de queda acende");
+    chk(ctx.algumPrecisaRecapturar([{ ok: false, detalhe: "HTTP 404" }, { ok: true, precisa_recapturar: false }]) === false,
+      "falha de rede / servidor sem a rota NÃO acende o selo");
+    chk(vm.runInContext("PORTAS_GOVBR.length", ctx) === 4, "a captura completa tem as 4 portas");
+  }
+
+  console.log("\n8) a saúde é consultada em CADA ambiente com token, e nunca rejeita");
+  {
+    const { ctx } = montar({
+      pactha_ambientes: [
+        { nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true },
+        { nome: "B", api: "https://b.sslip.io/api", token: "pactha_st_b", ativo: true },
+        { nome: "SemToken", api: "https://c.sslip.io/api", token: "", ativo: true },
+      ],
+    });
+    const chamadas = [];
+    ctx.fetch = async (url, opt) => {
+      chamadas.push([url, opt && opt.headers]);
+      if (url.startsWith("https://b.")) throw new Error("Failed to fetch");
+      return { ok: true, status: 200, json: async () => ({ login: "caiu", precisa_recapturar: true, modulos: "private=CAIU" }) };
+    };
+    const itens = await ctx.consultarSaude([
+      { nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true },
+      { nome: "B", api: "https://b.sslip.io/api", token: "pactha_st_b", ativo: true },
+      { nome: "SemToken", api: "https://c.sslip.io/api", token: "", ativo: true },
+    ]);
+    chk(itens.length === 2, "ambiente sem token não é consultado");
+    chk(chamadas[0][0] === "https://a.sslip.io/api/session-capture/saude", "rota /session-capture/saude");
+    chk(chamadas[0][1]["X-Service-Token"] === "pactha_st_a", "vai com o service token do ambiente");
+    chk(itens[0].ok && itens[0].precisa_recapturar === true, "queda medida chega nomeada");
+    chk(itens[1].ok === false, "erro de rede vira item com ok=false, não exceção");
+  }
+
+  console.log("\n9) o PORTEIRO: Chrome deslogado não manda jar — nem quando a URL parece boa");
+  {
+    const { ctx } = montar({});
+    const URL_TG = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do";
+    // O caso que a URL não pega: 200 NA MESMA URL com o form SAML de auto-envio.
+    const muro = '<html><body onload="document.forms[0].submit()"><form method="post" '
+      + 'action="https://idp.x/idp/profile/SAML2/POST/SSO"><input type="hidden" name="SAMLRequest" value="abc"/></form>';
+    chk(ctx.vereditoLogin(URL_TG, muro) === false, "página SAML de auto-envio na URL do TransfereGov = deslogado");
+    chk(ctx.vereditoLogin("https://sso.acesso.gov.br/login", "<html>") === false, "tela de login = deslogado");
+    chk(ctx.vereditoLogin(URL_TG, "<a href='/logout'>Sair</a> Consultar Proposta") === true, "página com «Sair» = logado");
+    chk(ctx.vereditoLogin(URL_TG, "<html>erro 500</html>") === null, "sem prova para nenhum lado = não sei (null)");
+
+    let corpo = muro;
+    let sondas = 0;
+    ctx.fetch = async (url) => { sondas++; return { ok: true, status: 200, url, text: async () => corpo }; };
+    chk((await ctx.chromeEstaLogado()) === false, "sonda com muro SAML → false");
+    corpo = "<a>Sair</a>";
+    chk((await ctx.chromeEstaLogado()) === true, "o `false` NÃO fica em cache: a captura boa, 2s depois, passa");
+    const antes = sondas;
+    await ctx.chromeEstaLogado();
+    chk(sondas === antes, "o `true` fica em cache (5s): um login dispara vários gatilhos");
+    const { ctx: ctx2 } = montar({});
+    ctx2.fetch = async () => { throw new Error("Failed to fetch"); };
+    chk((await ctx2.chromeEstaLogado()) === null, "falha de rede = null (não barra a recaptura)");
+
+    const bg = ler("background.js");
+    const iPorteiro = bg.indexOf("await chromeEstaLogado()");
+    const iDebounce = bg.indexOf("lastCaptureAt.set(dKey, now)");
+    chk(iPorteiro > 0 && iPorteiro < iDebounce,
+      "em capture(), o porteiro vem ANTES de marcar o debounce (senão a página SAML engole a captura boa)");
+    chk(/tab\.status\s*!==\s*"complete"/.test(bg), "o roteiro só avança com a aba `complete`");
+    chk(/if\s*\(!itens\.some\(\(i\)\s*=>\s*i\.ok\)\)\s*return/.test(bg),
+      "sem nenhuma resposta de servidor o selo não muda");
+    chk(/chromeEstaLogado\(\)\)\s*===\s*false/.test(ler("popup.js")), "a captura MANUAL passa pelo mesmo porteiro");
+    chk(/if\s*\(!cfg\.auto_enabled\s*&&\s*!forcar\)/.test(bg),
+      "o toggle do modo AUTOMÁTICO não barra o fim da «Captura completa» (era no-op silencioso)");
+    chk(!/if\s*\(!cfg\.auto_enabled\)\s*\{\s*console\.log\("\[PACTHA\] auto-captura/.test(bg),
+      "não sobrou o portão antigo, que ignorava `forcar`");
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");
   process.exit(falhas ? 1 : 0);
 })();

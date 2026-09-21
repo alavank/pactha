@@ -94,6 +94,17 @@ def _sync_url() -> str:
 
 def _load_govbr() -> tuple[int | None, list | None]:
     """(cofre_id, cookies) da sessao govbr mais recente com cookies."""
+    cofre_id, cookies, _visto = _load_govbr_v()
+    return cofre_id, cookies
+
+
+def _load_govbr_v() -> tuple[int | None, list | None, object]:
+    """(cofre_id, cookies, updated_at). O `updated_at` e a VERSAO lida: quem
+    grava de volta passa esse valor a `_save_cookies`, que so grava se a linha
+    continuar nessa versao. Sem isso, uma rodada que leu o jar velho as 10:00:00
+    gravava as 10:00:20 por cima de uma RECAPTURA feita as 10:00:10 — a captura
+    nova era engolida em silencio (`updated_at` tem onupdate no modelo, entao a
+    captura pela API sempre muda a versao)."""
     try:
         conn = psycopg2.connect(_sync_url(), connect_timeout=10)
         cur = conn.cursor()
@@ -110,21 +121,21 @@ def _load_govbr() -> tuple[int | None, list | None]:
         # ciclo, o `updated_at` dela ficava sempre a frente: a captura nova era
         # gravada e IGNORADA. O sintoma so apareceria na proxima recuperacao —
         # recapturar e continuar sem sessao, sem erro em lugar nenhum.
-        cur.execute("SELECT id, senha_hash FROM cofre_senhas "
+        cur.execute("SELECT id, senha_hash, updated_at FROM cofre_senhas "
                     "WHERE automation_key='govbr' AND length(senha_hash) > 1000 "
                     "AND municipio_id IS NULL "
                     "ORDER BY updated_at DESC LIMIT 1")
         row = cur.fetchone()
         cur.close(); conn.close()
         if not row:
-            return None, None
+            return None, None, None
         dec = crypto.decrypt(row[1])
         if not dec or not dec.startswith("{"):
-            return None, None
-        return row[0], json.loads(dec).get("cookies", [])
+            return None, None, None
+        return row[0], json.loads(dec).get("cookies", []), row[2]
     except Exception as e:
         log.warning(f"_load_govbr: {e}")
-        return None, None
+        return None, None, None
 
 
 def _to_pw_cookies(cookies: list) -> list:
@@ -203,9 +214,11 @@ def _grava_estado(source: str, status: str, n: int, erro: str | None) -> None:
     uma pergunta sem resposta possivel no banco — e a auditoria mediu a sessao
     morta 297,5h de 720h (41%) sem que nada no produto dissesse isso.
 
-    ⚠️ `cofre_senhas.updated_at` NAO servia de sinal: o keepalive re-salva os
-    cookies mesmo quando a navegacao caiu no idp, entao o carimbo subia com a
-    sessao morta.
+    ⚠️ `cofre_senhas.updated_at` NAO serve de sinal de saude: ate 21/09/2026 o
+    keepalive re-salvava os cookies mesmo com tudo caido no idp, e o carimbo
+    subia com a sessao morta. Hoje ele so grava com prova de vida
+    (`tem_prova_de_vida`), mas o carimbo continua sendo a VERSAO do jar
+    (`_load_govbr_v`/`_save_cookies`), nao um atestado — a saude mora aqui.
 
     Best-effort de verdade: qualquer falha aqui e engolida. Este e um registro de
     OBSERVACAO — derrubar o keepalive ou a renovacao por causa dele seria trocar a
@@ -256,6 +269,12 @@ def _registra_sso(resultado: str) -> None:
 
     `no_session` tem frase PROPRIA: tenant que nunca capturou sessao nao e sessao
     caida, e o vigia nao pode cobrar recaptura de quem nunca capturou."""
+    if resultado == "inconclusivo":
+        # ⚠️ FALHA DE REDE NAO E VEREDITO. Esta fonte LIGA e DESLIGA a guarda do
+        # endpoint de captura (`session_capture.sessao_esta_viva`): gravar "SSO
+        # expirou" por causa de um timeout reabriria a porta para o jar deslogado
+        # e acenderia o alarme de recaptura a toa. Sem medicao, nao se grava nada.
+        return
     if resultado == "reconnected":
         _grava_estado(SOURCE_SSO, "success", 1, None)
     elif resultado == "no_session":
@@ -264,8 +283,46 @@ def _registra_sso(resultado: str) -> None:
         _grava_estado(SOURCE_SSO, "erro", 0, FRASE_SSO_EXPIROU)
 
 
-def _save_cookies(cofre_id: int, cookies_pw: list) -> None:
-    """Sobrescreve os cookies da sessao govbr no Cofre (mesma linha id)."""
+# A RODADA do renew, separada do veredito do login. `inconclusivo` nao escreve em
+# `govbr_sso` (ver `_registra_sso`) — e sem ISTO ele seria mudo: se o portal mudar
+# o layout (sumir o "Sair"), toda rodada passa a ser inconclusiva e nada diria
+# isso em lugar nenhum. 'partial' enquanto a ultima rodada nao soube julgar; volta
+# a 'success' sozinho na primeira que souber. Nao liga nem desliga guarda nenhuma.
+SOURCE_RODADA = "govbr_renew"
+
+
+def _registra_rodada(resultado: str) -> None:
+    if resultado == "inconclusivo":
+        _grava_estado(SOURCE_RODADA, "partial", 0,
+                      "rodada inconclusiva: o portal nao devolveu pagina reconhecivel (nem logado, "
+                      "nem tela de login) — se persistir por horas, o layout do TransfereGov mudou")
+    else:
+        _grava_estado(SOURCE_RODADA, "success", 1, None)
+
+
+# O destino de cada captura CANDIDATA, no banco e nao so no log do container: a
+# promocao troca o jar inteiro da sessao em uso, e "a sessao morreu depois de uma
+# promocao?" precisa ter resposta. 'partial' (e nao 'erro') na recusa: a sessao
+# em uso esta BEM — o recado e "o Chrome do dono esta mandando jar sem login".
+SOURCE_CANDIDATA = "govbr_candidata"
+
+
+def _registra_candidata(veredito: str, motivo: str | None) -> None:
+    if veredito == "promovida":
+        _grava_estado(SOURCE_CANDIDATA, "success", 1, None)
+    else:
+        _grava_estado(SOURCE_CANDIDATA, "partial", 0,
+                      f"captura candidata RECUSADA: {motivo or 'nao autenticou'}")
+
+
+def _save_cookies(cofre_id: int, cookies_pw: list, visto_em=None) -> bool:
+    """Sobrescreve os cookies da sessao govbr no Cofre (mesma linha id).
+
+    `visto_em` = o `updated_at` que esta rodada LEU (`_load_govbr_v`). Com ele,
+    so grava se a linha continua nessa versao; se alguem gravou no meio (a
+    RECAPTURA do dono, tipicamente), devolve False e o jar desta rodada e
+    descartado — ele nasceu do jar velho e nao pode engolir o novo. Sem
+    `visto_em` (promocao de candidata) grava incondicional."""
     payload = {
         "format": "cookies_full",
         "cookies": _from_pw_cookies(cookies_pw),
@@ -275,20 +332,333 @@ def _save_cookies(cofre_id: int, cookies_pw: list) -> None:
     enc = crypto.encrypt(json.dumps(payload))
     conn = psycopg2.connect(_sync_url(), connect_timeout=10)
     cur = conn.cursor()
-    cur.execute("UPDATE cofre_senhas SET senha_hash=%s, updated_at=NOW() WHERE id=%s", (enc, cofre_id))
+    if visto_em is None:
+        cur.execute("UPDATE cofre_senhas SET senha_hash=%s, updated_at=NOW() WHERE id=%s",
+                    (enc, cofre_id))
+    else:
+        cur.execute("UPDATE cofre_senhas SET senha_hash=%s, updated_at=NOW() "
+                    "WHERE id=%s AND updated_at=%s", (enc, cofre_id, visto_em))
+    gravou = (cur.rowcount or 0) > 0
     conn.commit(); cur.close(); conn.close()
+    if not gravou:
+        log.info("jar desta rodada DESCARTADO: a linha do Cofre mudou no meio "
+                 "(captura nova?) — a versao mais nova fica")
+    return gravou
+
+
+def tem_prova_de_vida(entry_ok: bool, private_ok: bool, exec_ok: bool, prest_ok: bool) -> bool:
+    """O keepalive PODE regravar o jar? So com prova de vida: a entrada do
+    discricionarias autenticou OU ao menos um SP respondeu sem cair no login.
+
+    Ate 21/09/2026 o jar era regravado SEMPRE — inclusive com as quatro
+    navegacoes na tela de login, quando o que o navegador tem na mao e o jar DA
+    TELA DE LOGIN. Numa oscilacao do portal isso trocava a sessao boa pela
+    anonima. Com tudo caido nao ha nada no navegador que valha mais que o Cofre."""
+    return bool(entry_ok or private_ok or exec_ok or prest_ok)
+
+
+async def _add_cookies_tolerante(ctx, cookies: list) -> int:
+    """Carrega o jar no contexto e devolve QUANTOS cookies entraram.
+
+    ⚠️ `add_cookies` e ATOMICO: um cookie malformado (sameSite estranho, dominio
+    vazio) derruba o lote inteiro, o navegador sobe ANONIMO, cai na tela de
+    login — e o keepalive antigo gravava esse jar anonimo por cima da sessao
+    boa. Aqui o lote que falha e refeito cookie a cookie, pulando so o ruim.
+    Zero carregados = nao ha o que testar: quem chama aborta SEM gravar."""
+    pw = _to_pw_cookies(cookies)
+    if not pw:
+        return 0
+    try:
+        await ctx.add_cookies(pw)
+        return len(pw)
+    except Exception as e:
+        log.warning(f"add_cookies em lote falhou ({str(e)[:80]}) — tentando um a um")
+    n = 0
+    for c in pw:
+        try:
+            await ctx.add_cookies([c])
+            n += 1
+        except Exception:
+            pass
+    log.info(f"add_cookies um a um: {n} de {len(pw)} carregados")
+    return n
+
+
+# =====================================================================
+# CANDIDATA — a captura que chegou com a sessao VIVA (ver session_capture.py)
+# =====================================================================
+CHAVE_CANDIDATA = "govbr_candidata"   # o mesmo nome de routers/session_capture.py
+# Candidata que nao se consegue TESTAR (portal fora, pagina irreconhecivel) espera
+# a proxima rodada — mas nao para sempre: depois disto e descartada com motivo
+# proprio. Fila presa tambem e defeito, e um jar de 6h ja nao e "login novo".
+CANDIDATA_MAX_H = 6
+
+
+def _candidata_velha(versao) -> bool:
+    from datetime import datetime, timedelta, timezone
+    if not isinstance(versao, datetime):
+        return False
+    if versao.tzinfo is None:
+        versao = versao.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - versao > timedelta(hours=CANDIDATA_MAX_H)
+
+
+def _load_candidata() -> tuple[int | None, list | None, object]:
+    """(id, cookies, updated_at) da captura candidata, ou (None, None, None). Sem
+    piso de tamanho: um jar deslogado e pequeno, e e justamente ele que precisa
+    ser lido para ser recusado e sair da fila. O `updated_at` e a VERSAO testada:
+    o endpoint ATUALIZA esta mesma linha a cada captura, e apagar por id apagaria
+    junto a captura nova que chegou durante o teste (ver `_encerra_candidata`)."""
+    try:
+        conn = psycopg2.connect(_sync_url(), connect_timeout=10)
+        cur = conn.cursor()
+        cur.execute("SELECT id, senha_hash, updated_at FROM cofre_senhas WHERE automation_key=%s "
+                    "AND municipio_id IS NULL ORDER BY updated_at DESC LIMIT 1",
+                    (CHAVE_CANDIDATA,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return None, None, None
+        try:
+            dec = crypto.decrypt(row[1]) or ""
+            cookies = json.loads(dec).get("cookies", []) if dec.startswith("{") else []
+        except Exception:
+            cookies = []
+        return row[0], cookies, row[2]
+    except Exception as e:
+        log.warning(f"_load_candidata: {e}")
+        return None, None, None
+
+
+def _id_da_sessao_em_uso() -> int | None:
+    """id da linha 'govbr' de instancia, SEM o piso de tamanho e SEM decifrar.
+    ⚠️ LEVANTA em erro, de proposito: `_load_govbr_v` devolve None tanto para "nao
+    existe" quanto para "nao consegui ler" (timeout, decrypt), e tratar o segundo
+    como o primeiro fazia a promocao RENOMEAR a candidata para 'govbr' com a linha
+    principal existindo — duas linhas 'govbr', e o POST de captura
+    (`scalar_one_or_none`) passava a responder 500 para sempre."""
+    conn = psycopg2.connect(_sync_url(), connect_timeout=10)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM cofre_senhas WHERE automation_key='govbr' "
+                    "AND municipio_id IS NULL ORDER BY updated_at DESC LIMIT 1")
+        row = cur.fetchone()
+        cur.close()
+        return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def _encerra_candidata(cand_id: int, veredito: str, principal_id: int | None,
+                       versao=None) -> bool:
+    """Apaga a candidata TESTADA e deixa o veredito na `observacao` da sessao em
+    uso — o log do container e efemero, e "a captura de ontem foi recusada?"
+    precisa ter resposta no banco. `updated_at` da principal NAO e tocado (e a
+    versao do jar).
+
+    `versao` = o `updated_at` da candidata que foi lida. Se a linha mudou durante
+    o teste (chegou captura nova — a "Captura completa" do dono, tipicamente),
+    NADA e apagado nem anotado: a nova fica para a proxima rodada. Devolve se
+    apagou."""
+    import re as _re
+    from datetime import datetime, timezone
+    try:
+        conn = psycopg2.connect(_sync_url(), connect_timeout=10)
+        with conn, conn.cursor() as cur:
+            if versao is None:
+                cur.execute("DELETE FROM cofre_senhas WHERE id=%s AND automation_key=%s",
+                            (cand_id, CHAVE_CANDIDATA))
+            else:
+                cur.execute("DELETE FROM cofre_senhas WHERE id=%s AND automation_key=%s "
+                            "AND updated_at=%s", (cand_id, CHAVE_CANDIDATA, versao))
+            if (cur.rowcount or 0) == 0:
+                log.info("candidata mudou durante o teste (captura nova) — fica para a proxima rodada")
+                conn.close()
+                return False
+            if versao is not None:
+                # DUPLICATAS MAIS ANTIGAS vao junto. O endpoint faz SELECT+INSERT sem
+                # trava e a API sobe com 2 workers: dois POSTs simultaneos (a extensao
+                # manda varios por login) criam DUAS linhas candidatas, e a mais velha
+                # seria promovida DEPOIS, por cima do jar mais completo. ⚠️ Em DELETE
+                # separado: o rowcount de cima tem de continuar significando "apaguei
+                # a linha TESTADA". Captura que chegou durante o teste tem updated_at
+                # maior e fica.
+                cur.execute("DELETE FROM cofre_senhas WHERE automation_key=%s AND municipio_id IS NULL "
+                            "AND id<>%s AND updated_at<=%s", (CHAVE_CANDIDATA, cand_id, versao))
+            if principal_id:
+                cur.execute("SELECT observacao FROM cofre_senhas WHERE id=%s", (principal_id,))
+                row = cur.fetchone()
+                base = _re.sub(r"\s*\|\| \[CANDIDATA\].*$", "", (row[0] if row else "") or "", flags=_re.S)
+                quando = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                cur.execute("UPDATE cofre_senhas SET observacao=%s WHERE id=%s",
+                            (f"{base} || [CANDIDATA] {veredito} em {quando}"[:2000], principal_id))
+        conn.close()
+        return True
+    except Exception as e:
+        log.info(f"candidata: veredito nao registrado ({str(e)[:70]})")
+        return False
+
+
+async def processa_candidata() -> str:
+    """Testa a captura candidata e so a PROMOVE se ela autenticar.
+
+    Retorna 'sem_candidata' | 'promovida' | 'recusada' | 'inconclusivo'.
+
+    E a outra metade da guarda de `session_capture.py`: la a captura que chega
+    com a sessao viva e guardada a parte; aqui ela e USADA — navega a entrada do
+    discricionarias com o jar dela. Autenticou: e um login bom (em geral mais
+    novo que o nosso) e vira a sessao em uso. Caiu na tela de login: era o
+    Chrome do dono deslogado, e a sessao viva segue intocada.
+
+    ⚠️ FALHA NAO E VEREDITO. Navegacao que nem completou, banco que nao
+    respondeu, linha que mudou durante o teste: a candidata FICA para a proxima
+    rodada. Recusar por timeout jogaria fora um login bom; promover sem saber se
+    a linha principal existe criaria uma segunda linha 'govbr'."""
+    cand_id, cookies, versao = _load_candidata()
+    if cand_id is None:
+        return "sem_candidata"
+    try:
+        principal_id = _id_da_sessao_em_uso()
+    except Exception as e:
+        log.warning(f"candidata: nao consegui ler a sessao em uso ({str(e)[:80]}) — proxima rodada")
+        return "inconclusivo"
+    if not cookies:
+        _encerra_candidata(cand_id, "recusada (jar vazio/ilegivel)", principal_id, versao)
+        _registra_candidata("recusada", "jar vazio ou ilegivel")
+        return "recusada"
+    from playwright.async_api import async_playwright
+    async with async_playwright() as p:
+        br = await p.chromium.launch(headless=True,
+                                     args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
+        ctx = await br.new_context(ignore_https_errors=True,
+                                   user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                              "Chrome/131.0.0.0 Safari/537.36")
+        if await _add_cookies_tolerante(ctx, cookies) == 0:
+            await br.close()
+            _encerra_candidata(cand_id, "recusada (nenhum cookie carregavel)", principal_id, versao)
+            _registra_candidata("recusada", "nenhum cookie carregavel")
+            return "recusada"
+        page = await ctx.new_page()
+        resp = None
+        try:
+            resp = await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
+        except Exception as e:
+            log.warning(f"candidata: navegacao nao completou ({str(e)[:80]}) — fica para a proxima rodada")
+            await br.close()
+            return "inconclusivo"
+        await page.wait_for_timeout(8000)  # SAML auto-submit
+        body = ""
+        try:
+            body = await page.evaluate("() => document.body.innerText")
+        except Exception:
+            pass
+        url_final = page.url or ""
+        veredito = veredito_login(url_final, body, getattr(resp, "status", None))
+        if veredito == "nao_sei":
+            # Pagina de erro do portal, corpo vazio, SAML ainda em transito: NAO e
+            # prova de jar deslogado. A candidata fica — ate envelhecer: fila presa
+            # para sempre tambem e defeito.
+            await br.close()
+            if _candidata_velha(versao):
+                if _encerra_candidata(cand_id, "descartada (nao foi possivel testar em "
+                                      f"{CANDIDATA_MAX_H}h)", principal_id, versao):
+                    _registra_candidata("recusada", f"nao foi possivel testar em {CANDIDATA_MAX_H}h "
+                                                    "(portal fora do ar ou pagina irreconhecivel)")
+                    return "recusada"
+            log.warning(f"candidata: pagina irreconhecivel em {url_final[:60]} "
+                        "(nem logado, nem tela de login) — fica para a proxima rodada")
+            return "inconclusivo"
+        if veredito == "login":
+            await br.close()
+            log.info(f"candidata RECUSADA: caiu em {url_final[:60]} — Chrome do dono sem login; "
+                     "a sessao em uso NAO foi tocada")
+            if _encerra_candidata(cand_id, "recusada (jar sem login gov.br; sessao em uso preservada)",
+                                  principal_id, versao):
+                _registra_candidata("recusada", "o Chrome mandou um jar SEM login gov.br; "
+                                                "a sessao em uso foi preservada")
+                return "recusada"
+            return "inconclusivo"
+        fresh = await ctx.cookies()
+        relevant = [c for c in fresh if any(d in (c.get("domain") or "")
+                    for d in ("transferegov", "sso.acesso.gov.br", "gov.br"))]
+        await br.close()
+    try:
+        # ⚠️ GRAVA PRIMEIRO, apaga depois. O jar `relevant` AUTENTICOU agora — vale
+        # como sessao em uso mesmo que a linha candidata tenha mudado no meio. Na
+        # ordem inversa, uma falha de banco entre os dois passos jogava fora um
+        # login bom. Se a candidata mudou durante o teste, o DELETE versionado nao
+        # apaga nada e a captura nova e testada na proxima rodada.
+        if principal_id:
+            if not _save_cookies(principal_id, relevant):       # promocao: incondicional
+                log.warning("candidata: a sessao em uso nao foi gravada — proxima rodada")
+                return "inconclusivo"
+        else:
+            # A consulta RESPONDEU e nao ha linha 'govbr': nasce a sessao em uso,
+            # com o jar FRESCO desta navegacao.
+            enc = crypto.encrypt(json.dumps({
+                "format": "cookies_full", "cookies": _from_pw_cookies(relevant),
+                "url": "https://discricionarias.transferegov.sistema.gov.br/voluntarias/",
+                "domain": "discricionarias.transferegov.sistema.gov.br"}))
+            conn = psycopg2.connect(_sync_url(), connect_timeout=10)
+            with conn, conn.cursor() as cur:
+                cur.execute("INSERT INTO cofre_senhas (municipio_id, sistema, usuario, senha_hash, "
+                            "categoria, automation_key, observacao) VALUES (NULL, 'Sessao GOVBR', "
+                            "'(cookie)', %s, 'Sessao', 'govbr', '[SESSION] promovida de candidata')",
+                            (enc,))
+            conn.close()
+        _encerra_candidata(cand_id, "promovida (autenticou)", principal_id or None, versao)
+        log.info(f"candidata PROMOVIDA ✓ — {len(relevant)} cookies viraram a sessao em uso")
+        # Autenticou = o login esta VIVO, medido agora: liga a guarda do endpoint
+        # sem esperar o renew horario.
+        _registra_sso("reconnected")
+        _registra_candidata("promovida", None)
+        return "promovida"
+    except Exception as e:
+        log.error(f"candidata: falha ao promover ({str(e)[:100]})")
+        return "inconclusivo"
+
+def _eh_tela_de_login(url: str, body: str) -> bool:
+    u = (url or "").lower(); b = (body or "").lower()
+    return "/idp/" in u or "sso.acesso.gov.br" in u or "identifique-se" in b or "acesso restrito" in b
 
 
 def _is_authenticated(url: str, body: str) -> bool:
-    u = (url or "").lower(); b = (body or "").lower()
-    if "/idp/" in u or "sso.acesso.gov.br" in u or "identifique-se" in b or "acesso restrito" in b:
+    if _eh_tela_de_login(url, body):
         return False
-    return "voluntarias" in u and "sair" in b
+    return "voluntarias" in (url or "").lower() and "sair" in (body or "").lower()
+
+
+def veredito_login(url: str, body: str, http_status: int | None = None) -> str:
+    """'logado' | 'login' | 'nao_sei' — TRES valores, e o terceiro e o que importa.
+
+    ⚠️ "NAO AUTENTICOU" NAO E "CAIU NO LOGIN". `page.goto` nao levanta para HTTP
+    502/503 nem para pagina de manutencao, e um `evaluate` que falha no meio do
+    auto-submit do SAML deixa o corpo vazio: com o bool de antes tudo isso virava
+    "SSO expirou — recapturar". E `govbr_sso=erro` DESLIGA a guarda do endpoint de
+    captura: um portal fora do ar por minutos reabria a porta para o jar deslogado
+    do Chrome gravar por cima da sessao viva (o vigia ja sabia: "uma so pode ser o
+    portal fora do ar por minutos"). So ha veredito negativo com PROVA POSITIVA da
+    tela de login; sem prova para nenhum lado, a rodada e inconclusiva e nao
+    escreve nada."""
+    if _is_authenticated(url, body):
+        return "logado"
+    if (http_status or 0) >= 500:
+        return "nao_sei"
+    return "login" if _eh_tela_de_login(url, body) else "nao_sei"
 
 
 async def renew() -> str:
-    """Retorna 'reconnected' | 'needs_recapture' | 'no_session'."""
-    cofre_id, cookies = _load_govbr()
+    """Retorna 'reconnected' | 'needs_recapture' | 'no_session' | 'inconclusivo'."""
+    # Antes de tudo, a captura CANDIDATA (se houver): promovida, ja e ela que o
+    # `_load_govbr_v` logo abaixo le. Nunca derruba o renew.
+    try:
+        _c = await processa_candidata()
+        if _c != "sem_candidata":
+            log.info(f"candidata: {_c}")
+    except Exception as e:
+        log.warning(f"candidata: {str(e)[:100]}")
+    cofre_id, cookies, visto_em = _load_govbr_v()
     if not cookies:
         log.info("sem sessao govbr no Cofre — aguardando captura via extensao")
         return "no_session"
@@ -301,22 +671,33 @@ async def renew() -> str:
                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                               "AppleWebKit/537.36 (KHTML, like Gecko) "
                                               "Chrome/131.0.0.0 Safari/537.36")
-        try:
-            await ctx.add_cookies(_to_pw_cookies(cookies))
-        except Exception as e:
-            log.warning(f"add_cookies: {str(e)[:80]}")
+        await _add_cookies_tolerante(ctx, cookies)
         page = await ctx.new_page()
+        resp = None
         try:
-            await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
+            resp = await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
         except Exception as e:
-            log.warning(f"goto entry: {str(e)[:80]}")
+            # A pagina nem carregou: nao ha o que julgar. Antes isto seguia,
+            # `_is_authenticated('about:blank', '')` dava False e um TIMEOUT virava
+            # "SSO expirou — recapturar" no banco e no Telegram.
+            log.warning(f"goto entry: {str(e)[:80]} — rodada INCONCLUSIVA (rede/portal), nada gravado")
+            await br.close()
+            return "inconclusivo"
         await page.wait_for_timeout(8000)  # SAML auto-submit
         body = ""
         try:
             body = await page.evaluate("() => document.body.innerText")
         except Exception:
             pass
-        if not _is_authenticated(page.url, body):
+        veredito = veredito_login(page.url, body, getattr(resp, "status", None))
+        if veredito == "nao_sei":
+            # Ver `veredito_login`: pagina de erro/corpo vazio nao e "SSO expirou".
+            log.warning(f"pagina irreconhecivel em {(page.url or '')[:60]} (HTTP "
+                        f"{getattr(resp, 'status', '?')}; nem logado, nem tela de login) — "
+                        "rodada INCONCLUSIVA, nada gravado")
+            await br.close()
+            return "inconclusivo"
+        if veredito == "login":
             log.warning(f"SSO expirou (caiu em {page.url[:60]}) — precisa RE-CAPTURA "
                         f"(login tem reCAPTCHA, nao automatizavel)")
             await br.close()
@@ -333,8 +714,12 @@ async def renew() -> str:
                     for d in ("transferegov", "sso.acesso.gov.br", "gov.br"))]
         await br.close()
         try:
-            _save_cookies(cofre_id, relevant)
-            log.info(f"RECONECTADO ✓ — {len(relevant)} cookies frescos salvos no Cofre")
+            # `visto_em`: se o dono recapturou DURANTE esta rodada, o jar dele
+            # fica — este nasceu do jar velho. O login esta vivo de todo jeito.
+            if _save_cookies(cofre_id, relevant, visto_em):
+                log.info(f"RECONECTADO ✓ — {len(relevant)} cookies frescos salvos no Cofre")
+            else:
+                log.info("RECONECTADO ✓ — jar NAO salvo (captura nova chegou no meio; ela fica)")
         except Exception as e:
             log.error(f"falha ao salvar cookies: {str(e)[:100]}")
             return "needs_recapture"
@@ -349,7 +734,15 @@ async def keepalive() -> str:
     mais rapido que o timeout de inatividade do /private/, ele NUNCA cai -> sem
     re-captura. Retorna 'alive' | 'private_dead' | 'no_session'.
     """
-    cofre_id, cookies = _load_govbr()
+    # A captura CANDIDATA primeiro: o keepalive roda de 10 em 10 minutos, entao e
+    # aqui que um login novo do dono e promovido rapido. Nunca derruba a rodada.
+    try:
+        _c = await processa_candidata()
+        if _c != "sem_candidata":
+            log.info(f"keepalive candidata: {_c}")
+    except Exception as e:
+        log.warning(f"keepalive candidata: {str(e)[:100]}")
+    cofre_id, cookies, visto_em = _load_govbr_v()
     if not cookies:
         log.info("keepalive: sem sessao no Cofre")
         return "no_session"
@@ -361,15 +754,29 @@ async def keepalive() -> str:
                                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                               "AppleWebKit/537.36 (KHTML, like Gecko) "
                                               "Chrome/131.0.0.0 Safari/537.36")
-        try:
-            await ctx.add_cookies(_to_pw_cookies(cookies))
-        except Exception as e:
-            log.warning(f"keepalive add_cookies: {str(e)[:80]}")
+        if await _add_cookies_tolerante(ctx, cookies) == 0:
+            # Navegador ANONIMO nao mede nada e nao pode gravar nada: o jar que
+            # sairia daqui e o da tela de login.
+            await br.close()
+            log.error("keepalive: nenhum cookie do Cofre carregou — rodada abortada SEM gravar")
+            return "private_dead"
         page = await ctx.new_page()
         # 1) guest: mantem o SSO/discricionarias quente (barato)
+        entry_ok = False
         try:
             await page.goto(ENTRY, timeout=45000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(4000)
+            # 4s bastam com o JSESSIONID quente; com round-trip no SSO o renew()
+            # espera 8s pela MESMA pergunta — entao: 4s, olha, e so se ainda nao
+            # autenticou espera os outros 4s.
+            for _ in range(2):
+                await page.wait_for_timeout(4000)
+                try:
+                    _body = await page.evaluate("() => document.body.innerText")
+                except Exception:
+                    _body = ""
+                entry_ok = _is_authenticated(page.url, _body)
+                if entry_ok:
+                    break
         except Exception as e:
             log.warning(f"keepalive guest: {str(e)[:80]}")
         # 2) /private/: reseta o idle do JEE das mandatarias
@@ -409,10 +816,24 @@ async def keepalive() -> str:
         await br.close()
     if not relevant:
         return "private_dead"
-    try:
-        _save_cookies(cofre_id, relevant)
-    except Exception as e:
-        log.error(f"keepalive save: {str(e)[:100]}")
+    # ⭐ SO GRAVA COM PROVA DE VIDA — ver `tem_prova_de_vida`. E com `visto_em`:
+    # se o dono recapturou durante esta rodada, o jar dele fica.
+    gravou = False
+    if tem_prova_de_vida(entry_ok, private_ok, exec_ok, prest_ok):
+        try:
+            gravou = _save_cookies(cofre_id, relevant, visto_em)
+        except Exception as e:
+            log.error(f"keepalive save: {str(e)[:100]}")
+    else:
+        log.warning("keepalive: login e os tres SPs caidos — jar NAO regravado")
+    # ⭐ O LOGIN PROVADO VIVO vira medicao de `govbr_sso` JA, e nao so no renew
+    # horario. E essa fonte que liga a guarda do endpoint de captura: sem isto,
+    # depois de uma RECAPTURA a guarda ficava desligada ate ~60 min, e nesse
+    # intervalo qualquer jar deslogado do Chrome gravava direto por cima da
+    # sessao recem-recuperada. ⚠️ So o POSITIVO: a espera daqui e curta para
+    # veredito negativo — quem declara o login morto continua sendo o renew().
+    if entry_ok:
+        _registra_sso("reconnected")
     # ⚠️ `prestacao` sai no log SEPARADO de `execucao`, e nao somado a ele: sao
     # SPs diferentes, e foi exatamente por eles aparecerem como um so que as NEs
     # morriam em silencio com o keepalive dizendo "execucao=vivo".
@@ -421,7 +842,7 @@ async def keepalive() -> str:
     _registra_sessao(private_ok, exec_ok, prest_ok)
     if private_ok:
         log.info(f"keepalive OK — /private/ vivo, {_sps}, "
-                 f"{len(relevant)} cookies re-salvos")
+                 f"{len(relevant)} cookies {'re-salvos' if gravou else 'NAO salvos'}")
         return "alive"
     log.warning(f"keepalive — /private/ CAIU (idp/login), {_sps}. "
                 "Precisa re-captura pela extensao.")
@@ -436,4 +857,5 @@ if __name__ == "__main__":
     else:
         resultado = asyncio.run(renew())
         _registra_sso(resultado)
+        _registra_rodada(resultado)
         print(resultado)

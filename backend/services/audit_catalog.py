@@ -258,6 +258,12 @@ _TABELA: dict[str, dict] = {
     ),
     "session.update": _a(
         "renovou a sessão capturada", MOD_SESSOES, _ALTO, prep="de"),
+    "session.candidata": _a(
+        "enviou uma sessão candidata", MOD_SESSOES, _MEDIO, prep="de",
+        nota="A sessão gov.br em uso estava viva e NÃO foi substituída: a captura "
+             "ficou guardada à parte, e o worker só a promove se ela autenticar. "
+             "É a guarda contra o Chrome deslogado derrubar a sessão do servidor.",
+    ),
 
     # --- Integrações e tokens (routers/service_tokens.py) ------------------
     "service_token.create": _a(

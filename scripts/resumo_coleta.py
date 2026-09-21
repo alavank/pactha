@@ -64,7 +64,7 @@ ONDE_OLHAR = {
     # medido em 08/09/2026: 27 de 27 falhas de um tenant eram esta.
     "govbr_sessao": "sessao gov.br expirou — recapturar pela extensao do Chrome",
     "govbr_renew": "renovacao da sessao gov.br (extensao do Chrome)",
-    "govbr_sso": "login gov.br expirou — login no Chrome com a extensao do PACTHA e abrir o TransfereGov",
+    "govbr_sso": "login gov.br expirou — no Chrome, extensao do PACTHA > \"Captura completa (abre as 4 portas)\"",
     "obrasgov": "api-publica.obrasgov.gestao.gov.br (o outro host devolve 429)",
     "transferegov_opendata": "dados abertos do TransfereGov (siconv_*.zip)",
     "siconv_licitacao": "dump publico siconv_licitacao.zip (nao depende de login)",
@@ -230,6 +230,13 @@ def _limpar_mensagem_watchdog(bruta: str) -> str:
     return " ".join(limpa.split())
 
 
+def _horas(v, padrao: float = 0.0) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return padrao
+
+
 def _detalhes(r: dict) -> list:
     """As linhas do 'o que olhar' de um tenant: o porque e o onde."""
     if not r["ok"]:
@@ -254,6 +261,13 @@ def _detalhes(r: dict) -> list:
         # leituras atras do login sem retorno". Custou uma manha de investigacao
         # na mao para descobrir o que a propria mensagem ja sabia.
         parcial = status in ("parcial", "partial")
+        # `govbr_candidata` e um EVENTO, nao uma coleta periodica: a recusa de uma
+        # captura fica como "ultimo estado" ate a proxima promocao, que pode levar
+        # semanas. Recusa de hoje e noticia (o Chrome esta mandando jar sem login);
+        # a de oito dias atras viraria item fixo nos seis tenants, todo dia.
+        if (f.get("source") == "govbr_candidata" and parcial
+                and _horas(f.get("horas_desde")) > _horas(d.get("janela_horas"), 24.0)):
+            continue
         if parcial or status in ("erro", "error", "failed", "falha"):
             porque = " ".join((f.get("error_message") or "").split())
             # Parcial NAO e erro: ele trouxe dado. Icone e verbo diferentes para
@@ -406,6 +420,16 @@ def main() -> int:
     texto = montar_mensagem(resultados, ausentes=ausentes)
     print(texto)
     if (os.getenv("RESUMO_DRY_RUN") or "").strip() == "1":
+        # ⚠️ No dry run o LOG leva a lista INTEIRA. O corte de 4.096 e do Telegram,
+        # e quem roda o dry run esta conferindo producao: em 21/09/2026 a pergunta
+        # era "a recaptura pegou nos seis?" e, com "22 itens que nao couberam", a
+        # lista visivel nao respondia pelo tenant cortado — consulta truncada nao e
+        # evidencia de que o item NAO existe.
+        if "itens que nao couberam" in texto:
+            print("\n[resumo] lista COMPLETA (so no log; o Telegram corta em 4096):")
+            for r in resultados:
+                for d in _detalhes(r):
+                    print(d)
         print("[resumo] DRY RUN — nada enviado")
         return 0
     enviado = enviar(texto)

@@ -152,6 +152,13 @@ async function captureManual() {
     showStatus("Aba atual sem URL valida", "error");
     return;
   }
+  // O mesmo PORTEIRO da captura automática (`chromeEstaLogado`, ambientes.js):
+  // jar `govbr` deslogado não sai nem no clique manual — a mensagem diz o que fazer.
+  if ($("automation-key").value === "govbr" && (await chromeEstaLogado()) === false) {
+    showStatus("Este Chrome NÃO está logado no TransfereGov — nada foi enviado. "
+      + "Use «Captura completa» (ela espera você logar).", "error");
+    return;
+  }
   showStatus("Coletando cookies (incluindo httpOnly)...", "info");
   const cookies = await getAllCookiesForDomain(host);
   if (!cookies.length) {
@@ -264,6 +271,70 @@ async function refreshLastCapture() {
   el.className = "info";
 }
 
+/* A SAÚDE DA SESSÃO NOS SERVIDORES. Consulta ao abrir o popup (não espera o
+   alarme de 12 min) e desenha uma linha por ambiente. ⚠️ `textContent`, nunca
+   `innerHTML`: os textos vêm do servidor. */
+function textoDoItem(i) {
+  if (!i.ok) return `${i.nome}: sem resposta (${i.detalhe})`;
+  if (i.precisa_recapturar) {
+    return `${i.nome}: LOGIN CAIU${i.modulos ? " · " + i.modulos : ""} — recapturar`;
+  }
+  if (i.login === "vivo") {
+    return `${i.nome}: vivo`
+      + (i.medido_ha_min != null ? ` (medido há ${i.medido_ha_min} min)` : "")
+      + (i.modulos && i.modulos.includes("CAIU") ? ` · ${i.modulos}` : "")
+      + (i.candidata_pendente ? " · captura em teste" : "");
+  }
+  return `${i.nome}: ainda sem medição do servidor`;
+}
+
+async function desenharSaude() {
+  const card = $("saude-card");
+  const info = $("saude-info");
+  if (!card || !info) return;
+  let itens = [];
+  try {
+    itens = await consultarSaude(await lerAmbientes());
+    chrome.storage.local.set({ pactha_saude: { quando: new Date().toISOString(), itens } });
+  } catch (_) { /* fica com o que houver no storage */ }
+  if (!itens.length) {
+    const guardado = await new Promise((r) => chrome.storage.local.get(["pactha_saude"], (d) => r(d.pactha_saude)));
+    itens = (guardado && guardado.itens) || [];
+  }
+  info.textContent = "";
+  if (!itens.length) {
+    info.textContent = "Nenhum ambiente com token para consultar.";
+    return;
+  }
+  itens.forEach((i) => {
+    const linha = document.createElement("div");
+    linha.className = "linha";
+    linha.textContent = textoDoItem(i);
+    info.appendChild(linha);
+  });
+  const caiu = algumPrecisaRecapturar(itens);
+  const respondeu = itens.filter((i) => i.ok);
+  const todasVivas = respondeu.length > 0 && respondeu.every((i) => i.login === "vivo");
+  card.classList.toggle("caiu", caiu);
+  card.classList.toggle("viva", !caiu && todasVivas);
+  $("saude-titulo").textContent = caiu
+    ? "⚠ A sessão gov.br CAIU nos servidores — recapture"
+    : (todasVivas ? "✓ Sessão gov.br viva nos servidores" : "Sessão gov.br nos servidores");
+}
+
+function desenharPortas() {
+  const box = $("portas-lista");
+  if (!box) return;
+  box.textContent = "";
+  PORTAS_GOVBR.forEach((p) => {
+    const a = document.createElement("a");
+    a.className = "porta-link";
+    a.textContent = p.nome;
+    a.addEventListener("click", () => chrome.tabs.create({ url: p.url }));
+    box.appendChild(a);
+  });
+}
+
 async function init() {
   const cfg = await getConfig();
   const tab = await getCurrentTab();
@@ -329,6 +400,16 @@ async function init() {
   });
 
   $("btn-capture").addEventListener("click", captureManual);
+
+  // Captura completa: quem conduz é o service worker (o popup FECHA quando a aba
+  // nova ganha o foco, e o roteiro morreria junto).
+  $("btn-completa").addEventListener("click", () => {
+    chrome.runtime.sendMessage({ tipo: "captura_completa" });
+    showStatus("Abrindo as 4 portas na mesma aba. Se pedir login, faça — o roteiro "
+               + "continua sozinho depois.", "info");
+  });
+  desenharPortas();
+  desenharSaude();
 
   $("btn-config").addEventListener("click", async () => {
     $("main").classList.add("hidden");

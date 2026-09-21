@@ -558,8 +558,14 @@ def _sessao_govbr_caida(cur) -> list[dict]:
         "detalhe": (f"Login gov.br expirado ha {float(idade_h):.0f}h — {desde}.\n"
                     "Parado: detalhe dos convenios, NEs, Termos de Notificacao, "
                     "Projeto Basico e anexos do TransfereGov.\n"
-                    "Resolver: login no gov.br no Chrome com a extensao do PACTHA "
-                    "e abrir o TransfereGov."),
+                    # ⚠️ O ROTEIRO INTEIRO, e nao "abrir o TransfereGov": sao QUATRO
+                    # portas com sessao propria, e logar so na primeira deixava
+                    # /private/, execucao e prestacao fora do jar. O botao da
+                    # extensao (>= 2.4.0) abre as quatro na mesma aba.
+                    "Resolver (2 min): no Chrome, clique no icone da extensao do PACTHA > "
+                    "\"Captura completa (abre as 4 portas)\", faca o login gov.br "
+                    "quando pedir e espere a aba passar pelas quatro. "
+                    "Nao clique em Sair depois."),
     }]
 
 
