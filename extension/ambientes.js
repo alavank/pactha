@@ -181,6 +181,11 @@ async function enviarParaTodos(payload, lista) {
       if (r.status === 401) return { nome: amb.nome, ok: false, detalhe: "token inválido" };
       if (!r.ok) return { nome: amb.nome, ok: false, detalhe: `HTTP ${r.status}` };
       const d = await r.json().catch(() => ({}));
+      // "candidata": o servidor está com a sessão VIVA e não a trocou às cegas;
+      // o worker testa este jar e só o promove se autenticar.
+      if (d.status === "candidata") {
+        return { nome: amb.nome, ok: true, detalhe: "sessão viva preservada (captura em teste)" };
+      }
       return { nome: amb.nome, ok: true, detalhe: d.id ? `id=${d.id}` : "gravado" };
     } catch (e) {
       // ⚠️ "Failed to fetch" aqui quase sempre é host_permissions, e não rede:
@@ -194,6 +199,126 @@ async function enviarParaTodos(payload, lista) {
       };
     }
   }));
+}
+
+/**
+ * AS QUATRO PORTAS DA CAPTURA COMPLETA. Cada uma é uma sessão SEPARADA no
+ * TransfereGov (SP SAML próprio): logar só na primeira deixa as outras três
+ * fora do jar, e o servidor não as revive sozinho.
+ *
+ * ⚠️ SÃO AS MESMAS URLs de `backend/ingestion/govbr_renew.py` (ENTRY,
+ * PRIVATE_ENTRY, EXEC_ENTRY, PRESTACAO_ENTRY) — o servidor mantém viva a sessão
+ * que NASCEU aqui. `tests/test_sessao_govbr_guardas.py` cruza as duas listas.
+ */
+const PORTAS_GOVBR = [
+  { nome: "1. Login (faça o login gov.br aqui)",
+    url: "https://discricionarias.transferegov.sistema.gov.br/voluntarias/ForwardAction.do?modulo=Principal&path=/MostraPrincipalConsultarProposta.do" },
+  { nome: "2. Mandatárias /private/",
+    url: "https://mandatarias.transferegov.sistema.gov.br/projeto-basico/private/index.jsf" },
+  { nome: "3. Execução (licitações)",
+    url: "https://discricionarias.transferegov.sistema.gov.br/voluntarias/execucao/ListarLicitacoes/ListarLicitacoes.do?destino=ListarLicitacoes" },
+  { nome: "4. Prestação (notas de empenho)",
+    url: "https://discricionarias.transferegov.sistema.gov.br/voluntarias/prestacao/_proposta/empenho/listarEmpenhosNovoSiafi.jsf?destino=ManterEmpenhoNovoSiafi" },
+];
+
+/** A URL final é a tela de login do gov.br? (o fetch SEGUE o redirect e a tela
+ *  de login responde 200 — `r.ok` sozinho dizia "sessão viva" com ela morta.) */
+function pareceLogin(url) {
+  const u = String(url || "").toLowerCase();
+  return u.includes("sso.acesso.gov.br") || u.includes("/idp/") || u.includes("acesso.gov.br/login");
+}
+
+/** O CORPO é a página de "HTTP Post Binding" do SAML (ou a tela de login)?
+ *
+ * ⚠️ A URL SOZINHA NÃO BASTA. O TransfereGov deslogado nem sempre redireciona:
+ * ele pode responder 200 NA PRÓPRIA URL com um formulário que o JavaScript
+ * auto-envia para o idp. `fetch` não roda JS, então `r.url` continua sendo a do
+ * TransfereGov e `pareceLogin(r.url)` diz "logado". (É o mesmo muro de 3469
+ * bytes que o backend conhece — `transferegov._eh_muro_saml`.) */
+function corpoEhLogin(texto) {
+  return /SAMLRequest|HTTP Post Binding|name=["']?RelayState|identifique-se|acesso restrito/i
+    .test(String(texto || ""));
+}
+
+/**
+ * Veredito da sonda: true (logado) | false (deslogado) | null (não sei).
+ *
+ * Mesma régua do servidor (`govbr_renew._is_authenticated`): logado é PROVA
+ * POSITIVA — a página tem o "Sair". Marcador de login é prova negativa. Sem
+ * nenhum dos dois (layout mudou, portal devolveu erro) o veredito é `null`, e
+ * `null` NÃO barra captura: o servidor tem a guarda dele (sessão viva → vira
+ * candidata), e travar aqui por dúvida impediria justamente a recaptura.
+ */
+function vereditoLogin(url, corpo) {
+  if (pareceLogin(url) || corpoEhLogin(corpo)) return false;
+  if (/\bsair\b/i.test(String(corpo || ""))) return true;
+  return null;
+}
+
+let _sondaCache = { em: 0, valor: null };
+
+/**
+ * O Chrome está LOGADO no TransfereGov? É o PORTEIRO de toda captura `govbr`:
+ * navegação, cookie trocado, alarme e captura manual passam por aqui. Antes,
+ * qualquer página do TransfereGov aberta deslogada ("Acesso Livre", a página de
+ * auto-envio do SAML, o Chrome reaberto sem os cookies de sessão) mandava um jar
+ * SEM login para os seis servidores.
+ *
+ * Sonda a porta 1 (a mesma URL que o servidor usa para medir o login). Só o
+ * `true` fica guardado (5s — um login dispara vários gatilhos em sequência):
+ * guardar o `false` descartaria a captura BOA que chega 2s depois da página de
+ * auto-envio do SAML, no meio de um login.
+ */
+async function chromeEstaLogado() {
+  const agora = Date.now();
+  if (_sondaCache.valor === true && agora - _sondaCache.em < 5000) return true;
+  let valor = null;
+  try {
+    const r = await fetch(PORTAS_GOVBR[0].url, { method: "GET", credentials: "include", cache: "no-store" });
+    if (r.ok) valor = vereditoLogin(r.url, await r.text());
+  } catch (_) { valor = null; }
+  _sondaCache = { em: agora, valor };
+  return valor;
+}
+
+/**
+ * Pergunta a CADA ambiente como está a sessão gov.br DO SERVIDOR.
+ *
+ * ⚠️ POR QUE ISTO EXISTE: "capturei" não é "o servidor está com a sessão viva".
+ * O vigia avisa no Telegram desde 16/09/2026 e a sessão ficou morta mais quatro
+ * dias mesmo assim — o aviso precisa chegar AQUI, no Chrome, que é onde se
+ * resolve. Devolve um item por ambiente; nunca rejeita (mesma disciplina de
+ * `enviarParaTodos`).
+ */
+async function consultarSaude(lista) {
+  const alvos = (lista || []).filter((a) => a.ativo !== false && a.token);
+  return Promise.all(alvos.map(async (amb) => {
+    const ehServiceToken = amb.token.startsWith("pactha_") || amb.token.startsWith("pacta_");
+    const auth = ehServiceToken
+      ? { "X-Service-Token": amb.token }
+      : { Authorization: `Bearer ${amb.token}` };
+    try {
+      const r = await fetch(`${amb.api}/session-capture/saude`, { headers: auth, cache: "no-store" });
+      // 404 = servidor ainda sem esta rota (deploy antigo): não é "caiu".
+      if (!r.ok) return { nome: amb.nome, ok: false, detalhe: `HTTP ${r.status}` };
+      const d = await r.json().catch(() => ({}));
+      return {
+        nome: amb.nome, ok: true,
+        login: d.login || "sem_medicao",
+        precisa_recapturar: d.precisa_recapturar === true,
+        modulos: d.modulos || "",
+        candidata_pendente: d.candidata_pendente === true,
+        medido_ha_min: d.login_medido_ha_min,
+      };
+    } catch (e) {
+      return { nome: amb.nome, ok: false, detalhe: String(e && e.message || e).slice(0, 60) };
+    }
+  }));
+}
+
+/** Algum ambiente MEDIU que o login caiu? Falha de rede/404 não conta. */
+function algumPrecisaRecapturar(itens) {
+  return (itens || []).some((i) => i.ok && i.precisa_recapturar);
 }
 
 /** "3 de 5 ambientes" — o resumo que acompanha a lista, nunca a substitui. */

@@ -42,15 +42,24 @@ const TARGETS = [
     key: "govbr",
     keepAliveUrl: "https://discricionarias.transferegov.sistema.gov.br/voluntarias/",
   },
+  /* ⚠️ `gatilho: false` — ESTES DOIS NÃO DISPARAM MAIS CAPTURA (21/09/2026).
+     `www.gov.br` é o portal de notícias e `sso.acesso.gov.br` é A PRÓPRIA TELA DE
+     LOGIN: navegar neles deslogado mandava um jar SEM login para os seis Cofres,
+     por cima da sessão viva do servidor. Os cookies deles continuam ENTRANDO no
+     jar (`getAllCookiesForDomain` coleta "gov.br" inteiro); o que saiu foi só o
+     gatilho. Depois do login o gov.br devolve para o TransfereGov, e é LÁ que a
+     captura dispara — já com a sessão pronta. */
   {
     matches: (h) => h === "www.gov.br" || h === "gov.br" || h.endsWith(".gov.br") && h.includes("transferegov"),
     key: "govbr",
     keepAliveUrl: null,
+    gatilho: false,
   },
   {
     matches: (h) => h === "sso.acesso.gov.br" || h.endsWith(".acesso.gov.br"),
     key: "govbr",
     keepAliveUrl: null,
+    gatilho: false,
   },
   {
     matches: (h) => h === "consultafns.saude.gov.br",
@@ -165,7 +174,8 @@ async function getAllCookiesForDomain(host) {
   return out;
 }
 
-async function capture(host, reason) {
+async function capture(host, reason, opts) {
+  const forcar = !!(opts && opts.forcar);   // a captura FINAL do roteiro fura o debounce
   const cfg = await getConfig();
   /* ⚠️ O PORTEIRO OLHA A LISTA, e a versao anterior desta funcao NAO olhava —
      era o defeito mais grave desta mudanca, achado em revisao antes de subir.
@@ -191,9 +201,22 @@ async function capture(host, reason) {
 
   const now = Date.now();
   const dKey = `${target.key}:${host}`;
-  if (lastCaptureAt.has(dKey) && now - lastCaptureAt.get(dKey) < DEBOUNCE_MS) {
+  if (!forcar && lastCaptureAt.has(dKey) && now - lastCaptureAt.get(dKey) < DEBOUNCE_MS) {
     console.log(`[PACTHA] debounce ativo p/ ${dKey}`);
     return;
+  }
+  /* ⭐ O PORTEIRO DO LOGIN: jar `govbr` só sai com o Chrome LOGADO (ver
+     `chromeEstaLogado` em ambientes.js). `null` = a sonda não soube dizer, e aí
+     a captura SEGUE — o servidor tem a guarda dele.
+     ⚠️ ANTES de marcar o debounce: durante um login, a página de auto-envio do
+     SAML dispara esta função ainda deslogada — se ela marcasse o debounce, a
+     captura BOA, dois segundos depois, seria descartada por 30s. */
+  if (target.key === "govbr") {
+    const logado = await chromeEstaLogado();
+    if (logado === false) {
+      console.log(`[PACTHA] Chrome sem login gov.br — nada enviado [${reason}@${host}]`);
+      return;
+    }
   }
   lastCaptureAt.set(dKey, now);
 
@@ -258,6 +281,9 @@ async function capture(host, reason) {
         falhas: ruins.map((r) => `${r.nome}: ${r.detalhe}`),
       },
     });
+    // O servidor mede a sessão nova no próximo keepalive (até ~10 min); o selo
+    // é reconferido já e de novo no próximo alarme.
+    atualizarSaude({ forcar: true });
   } catch (e) {
     console.error("[PACTHA] erro de rede:", e);
     chrome.storage.local.set({
@@ -271,12 +297,94 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
   if (details.frameId !== 0) return; // só main frame
   try {
     const u = new URL(details.url);
-    if (resolveTarget(u.hostname)) {
+    const alvo = resolveTarget(u.hostname);
+    if (alvo && alvo.gatilho !== false) {
       // Pequeno delay pra cookies do response settlearem
       setTimeout(() => capture(u.hostname, "navigation"), 1500);
     }
   } catch (e) { /* ignore */ }
 }, { url: [{ schemes: ["https"] }] });
+
+/* ROTEIRO DA CAPTURA COMPLETA — o botão do popup. Abre as QUATRO portas
+   (`PORTAS_GOVBR`, em ambientes.js) na MESMA aba, uma depois da outra, e no fim
+   faz UMA captura forçada com o jar inteiro.
+
+   ⚠️ NÃO AUTOMATIZA LOGIN. Se a porta cair na tela do gov.br, o roteiro PARA e
+   espera: quem loga é a pessoa (reCAPTCHA). Quando o gov.br devolve para o
+   TransfereGov, a navegação completa de novo e o roteiro segue sozinho.
+
+   ⚠️ O ESTADO MORA NO STORAGE, não numa variável: o service worker do MV3 morre
+   com ~30s de ócio, e o login leva minutos. Vence em 20 min para não sequestrar
+   uma aba esquecida. */
+const ROTEIRO_TTL_MS = 20 * 60 * 1000;
+
+function iniciarCapturaCompleta() {
+  chrome.tabs.create({ url: PORTAS_GOVBR[0].url }, (tab) => {
+    chrome.storage.local.set({ pactha_roteiro: { tabId: tab.id, passo: 0, em: Date.now() } });
+  });
+}
+
+async function avancarRoteiro(details) {
+  const { pactha_roteiro: rot } = await chrome.storage.local.get(["pactha_roteiro"]);
+  if (!rot || details.tabId !== rot.tabId) return;
+  if (Date.now() - rot.em > ROTEIRO_TTL_MS) {
+    await chrome.storage.local.remove("pactha_roteiro");
+    return;
+  }
+  if (pareceLogin(details.url)) return;            // esperando a PESSOA logar
+  let host = "";
+  try { host = new URL(details.url).hostname; } catch (_) { return; }
+  // Só conta página do TransfereGov — e o `idp.` dele é o SAML EM TRÂNSITO
+  // (form auto-post): avançar ali abortaria o login daquela porta no meio.
+  if (!host.endsWith("transferegov.sistema.gov.br") || host.startsWith("idp.")) return;
+  /* ⚠️ SÓ AVANÇA SE A PÁGINA ASSENTOU. O SAML encadeia navegações; trocar a URL
+     da aba no meio da cadeia mata a sessão da porta que estava nascendo. Espera
+     3s e confere que a aba continua NA MESMA URL e que ninguém avançou antes. */
+  const semFragmento = (u) => String(u || "").split("#")[0];
+  const conferir = async (tentativa) => {
+    try {
+      const tab = await chrome.tabs.get(rot.tabId);
+      if (!tab || semFragmento(tab.url) !== semFragmento(details.url)) return;  // navegou: o próximo evento decide
+      /* ⚠️ `status`, e não só a URL: a página de auto-envio do SAML pode ter A
+         MESMA URL da página final. Enquanto o POST ao idp está pendente a aba
+         fica "loading" — avançar aí mataria a sessão da porta que estava
+         nascendo. Reconfere de 2 em 2s, até ~20s. */
+      if (tab.status !== "complete") {
+        if (tentativa < 10) setTimeout(() => conferir(tentativa + 1), 2000);
+        return;
+      }
+      const { pactha_roteiro: atual } = await chrome.storage.local.get(["pactha_roteiro"]);
+      if (!atual || atual.passo !== rot.passo || atual.tabId !== rot.tabId) return;
+      const proximo = rot.passo + 1;
+      if (proximo < PORTAS_GOVBR.length) {
+        await chrome.storage.local.set({ pactha_roteiro: { ...rot, passo: proximo } });
+        chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[proximo].url });
+      } else {
+        await chrome.storage.local.remove("pactha_roteiro");
+        capture(host, "captura_completa", { forcar: true });
+        // De novo em 12s: a sessão da ÚLTIMA porta pode terminar de nascer depois
+        // do primeiro envio, e o debounce engoliria a captura natural dela.
+        setTimeout(() => capture(host, "captura_completa_2", { forcar: true }), 12000);
+      }
+    } catch (e) {
+      console.warn("[PACTHA] roteiro (avanço): " + (e && e.message || e));
+    }
+  };
+  setTimeout(() => conferir(0), 3000);
+}
+
+chrome.webNavigation.onCompleted.addListener((details) => {
+  if (details.frameId !== 0) return;
+  avancarRoteiro(details).catch((e) => console.warn("[PACTHA] roteiro: " + (e && e.message || e)));
+}, { url: [{ schemes: ["https"] }] });
+
+chrome.runtime.onMessage.addListener((msg, _sender, responder) => {
+  if (msg && msg.tipo === "captura_completa") {
+    iniciarCapturaCompleta();
+    responder({ ok: true });
+  }
+  return false;
+});
 
 // 2) COOKIE LISTENER — dispara quando cookies de sessão são criados/renovados
 chrome.cookies.onChanged.addListener(async (changeInfo) => {
@@ -285,7 +393,7 @@ chrome.cookies.onChanged.addListener(async (changeInfo) => {
   if (!TRIGGER_COOKIE_NAMES.has(c.name)) return;
   const host = (c.domain || "").replace(/^\./, "");
   const target = resolveTarget(host);
-  if (!target) return;
+  if (!target || target.gatilho === false) return;
   // delay pra deixar o conjunto inteiro de cookies da resposta chegar
   setTimeout(() => capture(host, `cookie:${c.name}`), 2500);
 });
@@ -320,18 +428,61 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         credentials: "include",
         cache: "no-store",
       });
-      console.log(`[PACTHA] keep-alive ${t.keepAliveUrl} → HTTP ${r.status}`);
-      // Após ping bem-sucedido, re-captura cookies (servidor pode ter rotacionado)
-      if (r.ok) {
+      console.log(`[PACTHA] keep-alive ${t.keepAliveUrl} → HTTP ${r.status} (${r.url})`);
+      // Após ping bem-sucedido, re-captura cookies (servidor pode ter rotacionado).
+      // ⚠️ `r.ok` SOZINHO MENTIA: o fetch segue o redirect, e a TELA DE LOGIN do
+      // gov.br responde 200. Com o Chrome deslogado isto mandava, de 12 em 12
+      // minutos, um jar sem login por cima da sessão viva dos seis servidores.
+      if (r.ok && !pareceLogin(r.url)) {
         try {
           const u = new URL(t.keepAliveUrl);
           setTimeout(() => capture(u.hostname, "keepalive"), 2000);
         } catch (e) { /* ignore */ }
+      } else if (r.ok) {
+        console.log("[PACTHA] keep-alive caiu na tela de login — Chrome sem sessão, nada enviado");
       }
     } catch (e) {
       console.warn(`[PACTHA] keep-alive falhou ${t.keepAliveUrl}: ${e.message}`);
     }
   }
+  await atualizarSaude({ forcar: true });
 });
+
+/* SAÚDE DA SESSÃO DO SERVIDOR → selo no ícone. Roda junto do alarme (12 min),
+   ao subir o service worker e depois de cada captura. Vermelho "!" só quando
+   algum ambiente MEDIU que o login caiu; falha de rede ou servidor ainda sem a
+   rota não pinta nada (alarme que toca à toa deixa de ser lido). */
+async function atualizarSaude(opts) {
+  try {
+    /* O service worker renasce a cada evento (qualquer cookie, qualquer aba): sem
+       este freio, a chamada do topo do arquivo faria 6 GETs toda vez. Alarme e
+       captura passam `forcar`. */
+    if (!(opts && opts.forcar)) {
+      const { pactha_saude: ult } = await chrome.storage.local.get(["pactha_saude"]);
+      if (ult && ult.quando && Date.now() - Date.parse(ult.quando) < 5 * 60 * 1000) return;
+    }
+    const itens = await consultarSaude(await lerAmbientes());
+    await new Promise((r) => chrome.storage.local.set(
+      { pactha_saude: { quando: new Date().toISOString(), itens } }, r));
+    // Sem NENHUMA resposta (offline, deploy no meio) não se sabe nada: o selo fica
+    // como estava — apagar o "!" aqui seria afirmar que a sessão voltou.
+    if (!itens.some((i) => i.ok)) return;
+    const caiu = algumPrecisaRecapturar(itens);
+    if (chrome.action && chrome.action.setBadgeText) {
+      chrome.action.setBadgeText({ text: caiu ? "!" : "" });
+      if (caiu && chrome.action.setBadgeBackgroundColor) {
+        chrome.action.setBadgeBackgroundColor({ color: "#c53030" });
+      }
+      chrome.action.setTitle({
+        title: caiu
+          ? "PACTHA — a sessão gov.br do servidor CAIU. Clique para recapturar."
+          : "PACTHA - Captura Automática",
+      });
+    }
+  } catch (e) {
+    console.warn("[PACTHA] saúde da sessão: " + (e && e.message || e));
+  }
+}
+atualizarSaude();
 
 console.log("[PACTHA] service worker carregado");

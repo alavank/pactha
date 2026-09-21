@@ -193,6 +193,23 @@ def test_cabecalho_sobrevive_ao_corte():
     assert "PACTHA — resumo da coleta" in msg
 
 
+def test_dry_run_imprime_no_log_os_itens_que_o_telegram_cortou(monkeypatch, capsys):
+    """Quem roda o dry run esta CONFERINDO producao. Em 21/09/2026 a pergunta era
+    "a recaptura pegou nos seis?" e o item decisivo estava entre os cortados."""
+    achados = [{"tipo": "fonte_parada", "chave": f"fonte{i}", "mensagem": "y" * 300,
+                "criado_em": "2026-09-09T03:00:00"} for i in range(80)]
+    monkeypatch.setenv("RESUMO_DRY_RUN", "1")
+    monkeypatch.setattr(rc, "_tenants", lambda: [{"slug": "freitas"}])
+    monkeypatch.setattr(rc, "coletar", lambda t, j: _tenant_ok(achados=achados))
+    monkeypatch.setattr(rc, "tenants_ausentes", lambda a, b: [])
+    monkeypatch.setattr(rc, "enviar", lambda t: pytest.fail("dry run enviou"))
+    assert rc.main() == 0
+    saida = capsys.readouterr().out
+    assert "nao couberam" in saida and "lista COMPLETA" in saida
+    completa = saida[saida.index("lista COMPLETA"):]
+    assert all(f"fonte{i}" in completa for i in range(80)), "o log do dry run tambem cortou"
+
+
 def test_envio_nao_manda_parse_mode(monkeypatch):
     """Se voltar `parse_mode`, o `_` de transferegov_opendata mata o relatorio."""
     import json as _json

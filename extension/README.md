@@ -56,9 +56,36 @@ Pronto. A partir de agora, **não precisa mais clicar em nada**.
 
 A extensão tem 3 mecanismos rodando em paralelo:
 
+### 0. Captura completa e o selo do ícone (2.4.0)
+
+O TransfereGov tem **quatro portas com sessão própria** (login, mandatárias
+`/private/`, execução, prestação). Logar só na primeira deixa as outras três fora
+do que o servidor recebe. O botão **"Captura completa (abre as 4 portas)"** do
+popup abre as quatro na mesma aba, uma depois da outra; se cair na tela do
+gov.br, ele **para e espera você logar** (não automatiza login) e segue sozinho
+depois. No fim faz uma captura com tudo.
+
+O ícone ganha um **"!" vermelho** quando algum servidor PACTHA **mediu** que o
+login caiu (`GET /api/session-capture/saude`, a cada 12 min e ao abrir o popup).
+"Capturei" não é "está vivo no servidor" — o popup mostra uma linha por ambiente.
+
+⚠️ **Não clique em "Sair"** no TransfereGov nem no gov.br: é a mesma sessão que
+os seis servidores usam.
+
+**O porteiro (2.4.0):** toda captura `govbr` — navegação, cookie trocado, alarme
+e o botão manual — passa por `chromeEstaLogado()` (`ambientes.js`), que sonda a
+porta 1 e olha o **corpo** da resposta. Deslogado, o TransfereGov pode responder
+HTTP 200 *na mesma URL* com o formulário SAML de auto-envio; olhar só a URL dizia
+"logado". Chrome deslogado ⇒ nada é enviado. Se a sonda não souber dizer (rede,
+layout novo), a captura **segue**: o servidor tem a guarda dele, e travar por
+dúvida impediria a recaptura.
+
 ### 1. Auto-captura em cada navegação
-Quando você abre qualquer URL em `*.transferegov.sistema.gov.br`,
-`*.acesso.gov.br`, `gov.br/transferegov` ou portais de saúde monitorados:
+Quando você abre qualquer URL em `*.transferegov.sistema.gov.br` ou nos portais
+de saúde monitorados (⚠️ `www.gov.br` e a tela de login `sso.acesso.gov.br`
+**não disparam mais** captura desde a 2.4.0 — navegar neles deslogado mandava um
+jar sem login por cima da sessão viva dos servidores; os cookies deles continuam
+entrando no jar):
 - Espera 1.5s pra cookies da resposta settlearem
 - Lê TODOS os cookies dos domínios relevantes (incluindo subdomínios irmãos
   do transferegov que compartilham SSO)
@@ -80,7 +107,13 @@ A cada 12 minutos:
 - Mantém a sessão JEE viva no servidor (que expiraria em 20-30min de
   inatividade)
 - Após cada ping bem-sucedido, re-captura cookies (servidor pode rotacionar
-  o JSESSIONID)
+  o JSESSIONID) — **só com o Chrome logado** (o porteiro acima): deslogado, o
+  portal devolve HTTP 200 do mesmo jeito, e tratar isso como "sessão viva"
+  mandava o jar deslogado aos servidores de 12 em 12 minutos
+
+E o servidor se defende sozinho, com qualquer versão da extensão: se a sessão
+dele está **viva**, a captura que chega fica como *candidata* e só é promovida
+se autenticar; sessão **morta** aceita a recaptura na hora.
 
 **Resultado**: você loga no gov.br/TransfereGov uma vez por dia (ou quando
 o SSO expirar de verdade — pode durar horas), deixa o Chrome aberto, e o
@@ -101,7 +134,7 @@ Abrindo o ícone PACTHA você vê:
 - ✅ **Modo automático ativo** (verde) ou ⚠️ desligado (âmbar)
 - Domínio atual da aba
 - **Última captura**: `✓ discricionarias.transferegov.sistema.gov.br · 13
-  cookies (6 httpOnly) · 1min atrás · scraper disparado`
+  cookies (6 httpOnly) · 6 de 6 ambiente(s) · 1min atrás`
 - Botão de captura manual (override)
 
 ## Segurança
