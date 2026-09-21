@@ -511,6 +511,60 @@ def test_renew_com_FALHA_DE_REDE_e_inconclusivo__timeout_nao_vira_SSO_expirou(mo
     assert rodada.salvos() == []
 
 
+def test_veredito_de_TRES_valores__nao_autenticou_NAO_e_caiu_no_login():
+    assert gr.veredito_login(URL_OK, "Bem-vindo Sair") == "logado"
+    assert gr.veredito_login(URL_LOGIN, "Identifique-se no gov.br") == "login"
+    assert gr.veredito_login(gr.ENTRY, "Acesso restrito") == "login"
+    # pagina de erro do portal, corpo vazio (evaluate falhou), SAML em transito: NAO SEI
+    assert gr.veredito_login(gr.ENTRY, "503 Service Temporarily Unavailable") == "nao_sei"
+    assert gr.veredito_login(gr.ENTRY, "") == "nao_sei"
+    assert gr.veredito_login(gr.ENTRY, "Acesso restrito", http_status=503) == "nao_sei"
+
+
+@pytest.mark.parametrize("corpo", ["503 Service Temporarily Unavailable", ""])
+def test_renew_com_PAGINA_DE_ERRO_do_portal_e_inconclusivo(monkeypatch, rodada, corpo):
+    """`page.goto` NAO levanta para HTTP 5xx. Com o bool de antes, um portal fora
+    do ar por minutos virava `govbr_sso=erro` — que DESLIGA a guarda do endpoint e
+    reabre a porta para o jar deslogado gravar por cima da sessao viva."""
+    _playwright_falso(monkeypatch, _Page("about:blank", corpo, destinos=[gr.ENTRY]))
+    assert asyncio.run(gr.renew()) == "inconclusivo"
+    assert rodada.salvos() == []
+
+
+@pytest.mark.parametrize("corpo", ["503 Service Temporarily Unavailable", ""])
+def test_candidata_NAO_e_apagada_por_pagina_de_erro_do_portal(monkeypatch, worker, corpo):
+    _playwright_falso(monkeypatch, _Page("about:blank", corpo, destinos=[gr.ENTRY]))
+    assert asyncio.run(gr.processa_candidata()) == "inconclusivo"
+    assert worker.passos == [] and worker.registros == [], \
+        "candidata apagada com o diagnostico falso 'jar sem login' — era o portal fora do ar"
+
+
+def test_candidata_que_nao_se_consegue_testar_nao_prende_a_fila_para_sempre(monkeypatch, worker):
+    from datetime import datetime, timedelta, timezone
+    velha = datetime.now(timezone.utc) - timedelta(hours=gr.CANDIDATA_MAX_H + 1)
+    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [{"name": "J", "value": "x", "domain": ".gov.br"}], velha))
+    _playwright_falso(monkeypatch, _Page("about:blank", "503", destinos=[gr.ENTRY]))
+    assert asyncio.run(gr.processa_candidata()) == "recusada"
+    assert "nao foi possivel testar" in worker.encerradas()[0][1], "descartada com o motivo de outra coisa"
+    assert worker.salvos() == []
+    # e a nova (minutos de idade) espera
+    nova = datetime.now(timezone.utc) - timedelta(minutes=20)
+    assert gr._candidata_velha(nova) is False and gr._candidata_velha("c1") is False
+
+
+def test_renew_inconclusivo_NAO_e_mudo__a_rodada_fica_registrada(monkeypatch):
+    """Se o layout do portal mudar (sumir o "Sair"), toda rodada vira inconclusiva;
+    sem este registro nada diria isso em lugar nenhum."""
+    gravou = []
+    monkeypatch.setattr(gr, "_grava_estado", lambda *a: gravou.append(a))
+    gr._registra_rodada("inconclusivo")
+    gr._registra_rodada("reconnected")
+    assert [(g[0], g[1]) for g in gravou] == [(gr.SOURCE_RODADA, "partial"), (gr.SOURCE_RODADA, "success")]
+    assert gr.SOURCE_RODADA not in (gr.SOURCE_SSO, gr.SOURCE_SESSAO), "nao pode ligar/desligar a guarda"
+    src = (RAIZ / "ingestion" / "govbr_renew.py").read_text(encoding="utf-8")
+    assert "_registra_rodada(resultado)" in src[src.index('if __name__ == "__main__"'):]
+
+
 def test_inconclusivo_nao_escreve_no_ingestion_log(monkeypatch):
     conectou = []
     monkeypatch.setattr(gr.psycopg2, "connect", lambda *a, **k: conectou.append(True))
@@ -528,6 +582,26 @@ def test_o_delete_da_candidata_e_versionado_e_avisa_quando_nao_apagou(monkeypatc
     assert "DELETE FROM cofre_senhas" in sql and "AND updated_at=%s" in sql
     assert params == (8, gr.CHAVE_CANDIDATA, "c1")
     assert len(cur.sql) == 1, "sem apagar nao se anota veredito na sessao em uso"
+
+
+def test_duplicatas_mais_ANTIGAS_da_candidata_vao_junto__a_mais_nova_fica(monkeypatch):
+    """O endpoint faz SELECT+INSERT sem trava e a API sobe com 2 workers: dois
+    POSTs simultaneos criam DUAS candidatas, e a velha seria promovida depois,
+    por cima do jar mais completo."""
+    cur = _Cur(rowcount=1)
+    monkeypatch.setattr(gr.psycopg2, "connect", lambda *a, **k: _ConnCtx(cur))
+    assert gr._encerra_candidata(8, "promovida", None, versao="c1") is True
+    assert "WHERE id=%s" in cur.sql[0][0] and cur.sql[0][1] == (8, gr.CHAVE_CANDIDATA, "c1"), \
+        "o 1o DELETE continua sendo o da linha TESTADA (o rowcount dele decide o retorno)"
+    sql, params = cur.sql[1]
+    assert "DELETE FROM cofre_senhas" in sql and "id<>%s" in sql and "updated_at<=%s" in sql
+    assert params == (gr.CHAVE_CANDIDATA, 8, "c1")
+
+
+def test_o_endpoint_e_o_worker_falam_da_MESMA_candidata__a_mais_nova():
+    src = (RAIZ / "routers" / "session_capture.py").read_text(encoding="utf-8")
+    trecho = src[src.index("CofreSenha.automation_key == CHAVE_CANDIDATA"):][:400]
+    assert "order_by(CofreSenha.updated_at.desc())" in trecho
 
 
 def test_a_candidata_e_lida_SEM_piso_de_tamanho(monkeypatch):

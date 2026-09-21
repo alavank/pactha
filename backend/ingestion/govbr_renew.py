@@ -283,6 +283,23 @@ def _registra_sso(resultado: str) -> None:
         _grava_estado(SOURCE_SSO, "erro", 0, FRASE_SSO_EXPIROU)
 
 
+# A RODADA do renew, separada do veredito do login. `inconclusivo` nao escreve em
+# `govbr_sso` (ver `_registra_sso`) — e sem ISTO ele seria mudo: se o portal mudar
+# o layout (sumir o "Sair"), toda rodada passa a ser inconclusiva e nada diria
+# isso em lugar nenhum. 'partial' enquanto a ultima rodada nao soube julgar; volta
+# a 'success' sozinho na primeira que souber. Nao liga nem desliga guarda nenhuma.
+SOURCE_RODADA = "govbr_renew"
+
+
+def _registra_rodada(resultado: str) -> None:
+    if resultado == "inconclusivo":
+        _grava_estado(SOURCE_RODADA, "partial", 0,
+                      "rodada inconclusiva: o portal nao devolveu pagina reconhecivel (nem logado, "
+                      "nem tela de login) — se persistir por horas, o layout do TransfereGov mudou")
+    else:
+        _grava_estado(SOURCE_RODADA, "success", 1, None)
+
+
 # O destino de cada captura CANDIDATA, no banco e nao so no log do container: a
 # promocao troca o jar inteiro da sessao em uso, e "a sessao morreu depois de uma
 # promocao?" precisa ter resposta. 'partial' (e nao 'erro') na recusa: a sessao
@@ -371,6 +388,19 @@ async def _add_cookies_tolerante(ctx, cookies: list) -> int:
 # CANDIDATA — a captura que chegou com a sessao VIVA (ver session_capture.py)
 # =====================================================================
 CHAVE_CANDIDATA = "govbr_candidata"   # o mesmo nome de routers/session_capture.py
+# Candidata que nao se consegue TESTAR (portal fora, pagina irreconhecivel) espera
+# a proxima rodada — mas nao para sempre: depois disto e descartada com motivo
+# proprio. Fila presa tambem e defeito, e um jar de 6h ja nao e "login novo".
+CANDIDATA_MAX_H = 6
+
+
+def _candidata_velha(versao) -> bool:
+    from datetime import datetime, timedelta, timezone
+    if not isinstance(versao, datetime):
+        return False
+    if versao.tzinfo is None:
+        versao = versao.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - versao > timedelta(hours=CANDIDATA_MAX_H)
 
 
 def _load_candidata() -> tuple[int | None, list | None, object]:
@@ -445,6 +475,16 @@ def _encerra_candidata(cand_id: int, veredito: str, principal_id: int | None,
                 log.info("candidata mudou durante o teste (captura nova) — fica para a proxima rodada")
                 conn.close()
                 return False
+            if versao is not None:
+                # DUPLICATAS MAIS ANTIGAS vao junto. O endpoint faz SELECT+INSERT sem
+                # trava e a API sobe com 2 workers: dois POSTs simultaneos (a extensao
+                # manda varios por login) criam DUAS linhas candidatas, e a mais velha
+                # seria promovida DEPOIS, por cima do jar mais completo. ⚠️ Em DELETE
+                # separado: o rowcount de cima tem de continuar significando "apaguei
+                # a linha TESTADA". Captura que chegou durante o teste tem updated_at
+                # maior e fica.
+                cur.execute("DELETE FROM cofre_senhas WHERE automation_key=%s AND municipio_id IS NULL "
+                            "AND id<>%s AND updated_at<=%s", (CHAVE_CANDIDATA, cand_id, versao))
             if principal_id:
                 cur.execute("SELECT observacao FROM cofre_senhas WHERE id=%s", (principal_id,))
                 row = cur.fetchone()
@@ -500,8 +540,9 @@ async def processa_candidata() -> str:
             _registra_candidata("recusada", "nenhum cookie carregavel")
             return "recusada"
         page = await ctx.new_page()
+        resp = None
         try:
-            await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
+            resp = await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
         except Exception as e:
             log.warning(f"candidata: navegacao nao completou ({str(e)[:80]}) — fica para a proxima rodada")
             await br.close()
@@ -513,7 +554,22 @@ async def processa_candidata() -> str:
         except Exception:
             pass
         url_final = page.url or ""
-        if not _is_authenticated(url_final, body):
+        veredito = veredito_login(url_final, body, getattr(resp, "status", None))
+        if veredito == "nao_sei":
+            # Pagina de erro do portal, corpo vazio, SAML ainda em transito: NAO e
+            # prova de jar deslogado. A candidata fica — ate envelhecer: fila presa
+            # para sempre tambem e defeito.
+            await br.close()
+            if _candidata_velha(versao):
+                if _encerra_candidata(cand_id, "descartada (nao foi possivel testar em "
+                                      f"{CANDIDATA_MAX_H}h)", principal_id, versao):
+                    _registra_candidata("recusada", f"nao foi possivel testar em {CANDIDATA_MAX_H}h "
+                                                    "(portal fora do ar ou pagina irreconhecivel)")
+                    return "recusada"
+            log.warning(f"candidata: pagina irreconhecivel em {url_final[:60]} "
+                        "(nem logado, nem tela de login) — fica para a proxima rodada")
+            return "inconclusivo"
+        if veredito == "login":
             await br.close()
             log.info(f"candidata RECUSADA: caiu em {url_final[:60]} — Chrome do dono sem login; "
                      "a sessao em uso NAO foi tocada")
@@ -562,11 +618,34 @@ async def processa_candidata() -> str:
         log.error(f"candidata: falha ao promover ({str(e)[:100]})")
         return "inconclusivo"
 
-def _is_authenticated(url: str, body: str) -> bool:
+def _eh_tela_de_login(url: str, body: str) -> bool:
     u = (url or "").lower(); b = (body or "").lower()
-    if "/idp/" in u or "sso.acesso.gov.br" in u or "identifique-se" in b or "acesso restrito" in b:
+    return "/idp/" in u or "sso.acesso.gov.br" in u or "identifique-se" in b or "acesso restrito" in b
+
+
+def _is_authenticated(url: str, body: str) -> bool:
+    if _eh_tela_de_login(url, body):
         return False
-    return "voluntarias" in u and "sair" in b
+    return "voluntarias" in (url or "").lower() and "sair" in (body or "").lower()
+
+
+def veredito_login(url: str, body: str, http_status: int | None = None) -> str:
+    """'logado' | 'login' | 'nao_sei' — TRES valores, e o terceiro e o que importa.
+
+    ⚠️ "NAO AUTENTICOU" NAO E "CAIU NO LOGIN". `page.goto` nao levanta para HTTP
+    502/503 nem para pagina de manutencao, e um `evaluate` que falha no meio do
+    auto-submit do SAML deixa o corpo vazio: com o bool de antes tudo isso virava
+    "SSO expirou — recapturar". E `govbr_sso=erro` DESLIGA a guarda do endpoint de
+    captura: um portal fora do ar por minutos reabria a porta para o jar deslogado
+    do Chrome gravar por cima da sessao viva (o vigia ja sabia: "uma so pode ser o
+    portal fora do ar por minutos"). So ha veredito negativo com PROVA POSITIVA da
+    tela de login; sem prova para nenhum lado, a rodada e inconclusiva e nao
+    escreve nada."""
+    if _is_authenticated(url, body):
+        return "logado"
+    if (http_status or 0) >= 500:
+        return "nao_sei"
+    return "login" if _eh_tela_de_login(url, body) else "nao_sei"
 
 
 async def renew() -> str:
@@ -594,8 +673,9 @@ async def renew() -> str:
                                               "Chrome/131.0.0.0 Safari/537.36")
         await _add_cookies_tolerante(ctx, cookies)
         page = await ctx.new_page()
+        resp = None
         try:
-            await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
+            resp = await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
         except Exception as e:
             # A pagina nem carregou: nao ha o que julgar. Antes isto seguia,
             # `_is_authenticated('about:blank', '')` dava False e um TIMEOUT virava
@@ -609,7 +689,15 @@ async def renew() -> str:
             body = await page.evaluate("() => document.body.innerText")
         except Exception:
             pass
-        if not _is_authenticated(page.url, body):
+        veredito = veredito_login(page.url, body, getattr(resp, "status", None))
+        if veredito == "nao_sei":
+            # Ver `veredito_login`: pagina de erro/corpo vazio nao e "SSO expirou".
+            log.warning(f"pagina irreconhecivel em {(page.url or '')[:60]} (HTTP "
+                        f"{getattr(resp, 'status', '?')}; nem logado, nem tela de login) — "
+                        "rodada INCONCLUSIVA, nada gravado")
+            await br.close()
+            return "inconclusivo"
+        if veredito == "login":
             log.warning(f"SSO expirou (caiu em {page.url[:60]}) — precisa RE-CAPTURA "
                         f"(login tem reCAPTCHA, nao automatizavel)")
             await br.close()
@@ -769,4 +857,5 @@ if __name__ == "__main__":
     else:
         resultado = asyncio.run(renew())
         _registra_sso(resultado)
+        _registra_rodada(resultado)
         print(resultado)

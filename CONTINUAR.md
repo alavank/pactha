@@ -2025,9 +2025,20 @@ ponta; cada correção foi conferida por mutação: desfeita, a suíte fica verm
    gravar, e o lote que falha é refeito cookie a cookie (`_add_cookies_tolerante`). **Login provado
    vivo no keepalive vira `govbr_sso` success na hora** — é essa fonte que liga a guarda 1; sem isso,
    depois de uma recaptura a guarda ficava desligada até o `renew` horário (até ~60 min). Só o
-   positivo: quem declara o login morto continua sendo o `renew`, e **`renew` com falha de rede é
-   `inconclusivo`** (não escreve nada) — antes um timeout virava "SSO expirou — recapturar" no
-   Telegram e desligava a guarda.
+   positivo: quem declara o login morto continua sendo o `renew`.
+   **Veredito de TRÊS valores** (`veredito_login`: `logado` | `login` | `nao_sei`), no `renew` e na
+   candidata: "não autenticou" ≠ "caiu no login". `page.goto` não levanta para 502/503 nem página de
+   manutenção, e `evaluate` que falha no meio do SAML deixa o corpo vazio — com o bool de antes isso
+   virava "SSO expirou — recapturar" no Telegram **e desligava a guarda 1** (portal fora por minutos
+   reabria a porta para o jar deslogado). Só há veredito negativo com **prova positiva** da tela de
+   login (URL `/idp/`/`sso.acesso`, ou "identifique-se"/"acesso restrito" no corpo); o resto é
+   `inconclusivo` e não escreve em `govbr_sso`. Para não ficar mudo se o layout mudar (sumir o
+   "Sair"), a rodada do renew vai para a fonte **`govbr_renew`** (partial = última rodada
+   inconclusiva; volta a success sozinha) — não liga nem desliga guarda nenhuma. Candidata que não
+   se consegue testar espera a próxima rodada, e é descartada com motivo próprio depois de
+   `CANDIDATA_MAX_H` (6h). Duplicatas mais antigas da candidata (dois POSTs simultâneos, API com 2
+   workers, SELECT+INSERT sem trava) são apagadas junto com a testada; endpoint e worker leem
+   sempre a mais nova.
 4. **Gravação condicional** (`_load_govbr_v` + `_save_cookies(..., visto_em)`): rodada que leu o jar
    velho não engole a recaptura feita no meio (`updated_at` tem `onupdate` no modelo).
 5. **Extensão 2.4.0:** `www.gov.br` e `sso.acesso` deixam de ser GATILHO (os cookies deles seguem no
@@ -2040,7 +2051,9 @@ ponta; cada correção foi conferida por mutação: desfeita, a suíte fica verm
    do debounce (senão a página SAML do meio do login engolia a captura boa). Botão **"Captura
    completa (abre as 4 portas)"** — roteiro no service worker, estado no storage, **para e espera**
    na tela de login (não automatiza login), só avança com a aba `complete` e na mesma URL, e fecha
-   com duas capturas forçadas (a 2ª em 12s, para a sessão da última porta); **selo vermelho "!" no
+   com duas capturas forçadas (a 2ª em 12s, para a sessão da última porta) — forçada = ação da
+   pessoa: o toggle "Modo automático" desligado **não** a barra (barrando, o botão virava no-op
+   silencioso); **selo vermelho "!" no
    ícone** quando algum servidor MEDIU que o login caiu (`GET /api/session-capture/saude`, mesmo
    service token, só estado e horário, **sem** carimbar `last_used_at` — "token usado hoje" tem de
    continuar significando "houve captura hoje"). Sem nenhuma resposta de servidor o selo não muda.
@@ -2074,7 +2087,10 @@ bloco do auto-scrape de vez (hoje só desligado por default — item 7); apagar
 janela_horas=1`. ⚠️ A mensagem corta em 4.096 (Telegram) **tirando itens do tenant com mais
 problemas** — em 21/09, com "22 itens que não couberam", a lista visível não respondia se o
 `govbr_sso` do trust tinha voltado (o bloco dele foi o cortado). No dry run o log agora imprime a
-**lista completa** depois da mensagem.
+**lista completa** depois da mensagem. Leitura: `govbr_sso` = login (renew horário, minuto diferente
+por tenant — erro "há 0.8h" pode ser só a medição velha); `govbr_sessao` = as 3 portas (keepalive
+*/10); item ausente = último estado é success. Recusa de `govbr_candidata` mais velha que a janela
+não é listada (é evento, não coleta periódica — viraria item fixo nos seis).
 
 ## 1.23. A SESSÃO DE 15/09/2026 — pagamento nos estaduais (SEGOV) e o pago da creche na própria linha (PR #496)
 

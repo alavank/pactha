@@ -193,6 +193,20 @@ def test_cabecalho_sobrevive_ao_corte():
     assert "PACTHA — resumo da coleta" in msg
 
 
+def test_recusa_VELHA_de_candidata_nao_vira_item_fixo__a_de_hoje_aparece():
+    """`govbr_candidata` e evento, nao coleta periodica: a recusa fica como "ultimo
+    estado" ate a proxima promocao, que pode levar semanas."""
+    def _f(horas):
+        return [{"source": "govbr_candidata", "status": "partial", "horas_desde": horas,
+                 "error_message": "captura candidata RECUSADA: jar SEM login gov.br"}]
+    assert "govbr_candidata" not in rc.montar_mensagem([_tenant_ok(fontes=_f(192.0))])
+    assert "govbr_candidata" in rc.montar_mensagem([_tenant_ok(fontes=_f(0.3))])
+    # so ESTA fonte: parcial velho de coleta periodica continua sendo noticia
+    lote = [{"source": "transferegov_lote", "status": "partial", "horas_desde": 192.0,
+             "error_message": "sessao gov.br fria"}]
+    assert "transferegov_lote" in rc.montar_mensagem([_tenant_ok(fontes=lote)])
+
+
 def test_dry_run_imprime_no_log_os_itens_que_o_telegram_cortou(monkeypatch, capsys):
     """Quem roda o dry run esta CONFERINDO producao. Em 21/09/2026 a pergunta era
     "a recaptura pegou nos seis?" e o item decisivo estava entre os cortados."""

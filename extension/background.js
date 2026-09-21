@@ -191,7 +191,11 @@ async function capture(host, reason, opts) {
     console.log("[PACTHA] nenhum ambiente com token, ignorando captura");
     return;
   }
-  if (!cfg.auto_enabled) {
+  // ⚠️ `forcar` (o fim da "Captura completa") é AÇÃO DA PESSOA, como a captura
+  // manual: o toggle do modo AUTOMÁTICO não pode barrá-la. Barrando, o botão que o
+  // alerta manda usar virava no-op silencioso com o toggle desligado — as 4 portas
+  // abriam, o roteiro "terminava" e nenhum POST saía.
+  if (!cfg.auto_enabled && !forcar) {
     console.log("[PACTHA] auto-captura desabilitada");
     return;
   }

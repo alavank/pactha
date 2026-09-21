@@ -219,6 +219,10 @@ const chk = (cond, msg) => {
     chk(/if\s*\(!itens\.some\(\(i\)\s*=>\s*i\.ok\)\)\s*return/.test(bg),
       "sem nenhuma resposta de servidor o selo não muda");
     chk(/chromeEstaLogado\(\)\)\s*===\s*false/.test(ler("popup.js")), "a captura MANUAL passa pelo mesmo porteiro");
+    chk(/if\s*\(!cfg\.auto_enabled\s*&&\s*!forcar\)/.test(bg),
+      "o toggle do modo AUTOMÁTICO não barra o fim da «Captura completa» (era no-op silencioso)");
+    chk(!/if\s*\(!cfg\.auto_enabled\)\s*\{\s*console\.log\("\[PACTHA\] auto-captura/.test(bg),
+      "não sobrou o portão antigo, que ignorava `forcar`");
   }
 
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");

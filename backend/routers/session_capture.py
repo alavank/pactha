@@ -368,6 +368,9 @@ async def capture_session(
             cand = (await db.execute(
                 select(CofreSenha).where(CofreSenha.automation_key == CHAVE_CANDIDATA)
                 .where(CofreSenha.municipio_id.is_(None))
+                # a MAIS NOVA, como o worker le (`_load_candidata`): dois POSTs
+                # simultaneos podem ter criado duas linhas; o worker limpa as velhas.
+                .order_by(CofreSenha.updated_at.desc())
             )).scalars().first()
             if cand:
                 cand.senha_encrypted = crypto.encrypt(storage_payload)

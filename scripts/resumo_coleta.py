@@ -230,6 +230,13 @@ def _limpar_mensagem_watchdog(bruta: str) -> str:
     return " ".join(limpa.split())
 
 
+def _horas(v, padrao: float = 0.0) -> float:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return padrao
+
+
 def _detalhes(r: dict) -> list:
     """As linhas do 'o que olhar' de um tenant: o porque e o onde."""
     if not r["ok"]:
@@ -254,6 +261,13 @@ def _detalhes(r: dict) -> list:
         # leituras atras do login sem retorno". Custou uma manha de investigacao
         # na mao para descobrir o que a propria mensagem ja sabia.
         parcial = status in ("parcial", "partial")
+        # `govbr_candidata` e um EVENTO, nao uma coleta periodica: a recusa de uma
+        # captura fica como "ultimo estado" ate a proxima promocao, que pode levar
+        # semanas. Recusa de hoje e noticia (o Chrome esta mandando jar sem login);
+        # a de oito dias atras viraria item fixo nos seis tenants, todo dia.
+        if (f.get("source") == "govbr_candidata" and parcial
+                and _horas(f.get("horas_desde")) > _horas(d.get("janela_horas"), 24.0)):
+            continue
         if parcial or status in ("erro", "error", "failed", "falha"):
             porque = " ".join((f.get("error_message") or "").split())
             # Parcial NAO e erro: ele trouxe dado. Icone e verbo diferentes para
