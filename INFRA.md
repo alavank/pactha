@@ -73,7 +73,7 @@ containers e seu próprio banco**, todos buildados **do mesmo código**:
 | Santa Maria | `santamaria-rs` | Prefeitura de Santa Maria/RS — **aberto em 16/08/2026**, em avaliação |
 | Nova Palma | `novapalma-rs` | Prefeitura de Nova Palma/RS — **aberto em 01/09/2026** |
 | BGK | `bgk-rs` | **Assessoria BGK** — 10 municípios do RS (Bento Gonçalves, Veranópolis, Nova Prata, Guaporé, Serafina Corrêa, São Marcos, Carlos Barbosa, Garibaldi, Portão, Giruá). **Aberto em 08/09/2026.** Environment Coolify `bgk-rs` (id 24). Domínio **`bgk.pactha.com.br` no ar desde 09/09/2026**. |
-| Juranda | `juranda-pr` | Prefeitura de Juranda/PR (IBGE 4112959) — **aberto em 22/09/2026**, o primeiro do Paraná. Só fontes federais. Environment Coolify `juranda-pr` (id 25). |
+| Juranda | `juranda-pr` | Prefeitura de Juranda/PR (IBGE 4112959) — **aberto em 22/09/2026**, o primeiro do Paraná. Fontes federais + TCE-PR. Environment Coolify `juranda-pr` (id 25). |
 
 Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O que diferencia
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
@@ -319,10 +319,12 @@ tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 > Coolify `juranda-pr` (id 25). Brasão de domínio público (Wikimedia Commons) embutido na
 > imagem do frontend.
 >
-> **Só fontes federais:** não há coletor estadual do PR. O worker tem as **21** tasks
-> federais do novapalma com **+14 min** (o bgk está a +7) — sem `cadin-rs`, `che-rs`,
-> `consulta-popular-rs`, `convenios-rs` e `fpe-rs`. As de rodízio seguem o `PLANO` do
-> `scripts/agenda_noturna.py`: lote do TransfereGov no slot **05:05 UTC**, que estava livre.
+> **Fontes:** as **21** tasks federais do novapalma com **+14 min** (o bgk está a +7) — sem
+> `cadin-rs`, `che-rs`, `consulta-popular-rs`, `convenios-rs` e `fpe-rs` —, e a **`tce-pr`**
+> (`ingestion/tce_pr.py`, 02:20 UTC = 23:20 BRT), a única estadual do PR por enquanto. Ela
+> lê o zip anual do PIT por HTTP Range: a primeira carga (2013-2026) leva ~20 s e ~20 MB;
+> as seguintes são 14 HEADs e só releem o ano cujo ETag mudou. As de rodízio seguem o
+> `PLANO` do `scripts/agenda_noturna.py`: lote do TransfereGov no slot **05:05 UTC**.
 >
 > Primeiro boot: **138/138 migrations** num banco zerado, seed com Juranda-PR, depois
 > `AUTHZ_MODO=bloqueio`. IA ligada com a mesma `ANTHROPIC_API_KEY` do montesiao-mg.

@@ -303,6 +303,19 @@ export function temConteudoEstadual(uf?: string | null): boolean {
   return CONTEUDO_ESTADUAL_POR_UF.has((uf || "").trim().toUpperCase());
 }
 
+/** UFs cujo tribunal de contas publica os dados do município em ARQUIVO
+ *  ABERTO que coletamos — ao contrário de `CONTEUDO_ESTADUAL_POR_UF`, aqui é
+ *  dado de verdade, com data. Hoje só o PR: o PIT do TCE-PR
+ *  (`backend/ingestion/tce_pr.py`). O TCE-RS tem coletor também, mas a tela
+ *  dele mora no conteúdo curado do RS e está bloqueada por IP. */
+export const TCE_ABERTO_POR_UF: Record<string, { titulo: string; fonte: string }> = {
+  PR: { titulo: "TCE-PR", fonte: "pit.tce.pr.gov.br (SIM-AM)" },
+};
+
+export function tceAbertoDaUf(uf?: string | null) {
+  return TCE_ABERTO_POR_UF[(uf || "").trim().toUpperCase()] || null;
+}
+
 export function fonteConveniosEstaduais(uf?: string | null): string | null {
   return FONTE_CONVENIOS_ESTADUAIS[(uf || "").trim().toUpperCase()] || null;
 }

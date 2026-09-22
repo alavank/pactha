@@ -5,8 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **23 official data sources** (federal +
-MG/ES/GO/RS state). Two of them landed 02/09/2026 on `feat/fontes-rs`: **SICONFI/Tesouro** (contas entregues + CAPAG — the note that decides whether the município can borrow with a federal guarantee: Nova Palma is A+, Santa Maria is C) and **TCE-RS/LicitaCon** (866 licitações and 1.202 contratos in Nova Palma, via **two collectors for the same tables**: `tce_rs.py` reads the CKAN at `dados.tce.rs.gov.br`, which returns 403 to datacenter IPs, and `tce_rs_portal.py` reads the open API at `portal.tce.rs.gov.br` — a *different host*, same acervo, plus works, measurements and the **origem do recurso** that links a construction site to the convênio that paid for it. Either way a blocked run reports `partial` with the reason instead of pretending the município has no bids). The two before them: the health **fundo a fundo**
+emendas) for Brazilian municipalities, tracking **24 official data sources** (federal +
+MG/ES/GO/RS/PR state). The newest (22/09/2026) is **TCE-PR/PIT** (`tce_pr.py`): the yearly
+SIM-AM zip of `pit.tce.pr.gov.br` (777 MB–2 GB each), read by **HTTP Range** so only the
+município's ~2 MB is fetched — convênios, obras, contratos with aditivos, and the **despesa
+por fonte de recurso**, the only source that says how much of each convênio was empenhado,
+liquidado and pago. Two of them landed 02/09/2026 on `feat/fontes-rs`: **SICONFI/Tesouro** (contas entregues + CAPAG — the note that decides whether the município can borrow with a federal guarantee: Nova Palma is A+, Santa Maria is C) and **TCE-RS/LicitaCon** (866 licitações and 1.202 contratos in Nova Palma, via **two collectors for the same tables**: `tce_rs.py` reads the CKAN at `dados.tce.rs.gov.br`, which returns 403 to datacenter IPs, and `tce_rs_portal.py` reads the open API at `portal.tce.rs.gov.br` — a *different host*, same acervo, plus works, measurements and the **origem do recurso** that links a construction site to the convênio that paid for it. Either way a blocked run reports `partial` with the reason instead of pretending the município has no bids). The two before them: the health **fundo a fundo**
 (ConsultaFNS, consolidated by bloco — the largest recurring federal health transfer, and
 the platform's only source of the money that sustains the network month to month) and the
 **radar de captação** (`siconv_programa.zip` — federal programs whose proposal window is
@@ -140,7 +144,7 @@ that area. Read the relevant one before making changes there:
 
 | Skill | Area |
 |---|---|
-| `ingestion` | scrapers/collectors, the 23 data sources, scheduling |
+| `ingestion` | scrapers/collectors, the 24 data sources, scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
 | — | **Permissão: Módulo › Tela › Ação** — a regra inteira em `docs/PERMISSOES_POR_TELA.md` |

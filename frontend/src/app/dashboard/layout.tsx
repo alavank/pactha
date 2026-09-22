@@ -52,7 +52,7 @@ import {
 import {
   ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
 } from "@/lib/configuracoes";
-import { cofinanciamentoDaUf, consultaPopularDaUf, monitoramentoDaUf, programasDaUf, repassesDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
+import { cofinanciamentoDaUf, consultaPopularDaUf, monitoramentoDaUf, programasDaUf, repassesDaUf, tceAbertoDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -272,6 +272,8 @@ function SidebarContent({
     semFonteNaUf.add("/dashboard/funrigs");
     semFonteNaUf.add("/dashboard/tce-rs");
   }
+  // TCE-PR: dado coletado do tribunal que publica em arquivo aberto (o PIT).
+  if (ufAmbiente && !tceAbertoDaUf(ufAmbiente)) semFonteNaUf.add("/dashboard/tce-pr");
   if (semFonteNaUf.size) {
     const semRepasses = (c: NavLeaf | NavSection): NavLeaf | NavSection | null => {
       // ⚠️ O filho de um grupo pode ser uma SEÇÃO (que não tem `href`, e sim

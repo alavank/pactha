@@ -428,5 +428,9 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     # 18/09/2026: 99 -> 101. `consolidado.ver` e `consolidado.exportar` — a
     # carteira inteira lado a lado (routers/consolidado.py). `exportar` entra
     # junto porque a rota de exportacao nasceu no MESMO PR.
-    assert len(permissoes.CATALOGO) == 101
+    #
+    # 22/09/2026: 101 -> 102. `tce_pr.ver` — a primeira tela do Parana: o que o
+    # municipio declarou ao TCE-PR (convenios, obras, contratos e a despesa por
+    # fonte de recurso). UMA chave: a tela so LE.
+    assert len(permissoes.CATALOGO) == 102
     assert not any("propri" in c for c in permissoes.CATALOGO)

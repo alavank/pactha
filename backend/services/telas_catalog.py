@@ -40,6 +40,8 @@ TELAS_CATALOG = [
     {"key": "funrigs", "label": "Plano Rio Grande"},
     {"key": "emendas_rs", "label": "Emendas Estaduais RS"},
     {"key": "tce_rs", "label": "TCE-RS"},
+    # TCE-PR (22/09/2026). MESMO TEXTO de `frontend/src/lib/telas.ts`.
+    {"key": "tce_pr", "label": "TCE-PR"},
     # A Telemetria ganhou tela propria: ate 05/09/2026 a aba usava a chave
     # `auditoria`, entao conceder a trilha concedia junto o horario de trabalho
     # de todo mundo. Entra no catalogo do cliente pela mesma razao da Auditoria.
@@ -116,6 +118,8 @@ TELAS_TODAS = [
     # tela, a de Convenios Estaduais propriamente dita).
     "repasses", "cofinanciamento", "monitoramento", "consulta_popular",
     "programas_rs", "funrigs", "emendas_rs", "tce_rs",
+    # TCE-PR (22/09/2026), a primeira tela do Paraná.
+    "tce_pr",
     # As quatro abas de Configuracoes que eram governadas pelo PAPEL `admin` e
     # viraram telas de verdade. `telemetria` estava usando a chave `auditoria`,
     # que e de outra coisa — liberar a trilha liberava o horario de trabalho de

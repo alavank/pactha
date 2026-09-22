@@ -200,6 +200,10 @@ export const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/programas-rs", label: "Programas do Estado" },
       { href: "/dashboard/funrigs", label: "Plano Rio Grande" },
       { href: "/dashboard/tce-rs", label: "TCE-RS" },
+      /* TCE-PR (22/09/2026): o que o município declarou ao SIM-AM — convênios,
+         obras, contratos e quanto de cada convênio já foi empenhado e pago.
+         Some fora do PR pelo layout (`TCE_ABERTO_POR_UF`). */
+      { href: "/dashboard/tce-pr", label: "TCE-PR" },
     ],
   },
   /* ⭐ EMENDAS PARLAMENTARES — UMA TELA COM ABAS (pedido do dono, 17/09/2026).

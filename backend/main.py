@@ -17,7 +17,7 @@ from routers import (
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
-    uso, mcp_tokens, consolidado,
+    uso, mcp_tokens, consolidado, tce_pr,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -188,6 +188,9 @@ app.include_router(programas_rs.router)
 app.include_router(programas_captacao.router)
 # FUNRIGS, emendas estaduais e TCE-RS — conteudo curado onde a coleta nao alcanca
 app.include_router(conteudo_rs.router)
+# /api/pr/tce: o que o municipio do PR declarou ao TCE (SIM-AM), pelo PIT —
+# dado coletado por `ingestion/tce_pr.py`, nao curadoria.
+app.include_router(tce_pr.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)

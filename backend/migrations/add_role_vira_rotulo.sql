@@ -140,6 +140,10 @@ WITH marca AS (
            ('repasses'), ('cofinanciamento'), ('monitoramento'),
            ('consulta_popular'), ('programas_rs'), ('funrigs'),
            ('emendas_rs'), ('tce_rs'),
+           -- TCE-PR (22/09/2026). Vale só para banco NOVO (a guarda deste
+           -- bloco já disparou nos que estão no ar); nos outros concede
+           -- `add_tela_tce_pr.sql`.
+           ('tce_pr'),
            -- As quatro abas de Configuracoes que eram governadas pelo PAPEL
            -- `admin` e viraram telas de verdade.
            ('telemetria'), ('frescor'), ('usuarios'), ('parametros'),

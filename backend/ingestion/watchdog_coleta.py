@@ -261,6 +261,12 @@ FRESCOR_HORAS_POR_UF = {
         # `success`, entao o frescor fica em dia desde a primeira.
         "tce_rs_portal": 30,
     },
+    "PR": {
+        # TCE-PR pelo PIT (22/09/2026). Rodada diária; quase toda ela é um HEAD
+        # por ano com o ETag de sempre (os zips antigos são congelados) e grava
+        # `success` igual. 30h = um dia + folga, o critério dos vizinhos.
+        "tce_pr": 30,
+    },
 }
 
 

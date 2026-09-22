@@ -36,6 +36,7 @@ COLETORES = {
     "ingestion.transparencia_mg": None,   # entry varia; só o import importa aqui
     "ingestion.tce_rs": None,
     "ingestion.tce_rs_portal": None,
+    "ingestion.tce_pr": "ingest",
     "ingestion.emendas_estaduais": None,
     "ingestion.watchdog_coleta": "main",
 }

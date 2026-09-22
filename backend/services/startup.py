@@ -532,6 +532,10 @@ MIGRATION_FILES = [
     # para o administrador do cliente repassar. Mesmo lugar e mesma dependencia
     # das duas de cima (so a FK de `add_permissoes_por_acao.sql`).
     "add_tela_consolidado.sql",
+    # O TCE-PR (22/09/2026): tela e acao a quem tem `usuarios.conceder`, pelo
+    # desenho do consolidado. Mesma dependencia (so a FK de
+    # `add_permissoes_por_acao.sql`); nao toca as tabelas de `add_tce_pr.sql`.
+    "add_tela_tce_pr.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.
@@ -635,6 +639,10 @@ MIGRATION_FILES = [
     # Cadastro de parlamentares (Camara, Senado, ALMG): partido, UF, cargo e foto
     # do autor da emenda, + apelidos curados. Sem FK nenhuma.
     "add_parlamentares_cadastro.sql",
+    # TCE-PR pelo PIT (22/09/2026): convenios, obras, licitacoes, contratos com
+    # aditivos, despesa por fonte e o selo (ETag) de cada ano por municipio. Todas
+    # as tabelas sao novas e so tem FK para `municipios`.
+    "add_tce_pr.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

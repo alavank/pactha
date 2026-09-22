@@ -48,6 +48,7 @@ const TELAS: Array<[RegExp, string]> = [
   [/^\/dashboard\/programas-rs/, "Programas do Estado"],
   [/^\/dashboard\/funrigs/, "Plano Rio Grande"],
   [/^\/dashboard\/tce-rs/, "TCE-RS"],
+  [/^\/dashboard\/tce-pr/, "TCE-PR"],
   [/^\/dashboard\/parlamentares/, "Parlamentares"],
   [/^\/dashboard\/fns/, "Fundo Nacional de Saúde"],
   [/^\/dashboard\/sismob/, "Obras da Saúde (SISMOB)"],
