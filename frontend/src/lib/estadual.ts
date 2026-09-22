@@ -218,6 +218,9 @@ export function acompanhamosEstadual(uf?: string | null): boolean {
 export const FONTE_CONVENIOS_ESTADUAIS: Record<string, string> = {
   MG: "SIGCON-MG",
   ES: "GConv · SEGER",
+  // Portal da Transparência do PR: o SIT do TCE-PR em arquivo aberto
+  // (`backend/ingestion/convenios_pr.py`, fonte `SIT-PR`).
+  PR: "SIT · Transparência PR",
 };
 
 /** A fonte de EMENDAS ESTADUAIS que este sistema coleta, por UF.

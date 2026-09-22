@@ -37,6 +37,7 @@ COLETORES = {
     "ingestion.tce_rs": None,
     "ingestion.tce_rs_portal": None,
     "ingestion.tce_pr": "ingest",
+    "ingestion.convenios_pr": "ingest",
     "ingestion.emendas_estaduais": None,
     "ingestion.watchdog_coleta": "main",
 }

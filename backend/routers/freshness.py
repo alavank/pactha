@@ -281,6 +281,10 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("TCE-PR — Convênios, obras, contratos e despesa (PR)",
          "SELECT max(atualizado_em), count(*) FROM tce_pr_arquivos",
          "tce_pr"),
+        ("Convênios do Estado (PR)",
+         "SELECT max(updated_at), count(*) FROM convenios_estadual "
+         "WHERE fonte = 'SIT-PR'",
+         "convenios_pr"),
     ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",

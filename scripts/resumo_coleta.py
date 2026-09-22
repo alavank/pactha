@@ -74,6 +74,7 @@ ONDE_OLHAR = {
     "tce_rs": "dados.tce.rs.gov.br (403 para IP de datacenter — precisa do oficio)",
     "tce_rs_portal": "portal.tce.rs.gov.br (mesmo bloqueio de borda do outro host)",
     "tce_pr": "pit.tce.pr.gov.br (zip anual do SIM-AM, lido por HTTP Range)",
+    "convenios_pr": "transparencia.download.pr.gov.br (CONVENIOS-{ANO}.zip, o SIT aberto)",
     "che_rs": "CHE/RS",
     "convenios_rs": "CAGE/RS",
     "consulta_popular_rs": "Consulta Popular/RS",
