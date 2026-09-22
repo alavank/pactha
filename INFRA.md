@@ -15,7 +15,7 @@
 | IP | **54.232.208.118** |
 | Região | **sa-east-1a** (São Paulo, Brasil) |
 | Instância | **8 vCPU / 32 GB RAM / 640 GB SSD** — plano "Uso geral" do Lightsail. ⚠️ Medido na máquina em 09/09/2026 (`nproc` = 8, `free -h` = 30 GiB, `df -h /` = 619 GB com 6% em uso) e conferido no console da AWS. **Não é mais o t3.large de 2 vCPU/7,6 GB** que este arquivo descreveu até aqui — o upgrade foi feito justamente para as coletas rodarem mais rápido. |
-| Orquestração | **Coolify v4.1.2** — painel em `http://54.232.208.118:8000` |
+| Orquestração | **Coolify v4.3.23** (`GET /api/v1/version`, 22/09/2026) — painel em `http://54.232.208.118:8000` |
 | SSH | `ssh -i ~/.ssh/coolify_localhost root@54.232.208.118` — ⚠️ **é este que funciona.** Existe também um usuário `claude` (`~/.ssh/claude_lightsail`, atalho `lightsail` no `~/.ssh/config`), mas ele **expirou** (`Your account has expired`, medido em 08/09/2026): a chave autentica e o login é recusado depois. Se for renovar, `chage -E -1 claude` no servidor. |
 | Escala do host | 43 containers · 11 projetos · 24 aplicações · 12 bancos PostgreSQL |
 
@@ -60,9 +60,9 @@ O que continua valendo, e por outros motivos que não a falta de CPU:
 
 ---
 
-## 2. Um repo, SEIS tenants (leia isto antes de dar push)
+## 2. Um repo, SETE tenants (leia isto antes de dar push)
 
-Este repositório atende **seis clientes distintos**, cada um com seu **próprio conjunto de
+Este repositório atende **sete clientes distintos**, cada um com seu **próprio conjunto de
 containers e seu próprio banco**, todos buildados **do mesmo código**:
 
 | Tenant | Slug | Quem é |
@@ -73,12 +73,13 @@ containers e seu próprio banco**, todos buildados **do mesmo código**:
 | Santa Maria | `santamaria-rs` | Prefeitura de Santa Maria/RS — **aberto em 16/08/2026**, em avaliação |
 | Nova Palma | `novapalma-rs` | Prefeitura de Nova Palma/RS — **aberto em 01/09/2026** |
 | BGK | `bgk-rs` | **Assessoria BGK** — 10 municípios do RS (Bento Gonçalves, Veranópolis, Nova Prata, Guaporé, Serafina Corrêa, São Marcos, Carlos Barbosa, Garibaldi, Portão, Giruá). **Aberto em 08/09/2026.** Environment Coolify `bgk-rs` (id 24). Domínio **`bgk.pactha.com.br` no ar desde 09/09/2026**. |
+| Juranda | `juranda-pr` | Prefeitura de Juranda/PR (IBGE 4112959) — **aberto em 22/09/2026**, o primeiro do Paraná. Só fontes federais. Environment Coolify `juranda-pr` (id 25). |
 
 Não existe multi-tenancy dentro do código: **o isolamento é por deploy**. O que diferencia
 um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_URL`,
 `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
-### 🚀 Um merge na `main` deploya os SEIS tenants — sozinho, na ordem certa
+### 🚀 Um merge na `main` deploya os SETE tenants — sozinho, na ordem certa
 
 > Corrigido em **2026-08-09** (o modelo mudou de novo, e desta vez de propósito). A versão
 > de 31/07 dizia — corretamente, à época — que push nenhum mexia em cliente e que o deploy
@@ -87,7 +88,7 @@ um tenant do outro são as **env vars no Coolify** (`INSTANCE_SLUG`, `DATABASE_U
 > foi **desligado nas 9 aplicações** — o webhook do Coolify recriava containers com a tag
 > ANTIGA (churn que matou coleta em voo duas vezes em 08/08).
 
-As **18** aplicações (eram 9 em 09/08 com três tenants, 15 com cinco) continuam com
+As **21** aplicações (eram 9 em 09/08 com três tenants, 15 com cinco, 18 com seis) continuam com
 **`build_pack = dockerimage`** (rodam a tag gravada em `docker_registry_image_tag`; quem
 constrói é o GitHub Actions publicando no `ghcr.io`).
 A diferença: o job `deploy` dos workflows **avança a tag e dispara o deploy** ao fim de
@@ -168,7 +169,7 @@ O campo `git_branch` voltou a importar de leve: `main` nas 9 (webhook desligado,
 CI só deploya o que buildar da `main`).
 
 ⚠️ As imagens de **frontend são uma por tenant** (`pactha-frontend-freitas`,
-`-trust`, `-montesiao-mg`, `-santamaria-rs`, `-novapalma-rs`), porque a marca do cliente
+`-trust`, `-montesiao-mg`, `-santamaria-rs`, `-novapalma-rs`, `-bgk-rs`, `-juranda-pr`), porque a marca do cliente
 entra no build. **API e worker compartilham** a mesma imagem (`pactha-api`,
 `pactha-worker`). E as **tags divergem de formato**: backend usa sha **curto**, frontend usa
 sha **completo** — o CI cuida disso. Conferido em 04/09/2026: as 15 apps na mesma
@@ -178,12 +179,13 @@ sha **completo** — o CI cuida disso. Conferido em 04/09/2026: as 15 apps na me
 
 ## 3. Aplicações e URLs em produção
 
-Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `production`.
+Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), **um environment por
+tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 
 > ⚠️⚠️ **CADA APP TEM DOIS ENDERECOS, E OS DOIS SAO O MESMO CONTAINER.** O `sslip.io`
 > resolve o IP do servidor dentro do proprio nome (`...-54-232-208-118.sslip.io` → 54.232.208.118),
-> e por isso todo app tem esse endereco cru de graca. Os SEIS tem TAMBEM um dominio
-> proprio. **Nao ha ambiente de teste separado**: mexer por um endereco mexe no outro, no
+> e por isso todo app tem esse endereco cru de graca. Os SEIS primeiros tem TAMBEM um dominio
+> proprio; o do Juranda espera o DNS. **Nao ha ambiente de teste separado**: mexer por um endereco mexe no outro, no
 > mesmo banco.
 >
 > Conferido respondendo em **05/09/2026**:
@@ -196,6 +198,7 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > | Santa Maria | `santamaria.rs.pactha.com.br` | `pactha-santamaria-rs-54-232-208-118.sslip.io` |
 > | Nova Palma | `novapalma.rs.pactha.com.br` | `pactha-novapalma-rs-54-232-208-118.sslip.io` |
 > | BGK | `bgk.pactha.com.br` | `pactha-bgk-rs-54-232-208-118.sslip.io` |
+> | Juranda | `juranda.pr.pactha.com.br` — **DNS ainda não criado em 22/09/2026** (NXDOMAIN) e fora do `fqdn` | `pactha-juranda-pr-54-232-208-118.sslip.io` |
 >
 > ⚠️ Os dois primeiros **faltavam neste arquivo** ate 05/09/2026, e a ausencia custou uma
 > sessao inteira de desconfianca: quem le so o `INFRA.md` conclui que `freitas.pactha.com.br`
@@ -298,12 +301,37 @@ Projeto Coolify: **`pactha`** (uuid `ksmwr13y4iyprom8i1znede8`), environment `pr
 > Frontend e API **responderam 200 em 09/09/2026**, e a API já subiu com o código do
 > merge #446 (`/api/control/resumo-coleta` devolvendo 401 sem token, que é o certo).
 >
-> ⚠️ **O que ainda NÃO foi conferido neste tenant: se ele coleta.** As medições de
-> Scheduled Task deste arquivo (§5) são todas anteriores a 08/09 e falam de **5**
-> workers — o worker do bgk pode ter nascido sem tarefa nenhuma, e tarefa que não
-> existe não avisa que não existe (ver *"criar task não é ligar a fonte"*). Confira com
-> `GET /applications/6xast9rw0wbzbownss9vamfq/scheduled-tasks` antes de assumir que os
-> 10 municípios estão sendo varridos.
+> **Tasks conferidas em 22/09/2026:** o worker tem **26** Scheduled Tasks (o mesmo conjunto
+> do novapalma, 7 min depois). As medições de §5 anteriores a 08/09 falam de 5 workers e
+> não o incluem.
+
+### Juranda / PR
+
+| App | Origem | URL |
+|---|---|---|
+| `juranda-pr-frontend` | imagem `pactha-frontend-juranda-pr` | https://pactha-juranda-pr-54-232-208-118.sslip.io |
+| `juranda-pr-api` | imagem `pactha-api` | https://pactha-juranda-pr-api-54-232-208-118.sslip.io |
+| `juranda-pr-worker` | imagem `pactha-worker` | interno |
+| `juranda-pr-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `h9xagrmqvvyw5vauc4c9lxpr` |
+
+> **7o tenant, aberto em 22/09/2026 — o primeiro do Paraná.** Prefeitura de Juranda/PR,
+> IBGE **4112959** (conferido na API do IBGE; o nome oficial é sem acento). Environment
+> Coolify `juranda-pr` (id 25). Brasão de domínio público (Wikimedia Commons) embutido na
+> imagem do frontend.
+>
+> **Só fontes federais:** não há coletor estadual do PR. O worker tem as **21** tasks
+> federais do novapalma com **+14 min** (o bgk está a +7) — sem `cadin-rs`, `che-rs`,
+> `consulta-popular-rs`, `convenios-rs` e `fpe-rs`. As de rodízio seguem o `PLANO` do
+> `scripts/agenda_noturna.py`: lote do TransfereGov no slot **05:05 UTC**, que estava livre.
+>
+> Primeiro boot: **138/138 migrations** num banco zerado, seed com Juranda-PR, depois
+> `AUTHZ_MODO=bloqueio`. IA ligada com a mesma `ANTHROPIC_API_KEY` do montesiao-mg.
+> Frontend → API conferido com o `CONTROL_TOKEN_BOOTSTRAP` do próprio Juranda (a API da
+> Nova Palma recusa o mesmo token com 401).
+>
+> ⚠️ **Domínio `juranda.pr.pactha.com.br`: DNS não existia em 22/09/2026.** Quando o `A`
+> → `54.232.208.118` existir, somar ao `fqdn` do frontend (não trocar — o sslip é o que o
+> CI e a extensão usam) e redeployar. Ver a regra no §8.
 
 ### Servidor MCP (leitura por IA) — um por tenant
 
@@ -835,9 +863,13 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
   (`docker exec <c> sh -c 'echo ${#MINHA_ENV}'`), nunca no painel.
 - **Logs:** `GET $B/applications/<uuid>/logs?lines=120`.
 - **Env vars (bulk):** `PATCH $B/applications/<uuid>/envs/bulk` com
-  `{"data":[{"key":..,"value":..,"is_build_time":bool,"is_preview":false}]}`.
-  ⚠️ O `POST /envs` simples **não aceita** `is_build_time` — use o bulk.
-  `NEXT_PUBLIC_*` e `API_PROXY_TARGET` precisam de `is_build_time:true`.
+  `{"data":[{"key":..,"value":..,"is_runtime":true,"is_buildtime":bool,"is_preview":false}]}`.
+  ⚠️ **Na v4.3.23 os campos são `is_buildtime` / `is_runtime`** (é o que o `GET /envs`
+  devolve, e foi assim que o juranda-pr foi criado em 22/09/2026); o `is_build_time`
+  descrito aqui antes é da 4.1. `NEXT_PUBLIC_*` e `API_PROXY_TARGET` levam `is_buildtime:true`.
+  ⚠️ **Cada chave existe DUAS vezes** (produção e `is_preview:true`): o PATCH com
+  `is_preview:false` só muda a de produção, e o `GET` passa a devolver os dois valores.
+  Para mudar as duas, mande o item duas vezes, uma com cada `is_preview`.
   ✅ **O bulk é UPSERT, não substituição** — medido em 08/09/2026 nos cinco workers ao
   ligar o canal do watchdog: mandando 2 chaves, o freitas foi de 11 para 13 envs de
   produção e **nenhuma** das outras sumiu. O nome "bulk" sugere o contrário e já fez
@@ -846,6 +878,9 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
 - **Domínio:** `PATCH $B/applications/<uuid>` com `{"domains":"https://..."}` + redeploy.
 - **Scheduled Tasks:** `GET/POST $B/applications/<worker_uuid>/scheduled-tasks`.
 - **Banco:** `GET $B/databases/<uuid>` (campos `status`, `internal_db_url`).
+  ⚠️ **Banco criado pela API nasce `exited:unhealthy`**, mesmo com `instant_deploy:true`
+  (medido no juranda-pr-db em 22/09/2026). `POST $B/databases/<uuid>/start` e ele fica
+  `running:healthy` em ~10 s — sem isso a API do tenant novo sobe sem banco.
 - **Coleta forçada ("run now")**: a API v1 **não tem** disparo imediato de task, e o
   endpoint `/execute` não existe nesta versão. A manobra que funciona (auditoria de
   17/08): `PATCH` a `frequency` da task para `* * * * *`, esperar ~90s (um fire), e
@@ -880,7 +915,8 @@ daquele tenant viram lixo. Cada tenant tem a sua — **nunca copie a de um para 
   conta irregular): o veredito é *o coletor visitou sem erro*, nunca a contagem.
 
 UUIDs das aplicações medidos em 2026-07-23 (os três do `bgk-rs` vieram dos workflows do CI
-em 09/09/2026 — `build-backend.yml` e `build-frontend.yml` deployam por esses uuids):
+em 09/09/2026, e os do `juranda-pr` da criação pela API em 22/09/2026 — `build-backend.yml`
+e `build-frontend.yml` deployam por esses uuids):
 
 | App | uuid |
 |---|---|
@@ -902,3 +938,6 @@ em 09/09/2026 — `build-backend.yml` e `build-frontend.yml` deployam por esses 
 | `bgk-rs-api` | `qhafp9uqmsvny75rzykmibdx` |
 | `bgk-rs-frontend` | `srbi2qotciphxdxhn6io25a3` |
 | `bgk-rs-worker` | `6xast9rw0wbzbownss9vamfq` |
+| `juranda-pr-api` | `9kts7mqndnouchavfxrjyir9` |
+| `juranda-pr-frontend` | `4sbd4cqwudzvlqaj8ckalbrp` |
+| `juranda-pr-worker` | `c1spfhxrshagrrvwvhoigip1` |

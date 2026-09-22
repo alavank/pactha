@@ -1,10 +1,10 @@
 name: build-backend
 
-# Builda UMA vez as imagens do backend compartilhadas pelos 5 tenants
-# (freitas/trust/montesiao/santamaria/novapalma) e publica no GitHub Container
-# Registry (ghcr.io).
+# Builda UMA vez as imagens do backend compartilhadas pelos 7 tenants
+# (freitas/trust/montesiao/santamaria/novapalma/bgk/juranda) e publica no GitHub
+# Container Registry (ghcr.io).
 #
-# POR QUE: a API e o worker sao IDENTICOS entre os 6 tenants -- a diferenca deles
+# POR QUE: a API e o worker sao IDENTICOS entre os 7 tenants -- a diferenca deles
 # e so env de runtime. Antes, cada push na main fazia a VPS buildar as imagens
 # (o worker sozinho tem 2,4 GB com Chromium), o que em 23/07 queimou os creditos
 # de burst da instancia duas vezes. Buildando aqui UMA vez, a VPS deixa de fazer
@@ -13,8 +13,9 @@ name: build-backend
 # ⚠️ A VPS NAO E MAIS AQUELA. O paragrafo acima citava "AWS Lightsail t3.large,
 # 2 vCPU burstable"; desde o upgrade sao 8 vCPU e 32 GB (medido em 09/09/2026,
 # ver INFRA.md §1). O motivo de buildar aqui continua de pe -- build fora do
-# servidor de producao e melhor pratica, e o Coolify roda com concurrent_builds=1
-# -- mas NAO invoque mais "creditos de burst" para justificar decisao nova.
+# servidor de producao e melhor pratica (o Coolify roda com concurrent_builds=6
+# desde 15/09/2026, INFRA.md §2) -- mas NAO invoque mais "creditos de burst"
+# para justificar decisao nova.
 #
 # ESTADO ATUAL (Fase D, desde 09/08/2026): este workflow PUBLICA a imagem e o
 # job `deploy` FECHA o ciclo — avanca a tag dos apps no Coolify e dispara o
@@ -152,6 +153,7 @@ jobs:
         santamaria:ufjctldngc14dsdw8pxnqivl:wquremniv57gag3tlil8uf6d
         novapalma:gemcwirmbelk1dztp2pbcqpf:kqcnvdsdkgn1efkm4nog8oes
         bgk:qhafp9uqmsvny75rzykmibdx:6xast9rw0wbzbownss9vamfq
+        juranda:9kts7mqndnouchavfxrjyir9:c1spfhxrshagrrvwvhoigip1
     steps:
       - name: Deploy em duas ondas (APIs -> migrations confirmadas -> workers na janela)
         run: |

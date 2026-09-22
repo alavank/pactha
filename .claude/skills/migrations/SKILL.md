@@ -1,6 +1,6 @@
 ---
 name: migrations
-description: Rules for PACTHA database schema changes — plain .sql migrations in backend/migrations/, the MIGRATION_FILES registration list, idempotency across 5 live tenant databases, ordering constraints, and the fact that a failed migration does not abort the boot. Use when adding, editing, or debugging a migration, changing models, or touching services/startup.py.
+description: Rules for PACTHA database schema changes — plain .sql migrations in backend/migrations/, the MIGRATION_FILES registration list, idempotency across 7 live tenant databases, ordering constraints, and the fact that a failed migration does not abort the boot. Use when adding, editing, or debugging a migration, changing models, or touching services/startup.py.
 ---
 
 # Database & migrations
@@ -19,9 +19,9 @@ boot** (`services/startup.py::run_migrations`, called from `main.py`'s `lifespan
    comments around `add_siconv_federal.sql`.
 
 2. **Must be idempotent** (`IF NOT EXISTS` / `ON CONFLICT DO NOTHING` / guarded `ALTER`). It
-   runs against **6 live tenant databases**, re-runs **whenever you edit the file**, and a
-   **fresh** database runs the whole list: Santa Maria (08/2026) and Nova Palma
-   (01/09/2026) were created from scratch, and the second exposed an ORDERING bug (a file
+   runs against **7 live tenant databases**, re-runs **whenever you edit the file**, and a
+   **fresh** database runs the whole list: Santa Maria (08/2026), Nova Palma
+   (01/09/2026) and Juranda/PR (22/09/2026, 138/138) were created from scratch, and Nova Palma exposed an ORDERING bug (a file
    altering a table created later in `MIGRATION_FILES`), now guarded by
    `tests/test_migrations_ordem_tabela.py`.
 

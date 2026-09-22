@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, nos 5 tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **23 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, só com as federais). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **23 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -26,6 +26,26 @@
 - `C:\projetos\PACTA` → clone do repo do Matheus (`MattMatiins/PACTA`), usado só para colaboração com ele. **NUNCA** pushe cruzado entre os dois.
 
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
+
+---
+
+## 1.32. Juranda/PR — o 7º tenant e o primeiro do Paraná (22/09/2026)
+
+Prefeitura de Juranda/PR (IBGE 4112959), aberta pelo roteiro do `PROVISIONAR_CLIENTE.md`,
+no Coolify, igual aos outros. Estado e uuids em `INFRA.md` §3.
+
+- **Cogitado e descartado: ser o primeiro tenant fora do Coolify.** A referência seria o
+  repo `alavank/helpdesk`, que subiu sem Coolify no datacenter de uma prefeitura (Ansible +
+  Docker Compose + Caddy + Postgres nativo). Na mesma Lightsail, três peças daquela receita
+  (Caddy nas portas 80/443, o role `docker` que reescreve o daemon.json e o role `firewall`)
+  batem de frente com o Coolify. **Decisão do dono:** quando o PACTHA sair do Coolify, vai ser
+  numa **VPS nova, migrando tudo** — não dividindo a atual.
+- **Só fontes federais**, porque não há coletor estadual do PR. As 21 tasks federais do
+  novapalma, com os horários deslocados.
+- O que o roteiro não dizia e custou uma volta: o banco criado pela API nasce parado; as
+  envs na Coolify 4.3.23 usam `is_buildtime`/`is_runtime`; a primeira carga do que já passou
+  do horário sai com cron amarrado à data. Registrado no `PROVISIONAR_CLIENTE.md` e no
+  `INFRA.md` §8.
 
 ---
 

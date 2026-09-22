@@ -113,6 +113,21 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/logo-bgk.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
               NEXT_PUBLIC_BI_MODULE=1
+          # Juranda/PR — 7o tenant, aberto em 21/09/2026. Primeiro cliente do
+          # Parana: nasce so com as fontes federais (nao ha coletor estadual do PR).
+          # Dominio proprio juranda.pr.pactha.com.br; o API_PROXY_TARGET aponta
+          # para o sslip da API DELE — mesmo arranjo do Santa Maria e da Nova Palma.
+          #
+          # Brasao: Wikimedia Commons, File:Brasao de Juranda PR Brasil.png —
+          # DOMINIO PUBLICO, simbolo oficial instituido por lei municipal.
+          - image: frontend-juranda-pr
+            context: frontend
+            args: |
+              NEXT_PUBLIC_API_URL=/api
+              API_PROXY_TARGET=https://pactha-juranda-pr-api-54-232-208-118.sslip.io
+              NEXT_PUBLIC_CLIENT_LOGO=/brasao-juranda.png
+              NEXT_PUBLIC_CLIENT_SUBTITLE=Juranda - PR
+              NEXT_PUBLIC_BI_MODULE=1
           # O antigo "painel executivo" (pasta painel/, imagem painel-montesiao-mg)
           # SAIU da matriz: o Painel de Indicadores e o Modo Tela agora moram no
           # proprio frontend (rotas /dashboard e /tela), no mesmo deploy e no
@@ -171,7 +186,7 @@ jobs:
       COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
     steps:
-      - name: Avanca tag e deploya os 6 frontends
+      - name: Avanca tag e deploya os 7 frontends
         run: |
           # Mesma politica de erro do backend: -e do Actions desligado, mutacao
           # falha alto com rollback de tag, leitura falha fechado.
@@ -208,7 +223,7 @@ jobs:
           # confirmacao de cada um. O paralelismo real vem do `concurrent_builds`
           # do servidor no Coolify (INFRA.md §4).
           declare -A DEPS=()
-          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf rpqpxroy5orsuidrbfezlzkt srbi2qotciphxdxhn6io25a3; do
+          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf rpqpxroy5orsuidrbfezlzkt srbi2qotciphxdxhn6io25a3 4sbd4cqwudzvlqaj8ckalbrp; do
             OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$APP" | jq -r '.docker_registry_image_tag // ""')
             if ! "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
                  -d "{\"docker_registry_image_tag\":\"$TAG\"}" \
