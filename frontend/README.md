@@ -32,6 +32,8 @@ faça redeploy.
 | `NEXT_PUBLIC_API_URL` | base da API usada pelo cliente (deve terminar em `/api`) |
 | `NEXT_PUBLIC_CLIENT_LOGO` | logo do cliente daquele tenant |
 | `NEXT_PUBLIC_CLIENT_SUBTITLE` | subtítulo/identificação do cliente |
+| `NEXT_PUBLIC_CLIENT_NAME` | nome do cliente na prévia do link (título e imagem de WhatsApp/Telegram) — `src/lib/previa-link.ts` |
+| `NEXT_PUBLIC_SITE_URL` | endereço canônico do tenant (`https://juranda.pr.pactha.com.br`); sem ele o `og:image` sai relativo e a prévia perde a imagem |
 
 ## Notas para agentes de IA
 

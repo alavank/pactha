@@ -56,6 +56,8 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/logo-freitas.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
               NEXT_PUBLIC_BI_MODULE=1
+              NEXT_PUBLIC_CLIENT_NAME=Freitas & Associados
+              NEXT_PUBLIC_SITE_URL=https://freitas.pactha.com.br
           - image: frontend-trust
             context: frontend
             args: |
@@ -64,6 +66,8 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/trust-logo.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Infraestrutura de TI e Cloud Computing
               NEXT_PUBLIC_BI_MODULE=1
+              NEXT_PUBLIC_CLIENT_NAME=Trust
+              NEXT_PUBLIC_SITE_URL=https://trust.pactha.com.br
           - image: frontend-montesiao-mg
             context: frontend
             args: |
@@ -72,6 +76,8 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-monte-siao.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Monte Siao - MG
               NEXT_PUBLIC_BI_MODULE=1
+              NEXT_PUBLIC_CLIENT_NAME=Monte Sião - MG
+              NEXT_PUBLIC_SITE_URL=https://montesiao.mg.pactha.com.br
           # Santa Maria/RS — 4o tenant. O dominio do APP e proprio
           # (santamaria.rs.pactha.com.br), mas o API_PROXY_TARGET aponta para o
           # sslip da API DELE: nao existe DNS api-santamaria.rs.pactha.com.br e
@@ -84,6 +90,8 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-santa-maria.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Santa Maria - RS
               NEXT_PUBLIC_BI_MODULE=1
+              NEXT_PUBLIC_CLIENT_NAME=Santa Maria - RS
+              NEXT_PUBLIC_SITE_URL=https://santamaria.rs.pactha.com.br
           # Nova Palma/RS — 5o tenant, aberto em 01/09/2026. Mesmo arranjo do
           # Santa Maria (RS tambem): so o sslip por enquanto, sem dominio proprio.
           #
@@ -99,6 +107,8 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-nova-palma.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Nova Palma - RS
               NEXT_PUBLIC_BI_MODULE=1
+              NEXT_PUBLIC_CLIENT_NAME=Nova Palma - RS
+              NEXT_PUBLIC_SITE_URL=https://novapalma.rs.pactha.com.br
           # BGK Assessoria — 6o tenant, aberto em 08/09/2026. ASSESSORIA com 10
           # municipios do RS (Bento Goncalves, Veranopolis, Nova Prata, Guapore,
           # Serafina Correa, Sao Marcos, Carlos Barbosa, Garibaldi, Portao, Girua).
@@ -113,6 +123,8 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/logo-bgk.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Assessoria
               NEXT_PUBLIC_BI_MODULE=1
+              NEXT_PUBLIC_CLIENT_NAME=BGK Assessoria
+              NEXT_PUBLIC_SITE_URL=https://bgk.pactha.com.br
           # Juranda/PR — 7o tenant, aberto em 21/09/2026. Primeiro cliente do
           # Parana: nasce so com as fontes federais (nao ha coletor estadual do PR).
           # Dominio proprio juranda.pr.pactha.com.br; o API_PROXY_TARGET aponta
@@ -128,6 +140,8 @@ jobs:
               NEXT_PUBLIC_CLIENT_LOGO=/brasao-juranda.png
               NEXT_PUBLIC_CLIENT_SUBTITLE=Juranda - PR
               NEXT_PUBLIC_BI_MODULE=1
+              NEXT_PUBLIC_CLIENT_NAME=Juranda - PR
+              NEXT_PUBLIC_SITE_URL=https://juranda.pr.pactha.com.br
           # O antigo "painel executivo" (pasta painel/, imagem painel-montesiao-mg)
           # SAIU da matriz: o Painel de Indicadores e o Modo Tela agora moram no
           # proprio frontend (rotas /dashboard e /tela), no mesmo deploy e no

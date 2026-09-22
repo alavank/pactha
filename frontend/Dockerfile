@@ -18,12 +18,18 @@ ARG API_PROXY_TARGET
 # Co-branding por cliente (build-time): logo em public/ e subtitulo do login.
 ARG NEXT_PUBLIC_CLIENT_LOGO
 ARG NEXT_PUBLIC_CLIENT_SUBTITLE
+# Previa do link (WhatsApp/Telegram): o nome do cliente no titulo e na imagem, e o
+# endereco canonico que torna o og:image absoluto. Ver src/lib/previa-link.ts.
+ARG NEXT_PUBLIC_CLIENT_NAME
+ARG NEXT_PUBLIC_SITE_URL
 # Modulo BI (build-time): "1" liga o link de entrada + as paginas /bi. Default vazio.
 ARG NEXT_PUBLIC_BI_MODULE
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     API_PROXY_TARGET=$API_PROXY_TARGET \
     NEXT_PUBLIC_CLIENT_LOGO=$NEXT_PUBLIC_CLIENT_LOGO \
     NEXT_PUBLIC_CLIENT_SUBTITLE=$NEXT_PUBLIC_CLIENT_SUBTITLE \
+    NEXT_PUBLIC_CLIENT_NAME=$NEXT_PUBLIC_CLIENT_NAME \
+    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_BI_MODULE=$NEXT_PUBLIC_BI_MODULE \
     NEXT_TELEMETRY_DISABLED=1
 RUN npm run build

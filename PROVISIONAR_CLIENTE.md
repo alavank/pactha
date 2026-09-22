@@ -139,7 +139,10 @@ Então, antes de criar qualquer aplicação:
 
 1. Abra `.github/workflows/build-frontend.yml` e **acrescente uma entrada na
    matriz** para o tenant, com o `API_PROXY_TARGET` apontando para a **API dele**,
-   mais logo e subtítulo próprios.
+   mais logo e subtítulo próprios — e `NEXT_PUBLIC_CLIENT_NAME` ("Juranda - PR") e
+   `NEXT_PUBLIC_SITE_URL` (o domínio `https://...pactha.com.br`). Os dois últimos
+   fazem a prévia do link no WhatsApp sair com o nome e o brasão do cliente; sem
+   eles o link chega igual ao dos outros ambientes.
 2. Rode o workflow (`workflow_dispatch`) e confirme que a imagem
    `ghcr.io/alavank/pactha-frontend-<tenant>` foi publicada.
 3. Só então crie o app apontando para **essa** imagem.
