@@ -357,6 +357,14 @@ _RECURSOS: tuple = (
     _Recurso("tce_rs", SEC_CONVENIOS, "TCE-RS",
              "as licitações, contratos e obras publicados pelo TCE-RS", "",
              ("ver",), ufs=("RS",), tela="tce_rs"),
+    # TCE-PR (22/09/2026): o que o município declarou ao SIM-AM, pelo PIT —
+    # convênios, obras, licitações, contratos e a despesa por fonte de recurso.
+    # Só `ver`, pela regra das vizinhas: sem exportação nem coleta sob demanda.
+    # As UFs espelham `TCE_ABERTO_POR_UF` de `frontend/src/lib/estadual.ts`.
+    _Recurso("tce_pr", SEC_CONVENIOS, "TCE-PR",
+             "os convênios, obras, contratos e a despesa por fonte publicados "
+             "pelo TCE-PR", "",
+             ("ver",), ufs=("PR",), tela="tce_pr"),
 
     # --- FEDERAIS: a COLETA, que nao e de tela nenhuma ---------------------
     # ⚠️ `tela` VAZIO de proposito, e este e o unico recurso assim no catalogo.

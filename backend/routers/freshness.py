@@ -273,6 +273,15 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
          "SELECT max(atualizado_em), count(*) FROM tce_rs_obras",
          "tce_rs_portal"),
     ],
+    "PR": [
+        # ⚠️ A DATA É A DA RODADA, NÃO A DO DADO: `tce_pr_arquivos` só muda quando
+        # o TCE regera o zip do ano (semanal no ano corrente). O atraso do próprio
+        # dado — o SIM-AM entregue até junho em setembro — está na tela, em
+        # `ultimo_envio`, e não é defeito de coleta.
+        ("TCE-PR — Convênios, obras, contratos e despesa (PR)",
+         "SELECT max(atualizado_em), count(*) FROM tce_pr_arquivos",
+         "tce_pr"),
+    ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",
          "SELECT max(updated_at), count(*) FROM convenios_estadual WHERE fonte ILIKE '%GCONV%'",

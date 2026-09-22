@@ -191,6 +191,8 @@ def test_cada_tela_do_grupo_estaduais_carrega_o_proprio_estado():
         "funrigs": "CONTEUDO_ESTADUAL_POR_UF",
         "emendas_rs": "CONTEUDO_ESTADUAL_POR_UF",
         "tce_rs": "CONTEUDO_ESTADUAL_POR_UF",
+        # 22/09/2026: o tribunal que publica em arquivo aberto (hoje o PR).
+        "tce_pr": "TCE_ABERTO_POR_UF",
     }
     for chave, mapa in por_tela.items():
         assert recursos[chave] == _ufs_do_mapa(mapa), (
@@ -210,7 +212,7 @@ def test_cada_tela_do_grupo_estaduais_carrega_o_proprio_estado():
     for mapa in ("FONTE_CONVENIOS_ESTADUAIS", "REPASSES_POR_UF",
                  "COFINANCIAMENTO_POR_UF", "CONSULTA_POPULAR_POR_UF",
                  "PROGRAMAS_POR_UF", "CONTEUDO_ESTADUAL_POR_UF",
-                 "MONITORAMENTO_POR_UF"):
+                 "MONITORAMENTO_POR_UF", "TCE_ABERTO_POR_UF"):
         esperado |= _ufs_do_mapa(mapa)
     assert uniao == esperado
 

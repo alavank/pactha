@@ -98,6 +98,9 @@ export const TELAS: TelaDef[] = [
   { key: "funrigs", label: "Plano Rio Grande", ufs: ["RS"] },
   { key: "emendas_rs", label: "Emendas Estaduais RS", ufs: ["RS"] },
   { key: "tce_rs", label: "TCE-RS", ufs: ["RS"] },
+  // TCE_ABERTO_POR_UF: o tribunal de contas que publica os dados do município
+  // em arquivo aberto (hoje o TCE-PR, pelo PIT). Dado coletado, não curadoria.
+  { key: "tce_pr", label: "TCE-PR", ufs: ["PR"] },
 
   // AGENDAMENTOS — a agenda de trabalho da equipe.
   // ⚠️ SEM `ufs`: é nacional. Pôr um recorte aqui esconderia a caixinha dos
