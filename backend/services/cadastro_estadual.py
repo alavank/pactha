@@ -44,6 +44,20 @@ CADASTRO_ESTADUAL: dict[str, dict] = {
         "certificado": None,
         "trava": "impede celebrar convênio com o Estado",
     },
+    # O Parana nao tem cadastro de convenentes: exige CERTIDOES. Coletamos as
+    # duas publicas sem captcha (ingestion/regularidade_pr.py, 22/09/2026): a
+    # Certidao Negativa para Transferencias Voluntarias da SEFA e as pendencias da
+    # Certidao Liberatoria do TCE-PR. `sigla` e o rotulo curto do frontend
+    # (`curto` em estadual.ts), porque o PR nao tem sigla — e o mesmo texto nos
+    # dois lados, a regra deste arquivo.
+    "PR": {
+        "sigla": "Certidões do Estado",
+        "nome": "Certidões para Transferências Voluntárias (SEFA e TCE-PR)",
+        "fonte": "CERTIDOES-PR",
+        "portal": "www4.pr.gov.br (SEFA) e servicos.tce.pr.gov.br (TCE-PR)",
+        "certificado": None,
+        "trava": "impede receber transferência voluntária do Estado",
+    },
 }
 
 # As UFs cuja regularidade estadual este sistema COLETA. Derivado do catalogo

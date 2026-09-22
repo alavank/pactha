@@ -285,6 +285,10 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
          "SELECT max(updated_at), count(*) FROM convenios_estadual "
          "WHERE fonte = 'SIT-PR'",
          "convenios_pr"),
+        ("Certidões do Estado — SEFA e TCE-PR (PR)",
+         "SELECT max(atualizado_em), count(*) FROM cagec_situacao "
+         "WHERE fonte = 'CERTIDOES-PR'",
+         "regularidade_pr"),
     ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",

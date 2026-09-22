@@ -269,6 +269,10 @@ FRESCOR_HORAS_POR_UF = {
         # Convênios do Estado pelo Portal da Transparência (SIT). O Estado regera
         # os arquivos todo dia ~08:12 UTC e a rodada é diária: 30h, a regra.
         "convenios_pr": 30,
+        # Certidões do Estado (SEFA + Liberatória do TCE-PR), 1x/dia. A
+        # Liberatória não tem validade — vale na data da consulta —, então aqui o
+        # frescor É o dado: 30h parado é regularidade que deixou de ser afirmada.
+        "regularidade_pr": 30,
     },
 }
 

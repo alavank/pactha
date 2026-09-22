@@ -328,6 +328,10 @@ tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 > - **`convenios-pr`** (`ingestion/convenios_pr.py`, 09:30 UTC = 06:30 BRT): os
 >   `CONVENIOS-{ANO}.zip` do Portal da Transparência do PR, que o Estado regera todo dia
 >   ~08:12 UTC — por isso roda DEPOIS disso e ainda dentro da janela. ~20 arquivos, ~15 MB.
+> - **`regularidade-pr`** (`ingestion/regularidade_pr.py`, 09:40 UTC = 06:40 BRT): a
+>   Certidão para Transferências Voluntárias da SEFA e as pendências da Liberatória do
+>   TCE-PR, duas requisições por município. ⚠️ A rota da SEFA EMITE certidão quando não
+>   há uma válida — uma vez por dia e só o `tipo=1`, nunca em laço.
 >
 > As de rodízio seguem o
 > `PLANO` do `scripts/agenda_noturna.py`: lote do TransfereGov no slot **05:05 UTC**.
