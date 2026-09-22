@@ -21,7 +21,7 @@ containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 | Santa Maria/RS | `santamaria-rs` | prefeitura | `santamaria.rs.pactha.com.br` |
 | Nova Palma/RS | `novapalma-rs` | prefeitura | `novapalma.rs.pactha.com.br` |
 | BGK/RS | `bgk-rs` | assessoria (10 municipios do RS) | `bgk.pactha.com.br` |
-| Juranda/PR | `juranda-pr` | prefeitura (aberta em 22/09/2026; so fontes federais) | `juranda.pr.pactha.com.br` (DNS pendente em 22/09/2026 — ver INFRA.md §3) |
+| Juranda/PR | `juranda-pr` | prefeitura (aberta em 22/09/2026; so fontes federais) | `juranda.pr.pactha.com.br` |
 
 > ⚠️ **DOIS ENDERECOS PARA O MESMO CONTAINER, e isto ja custou confusao.** Todo app tem o
 > endereco cru `pactha[-slug]-54-232-208-118.sslip.io` (o IP do servidor resolvido pelo
