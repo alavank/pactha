@@ -320,10 +320,16 @@ tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 > imagem do frontend.
 >
 > **Fontes:** as **21** tasks federais do novapalma com **+14 min** (o bgk está a +7) — sem
-> `cadin-rs`, `che-rs`, `consulta-popular-rs`, `convenios-rs` e `fpe-rs` —, e a **`tce-pr`**
-> (`ingestion/tce_pr.py`, 02:20 UTC = 23:20 BRT), a única estadual do PR por enquanto. Ela
-> lê o zip anual do PIT por HTTP Range: a primeira carga (2013-2026) leva ~20 s e ~20 MB;
-> as seguintes são 14 HEADs e só releem o ano cujo ETag mudou. As de rodízio seguem o
+> `cadin-rs`, `che-rs`, `consulta-popular-rs`, `convenios-rs` e `fpe-rs` —, e as duas
+> estaduais do PR:
+> - **`tce-pr`** (`ingestion/tce_pr.py`, 02:20 UTC = 23:20 BRT): lê o zip anual do PIT por
+>   HTTP Range; a primeira carga (2013-2026) leva ~20 s e ~20 MB, as seguintes são 14 HEADs
+>   e só releem o ano cujo ETag mudou.
+> - **`convenios-pr`** (`ingestion/convenios_pr.py`, 09:30 UTC = 06:30 BRT): os
+>   `CONVENIOS-{ANO}.zip` do Portal da Transparência do PR, que o Estado regera todo dia
+>   ~08:12 UTC — por isso roda DEPOIS disso e ainda dentro da janela. ~20 arquivos, ~15 MB.
+>
+> As de rodízio seguem o
 > `PLANO` do `scripts/agenda_noturna.py`: lote do TransfereGov no slot **05:05 UTC**.
 >
 > Primeiro boot: **138/138 migrations** num banco zerado, seed com Juranda-PR, depois

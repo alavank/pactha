@@ -266,6 +266,9 @@ FRESCOR_HORAS_POR_UF = {
         # por ano com o ETag de sempre (os zips antigos são congelados) e grava
         # `success` igual. 30h = um dia + folga, o critério dos vizinhos.
         "tce_pr": 30,
+        # Convênios do Estado pelo Portal da Transparência (SIT). O Estado regera
+        # os arquivos todo dia ~08:12 UTC e a rodada é diária: 30h, a regra.
+        "convenios_pr": 30,
     },
 }
 
