@@ -184,8 +184,8 @@ tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 
 > ⚠️⚠️ **CADA APP TEM DOIS ENDERECOS, E OS DOIS SAO O MESMO CONTAINER.** O `sslip.io`
 > resolve o IP do servidor dentro do proprio nome (`...-54-232-208-118.sslip.io` → 54.232.208.118),
-> e por isso todo app tem esse endereco cru de graca. Os SEIS primeiros tem TAMBEM um dominio
-> proprio; o do Juranda espera o DNS. **Nao ha ambiente de teste separado**: mexer por um endereco mexe no outro, no
+> e por isso todo app tem esse endereco cru de graca. Os SETE tem TAMBEM um dominio
+> proprio. **Nao ha ambiente de teste separado**: mexer por um endereco mexe no outro, no
 > mesmo banco.
 >
 > Conferido respondendo em **05/09/2026**:
@@ -198,7 +198,7 @@ tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 > | Santa Maria | `santamaria.rs.pactha.com.br` | `pactha-santamaria-rs-54-232-208-118.sslip.io` |
 > | Nova Palma | `novapalma.rs.pactha.com.br` | `pactha-novapalma-rs-54-232-208-118.sslip.io` |
 > | BGK | `bgk.pactha.com.br` | `pactha-bgk-rs-54-232-208-118.sslip.io` |
-> | Juranda | `juranda.pr.pactha.com.br` — **DNS ainda não criado em 22/09/2026** (NXDOMAIN) e fora do `fqdn` | `pactha-juranda-pr-54-232-208-118.sslip.io` |
+> | Juranda | `juranda.pr.pactha.com.br` (no ar em 22/09/2026) | `pactha-juranda-pr-54-232-208-118.sslip.io` |
 >
 > ⚠️ Os dois primeiros **faltavam neste arquivo** ate 05/09/2026, e a ausencia custou uma
 > sessao inteira de desconfianca: quem le so o `INFRA.md` conclui que `freitas.pactha.com.br`
@@ -309,7 +309,7 @@ tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 
 | App | Origem | URL |
 |---|---|---|
-| `juranda-pr-frontend` | imagem `pactha-frontend-juranda-pr` | https://pactha-juranda-pr-54-232-208-118.sslip.io |
+| `juranda-pr-frontend` | imagem `pactha-frontend-juranda-pr` | https://juranda.pr.pactha.com.br · https://pactha-juranda-pr-54-232-208-118.sslip.io |
 | `juranda-pr-api` | imagem `pactha-api` | https://pactha-juranda-pr-api-54-232-208-118.sslip.io |
 | `juranda-pr-worker` | imagem `pactha-worker` | interno |
 | `juranda-pr-db` | `postgres:16-alpine` | interno — db/user `pactha`, uuid `h9xagrmqvvyw5vauc4c9lxpr` |
@@ -329,9 +329,9 @@ tenant** (o `production` está vazio — ver a nota do Santa Maria abaixo).
 > Frontend → API conferido com o `CONTROL_TOKEN_BOOTSTRAP` do próprio Juranda (a API da
 > Nova Palma recusa o mesmo token com 401).
 >
-> ⚠️ **Domínio `juranda.pr.pactha.com.br`: DNS não existia em 22/09/2026.** Quando o `A`
-> → `54.232.208.118` existir, somar ao `fqdn` do frontend (não trocar — o sslip é o que o
-> CI e a extensão usam) e redeployar. Ver a regra no §8.
+> **Domínio `juranda.pr.pactha.com.br` no ar em 22/09/2026:** `A` → `54.232.208.118` no
+> Registro.br, somado ao `fqdn` do frontend (o sslip continua — é o que o CI e a extensão
+> usam) e redeployado; certificado válido e `/api/health` 200 pelo domínio.
 
 ### Servidor MCP (leitura por IA) — um por tenant
 
