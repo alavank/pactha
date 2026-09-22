@@ -75,6 +75,7 @@ ONDE_OLHAR = {
     "tce_rs_portal": "portal.tce.rs.gov.br (mesmo bloqueio de borda do outro host)",
     "tce_pr": "pit.tce.pr.gov.br (zip anual do SIM-AM, lido por HTTP Range)",
     "convenios_pr": "transparencia.download.pr.gov.br (CONVENIOS-{ANO}.zip, o SIT aberto)",
+    "regularidade_pr": "certidões públicas da SEFA-PR (www4.pr.gov.br) e do TCE-PR (Liberatória)",
     "che_rs": "CHE/RS",
     "convenios_rs": "CAGE/RS",
     "consulta_popular_rs": "Consulta Popular/RS",

@@ -424,8 +424,10 @@ _COBERTURA_POR_FONTE = [
       "Convênios SIGCON-MG": "Estadual"}),
     ("cagec_situacao", """
         CASE WHEN fonte = 'CHE-RS' THEN 'CHE-RS (habilitação)'
+             WHEN fonte = 'CERTIDOES-PR' THEN 'Certidões PR (SEFA e TCE-PR)'
              ELSE 'CAGEC-MG (habilitação)' END""",
      {"CHE-RS (habilitação)": "Regularidade",
+      "Certidões PR (SEFA e TCE-PR)": "Regularidade",
       "CAGEC-MG (habilitação)": "Regularidade"}),
 ]
 

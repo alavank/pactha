@@ -54,10 +54,14 @@ export const CADASTRO_ESTADUAL: Record<string, CadastroEstadual> = {
   // scge.pe.gov.br/crt — Cadastro de Regularidade de Transferências, da
   // Secretaria da Controladoria-Geral do Estado.
   PE: { sigla: "CRT", nome: "Cadastro de Regularidade de Transferências", orgao: "SCGE-PE" },
-  // fazenda.pr.gov.br — a Secretaria da Fazenda emite a certidão exigida pela
-  // LRF para o município receber transferência voluntária do Estado.
-  PR: { nome: "Certidão de Transferências Voluntárias",
-        curto: "Transferências Voluntárias", orgao: "SEFAZ-PR" },
+  // O Paraná não tem cadastro de convenentes: exige CERTIDÕES (SEAP-PR,
+  // "Certidões exigidas para Convênios"). Coletamos as duas públicas sem captcha
+  // (`ingestion/regularidade_pr.py`): a Certidão Negativa para Transferências
+  // Voluntárias da SEFA (LRF art. 25) e as pendências da Certidão Liberatória do
+  // TCE-PR (Res. 28/2011). CND estadual e CADIN-PR têm reCAPTCHA: consulta manual.
+  PR: { nome: "Certidões para Transferências Voluntárias (SEFA e TCE-PR)",
+        curto: "Certidões do Estado", orgao: "SEFA-PR e TCE-PR",
+        trava: "impede receber transferência voluntária do Estado" },
   // fazenda.sp.gov.br/TransferenciaVoluntaria — sistema próprio da SEFAZ.
   SP: { nome: "Sistema de Transferências Voluntárias",
         curto: "Transferências Voluntárias", orgao: "SEFAZ-SP" },
@@ -193,15 +197,17 @@ export function subtituloEstadual(uf?: string | null): string {
 /** Este sistema acompanha a regularidade estadual deste estado hoje?
  *
  *  ⚠️ NÃO é "o estado tem cadastro" — todos têm. É se NÓS coletamos. Hoje são
- *  dois coletores: `ingestion/cagec_scraper.py` (portal de Minas, Playwright +
- *  PDF) e `ingestion/che_rs.py` (CHE gaúcho, API JSON pública). Cada um só
- *  responde por ente do seu estado. Quando entrar outro, esta lista cresce junto.
+ *  três coletores: `ingestion/cagec_scraper.py` (portal de Minas, Playwright +
+ *  PDF), `ingestion/che_rs.py` (CHE gaúcho, API JSON pública) e
+ *  `ingestion/regularidade_pr.py` (certidões da SEFA e do TCE-PR, 22/09/2026).
+ *  Cada um só responde por ente do seu estado. Quando entrar outro, esta lista
+ *  cresce junto — e `services/cadastro_estadual.py` no backend também.
  *
  *  ⚠️ E ela cresce SÓ COM COLETOR NO AR, nunca "porque o estado tem cadastro":
  *  esta lista é o que faz o medidor da Visão Geral afirmar que a regularidade
  *  está acompanhada. Entrar aqui com a tabela vazia é prometer cobertura que
  *  não existe. */
-export const UFS_ACOMPANHADAS = new Set<string>(["MG", "RS"]);
+export const UFS_ACOMPANHADAS = new Set<string>(["MG", "RS", "PR"]);
 
 export function acompanhamosEstadual(uf?: string | null): boolean {
   return UFS_ACOMPANHADAS.has((uf || "").trim().toUpperCase());
