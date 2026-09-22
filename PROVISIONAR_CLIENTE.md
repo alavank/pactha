@@ -104,7 +104,17 @@ FRONTEND_URL=
 BI_MODULE=1              # o Painel de Indicadores
 ADMIN_PASSWORD=          # opcional: fixa a senha do super-admin em vez de
                          # depender de alguém ler o log do primeiro boot
+CONTROL_TOKEN_BOOTSTRAP= # novo por cliente (32 bytes base64-url); é o que o
+                         # resumo diário e o agenda_noturna usam para ler a API
+AUTHZ_MODO=aviso         # só no primeiro boot — ver o passo 5
 ```
+
+O resto da API copia o padrão de um tenant vivo (`ENV=production`,
+`CORS_ORIGIN_REGEX=chrome-extension://.*`, `RM_LOGO=/<logo do cliente>`). O worker leva
+`INSTANCE_SLUG`, `DATABASE_URL_SYNC` e a **mesma** `COFRE_KEY` da API dele, mais as flags de
+coleta e os segredos **compartilhados** da plataforma (`PORTAL_TRANSPARENCIA_API_KEY`,
+`WATCHDOG_TELEGRAM_*`, e a `ANTHROPIC_API_KEY` na API se a IA ficar ligada), copiados de
+outro tenant sem passar pela tela.
 
 > **`ADMIN_PASSWORD` resolve um problema real.** Sem ela, a senha do
 > `super-admin@alavank.com.br` só aparece no console do primeiro boot; se ninguém
@@ -152,6 +162,8 @@ Então, antes de criar qualquer aplicação:
 2. Criar o banco do cliente (`<slug>-db`, `postgres:16-alpine`, db/user `pactha`).
    ⚠️ Gere a senha do Postgres **só com letras e dígitos**: ela vai crua dentro da
    `DATABASE_URL`, e `@ : / ? #` quebram a URL.
+   ⚠️ O banco criado pela API **nasce parado** (`exited:unhealthy`), mesmo com
+   `instant_deploy:true`: `POST /databases/<uuid>/start` antes de subir a api.
 3. Criar as três aplicações no Coolify — api, worker e frontend —, todas com
    `instant_deploy:false`. **O frontend tem de apontar para a imagem do passo 0**,
    nunca para a herdada de outro cliente.
@@ -165,10 +177,12 @@ Então, antes de criar qualquer aplicação:
    > Suba o primeiro boot com **`AUTHZ_MODO=aviso`** e só depois troque para
    > `bloqueio` + redeploy. Custa um deploy e evita descobrir um backfill de
    > permissão quebrado com o tenant já trancado.
-6. Subir **worker** e **frontend**. **Um app por vez, esperando cada um
-   terminar** — não por CPU (a VPS tem 8 vCPU e 32 GB), e sim porque o Coolify
-   roda com `concurrent_builds=1`: disparar tudo junto só faz fila, e fila longa
-   já matou coleta em voo neste projeto.
+6. Subir **worker** e **frontend** depois que a api confirmou. (O Coolify roda
+   com `concurrent_builds=6` desde 15/09/2026, então não há mais fila a evitar; a
+   ordem importa só porque é a api que cria o schema.) Confira que o frontend fala
+   com a API **dele**: `GET <frontend>/api/control/cobertura` com o
+   `CONTROL_TOKEN_BOOTSTRAP` do tenant novo tem de listar o município dele — e o
+   mesmo token no frontend de outro cliente tem de dar 401.
 7. Entrar como `super-admin@alavank.com.br`, trocar a senha, conferir que o
    município que aparece é o certo.
 8. **Fechar o laço do CI** — e este passo já foi esquecido: acrescentar o uuid do
@@ -176,8 +190,16 @@ Então, antes de criar qualquer aplicação:
    `nome:api_uuid:worker_uuid` em `TENANTS` no `build-backend.yml`. Sem isso o
    tenant novo **nunca mais recebe deploy**, e em silêncio: os merges seguintes
    simplesmente não o incluem. Ponha-o por último nas duas listas.
-9. Criar as Scheduled Tasks do worker (horários em janelas que os outros tenants
-   não usem) e a 4ª entrada no `case` de `scripts/separar_papel_banco.sh`.
+9. Criar as Scheduled Tasks do worker e uma entrada no `case` de
+   `scripts/separar_papel_banco.sh`. As tasks são as de um tenant do mesmo perfil,
+   com o comando **igual** e o horário deslocado (o Juranda/PR, só federal, levou as
+   21 do novapalma com +14 min); as de rodízio ganham um bloco no `PLANO` de
+   `scripts/agenda_noturna.py`, num slot que a auditoria lista como livre — rode
+   `python scripts/agenda_noturna.py` e só siga com `== OK`.
+   ⚠️ Task criada depois do horário do dia só roda amanhã (e a mensal, só no mês que
+   vem). Para a primeira carga, crie uma task extra com o cron **amarrado à data de
+   hoje** (`20 3 22 9 *`): roda uma vez e, se ninguém apagar, só voltaria daqui a um
+   ano. Apague-a depois de conferir a execução.
 10. **Colocar o tenant na extensão de captura** — `AMBIENTES_CONHECIDOS` em
     `extension/ambientes.js` — e emitir o service token dele
     (`POST /api/control/session/token`, scope `session:write`) para colar no
@@ -187,6 +209,10 @@ Então, antes de criar qualquer aplicação:
     inteiro assim, com 216 leituras atrás do login sem retorno.
     `backend/tests/test_extensao_conhece_os_tenants.py` reprova o PR que
     esquecer, cruzando esta lista com o `TENANTS` do passo 8.
+11. **Pôr o tenant no resumo diário** — o secret `PACTHA_RESUMO_TENANTS` do repo
+    (JSON `[{"slug","api_url","control_token"}]`, ver `.github/workflows/resumo-coleta.yml`).
+    Secret não acompanha merge: quem grava é o dono, **pela web do GitHub**. Até lá o
+    resumo das 07h avisa que o tenant está deployado e fora do relatório.
 
 > ⚠️ **Mergear não publica.** As aplicações usam `build_pack = dockerimage`: rodam
 > a tag gravada em `docker_registry_image_tag`. O CI só publica no GHCR. Ver
@@ -202,7 +228,7 @@ Então, antes de criar qualquer aplicação:
   é credencial guardada e não é mais o bookmarklet — este foi aposentado porque
   só enxergava `document.cookie` e deixava de fora todo cookie `httpOnly`,
   justamente onde mora o `JSESSIONID` do SICONV legado. A extensão manda a
-  sessão para os seis ambientes de uma vez e faz keep-alive a cada 12 min.
+  sessão para todos os ambientes de uma vez e faz keep-alive a cada 12 min.
   ⚠️ **Ela só funciona com um Chrome aberto**: a sessão JEE morre com 20–30 min
   de inatividade. Chrome fechado no fim do expediente = coleta gated parada no
   dia seguinte, em todos os tenants ao mesmo tempo.

@@ -32,13 +32,13 @@
  * cross-mun". Por isso a captura multi-ambiente NUNCA manda id de município. */
 const AMBIENTE_ESCOPO_INSTANCIA = 0;
 
-// Os SEIS tenants em produção (09/09/2026). O `token` nasce vazio: ele é
+// Os SETE tenants em produção (22/09/2026). O `token` nasce vazio: ele é
 // PRÓPRIO de cada ambiente (os service tokens vivem no banco de cada um) e é
 // colado pela tela de configuração.
 //
 // ⚠️ Toda URL aqui precisa casar com `host_permissions` no manifest.json —
 // fora dele o Chrome bloqueia o fetch ANTES de sair (MV3) e a captura falha sem
-// nunca chegar ao servidor. `https://*.sslip.io/*` cobre os seis.
+// nunca chegar ao servidor. `https://*.sslip.io/*` cobre os sete.
 //
 // ⚠️⚠️ CLIENTE NOVO ENTRA AQUI, NO MESMO PR QUE O COLOCA NO DEPLOY. O `bgk`
 // entrou no `TENANTS` do build-backend.yml em 08/09/2026 e ficou DE FORA desta
@@ -58,6 +58,7 @@ const AMBIENTES_CONHECIDOS = [
   { nome: "Santa Maria - RS", api: "https://pactha-santamaria-rs-api-54-232-208-118.sslip.io/api" },
   { nome: "Nova Palma - RS", api: "https://pactha-novapalma-rs-api-54-232-208-118.sslip.io/api" },
   { nome: "BGK - RS", api: "https://pactha-bgk-rs-api-54-232-208-118.sslip.io/api" },
+  { nome: "Juranda - PR", api: "https://pactha-juranda-pr-api-54-232-208-118.sslip.io/api" },
 ];
 
 /** A lista salva, já migrada do formato antigo.

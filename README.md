@@ -8,9 +8,9 @@ frescor por municipio.
 > 📍 **Onde isto roda:** **AWS Lightsail `54.232.208.118` (sa-east-1), orquestrado por Coolify.**
 > Toda a verdade sobre servidor, URLs, bancos, crons e segredos esta em **[`INFRA.md`](INFRA.md)**.
 
-## ⚠️ Um repo, SEIS tenants — e um merge na main DEPLOYA OS SEIS
+## ⚠️ Um repo, SETE tenants — e um merge na main DEPLOYA OS SETE
 
-Este repositorio atende **seis clientes distintos**, cada um com seu proprio conjunto de
+Este repositorio atende **sete clientes distintos**, cada um com seu proprio conjunto de
 containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 
 | Tenant | Slug | Quem e | Dominio de producao (conferido 05/09/2026) |
@@ -21,15 +21,16 @@ containers e seu **proprio banco**, todos buildados do **mesmo codigo**:
 | Santa Maria/RS | `santamaria-rs` | prefeitura | `santamaria.rs.pactha.com.br` |
 | Nova Palma/RS | `novapalma-rs` | prefeitura | `novapalma.rs.pactha.com.br` |
 | BGK/RS | `bgk-rs` | assessoria (10 municipios do RS) | `bgk.pactha.com.br` |
+| Juranda/PR | `juranda-pr` | prefeitura (aberta em 22/09/2026; so fontes federais) | `juranda.pr.pactha.com.br` (DNS pendente em 22/09/2026 — ver INFRA.md §3) |
 
 > ⚠️ **DOIS ENDERECOS PARA O MESMO CONTAINER, e isto ja custou confusao.** Todo app tem o
 > endereco cru `pactha[-slug]-54-232-208-118.sslip.io` (o IP do servidor resolvido pelo
-> `sslip.io`), e os seis tem TAMBEM o dominio da tabela acima. **Sao o mesmo
+> `sslip.io`), e os sete tem TAMBEM o dominio da tabela acima. **Sao o mesmo
 > container e o mesmo banco** — nao existe ambiente de teste separado, e mexer por um
 > endereco mexe no outro. A tabela completa esta em [`INFRA.md`](INFRA.md) §3.
 
-**Os seis tenants** tem o **Painel de Indicadores** (BI) ligado — conferido em 09/09/2026
-respondendo `/api/bi/overview` nas seis APIs — flag build-time
+**Todos os tenants** tem o **Painel de Indicadores** (BI) ligado — conferido em 09/09/2026
+respondendo `/api/bi/overview` nas seis APIs de entao; o Juranda nasceu com ele — flag build-time
 `NEXT_PUBLIC_BI_MODULE=1` na matriz do `build-frontend.yml`. `/dashboard` e o
 painel executivo (abas por assunto, filtro multi-ano, insights de IA) e `/tela` e
 o **Modo Tela** (TV de gabinete, com link publico revogavel `/t/<slug>`). O app
@@ -40,16 +41,17 @@ outro sao as env vars no Coolify (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`,
 `NEXT_PUBLIC_CLIENT_LOGO`, `NEXT_PUBLIC_CLIENT_SUBTITLE`).
 
 **Consequencia pratica:** merge na `main` que toca `backend/**` ou `frontend/**` **builda no
-GitHub Actions e deploya os 6 tenants sozinho**, na ordem certa: API primeiro (roda as
+GitHub Actions e deploya os 7 tenants sozinho**, na ordem certa: API primeiro (roda as
 migrations; deployment confirmado), depois o worker do mesmo tenant **esperando janela sem
 coleta em voo**. O auto-deploy por webhook do Coolify esta **desligado**: ele recriava
 containers com a tag antiga e matava coleta. Deploy manual continua possivel para rollback.
 Mecanica completa comentada nos proprios `.github/workflows/*.yml`; visao de infra em
 [`INFRA.md`](INFRA.md) §2.
 
-Alem disso, um mesmo bug corrigido aqui **vai para os seis clientes** — e uma mudanca de
-schema precisa ser idempotente nos seis bancos, inclusive num **novo**: Santa Maria (08/2026)
+Alem disso, um mesmo bug corrigido aqui **vai para os sete clientes** — e uma mudanca de
+schema precisa ser idempotente nos sete bancos, inclusive num **novo**: Santa Maria (08/2026)
 e Nova Palma (01/09/2026) nasceram do zero, e a segunda expos um bug de ORDEM das migrations.
+Juranda (22/09/2026) foi o ultimo banco criado do zero: 138/138 no primeiro boot.
 
 > ⚠️ **MIGRATION QUE FALHA NAO DERRUBA O BOOT.** `services/startup.py` registra o erro numa
 > linha de log e segue. Depois de um deploy que traga migration, **confira no log** que ela
@@ -128,9 +130,10 @@ python -m pytest        # da raiz, SEM argumento: pytest.ini e conftest.py cuida
 
 ## Deploy (Coolify / AWS Lightsail)
 
-Painel do Coolify: `http://54.232.208.118:8000` — projeto `pactha`, environment `production`.
+Painel do Coolify: `http://54.232.208.118:8000` — projeto `pactha`, **um environment por
+tenant** (o `production` esta vazio). Cliente novo: [`PROVISIONAR_CLIENTE.md`](PROVISIONAR_CLIENTE.md).
 
-**Cada tenant** tem o mesmo conjunto de 4 resources (6 tenants = 24 resources):
+**Cada tenant** tem o mesmo conjunto de 4 resources (7 tenants = 28 resources):
 
 | Resource | Build | Dominio |
 |----------|-------|---------|

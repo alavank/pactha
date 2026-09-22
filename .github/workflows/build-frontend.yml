@@ -186,7 +186,7 @@ jobs:
       COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
     steps:
-      - name: Avanca tag e deploya os 6 frontends
+      - name: Avanca tag e deploya os 7 frontends
         run: |
           # Mesma politica de erro do backend: -e do Actions desligado, mutacao
           # falha alto com rollback de tag, leitura falha fechado.
@@ -223,7 +223,7 @@ jobs:
           # confirmacao de cada um. O paralelismo real vem do `concurrent_builds`
           # do servidor no Coolify (INFRA.md §4).
           declare -A DEPS=()
-          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf rpqpxroy5orsuidrbfezlzkt srbi2qotciphxdxhn6io25a3; do
+          for APP in qgmw4e5wjem1e8jit2wyvo1d j5ghp71lff003d5rfaynvy5y bryvqhhcu97lc3ku7a2hss0q eohjo0cy4nbl6t7hiaqwagwf rpqpxroy5orsuidrbfezlzkt srbi2qotciphxdxhn6io25a3 4sbd4cqwudzvlqaj8ckalbrp; do
             OLD_TAG=$("${CURL[@]}" "$COOLIFY_URL/api/v1/applications/$APP" | jq -r '.docker_registry_image_tag // ""')
             if ! "${CURL[@]}" -X PATCH -H "Content-Type: application/json" \
                  -d "{\"docker_registry_image_tag\":\"$TAG\"}" \

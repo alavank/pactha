@@ -29,7 +29,7 @@ directly — it enqueues into the `scraper_jobs` table, consumed by
 ## Concurrency — hard limit, do not raise
 
 Collection is intentionally **not concurrent** across sources on a worker (`flock`-guarded
-`/tmp/scraper.lock`) and cron schedules are staggered across the six tenants.
+`/tmp/scraper.lock`) and cron schedules are staggered across the seven tenants.
 
 ⚠️ **The reason is the PORTAL, not the host.** This paragraph used to say the box was
 "a burstable 2-vCPU instance" — that described the old t3.large and stopped being true

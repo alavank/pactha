@@ -60,14 +60,14 @@ gh run list --branch main --limit 5 --json name,status,conclusion,databaseId
 gh run watch <id> --exit-status
 ```
 
-O build roda no runner do GitHub (`ubuntu-latest`, INFRA.md §2), com os seis
+O build roda no runner do GitHub (`ubuntu-latest`, INFRA.md §2), com os sete
 frontends em paralelo.
 
 ### 4. Dizer o que entrou
 
 Feche com: em quais clientes subiu, o que conferir na tela, e o que ficou
 pendente. Se o deploy falhou em parte dos tenants, diga **quais** — "deu erro"
-sem lista faz o dono abrir os seis.
+sem lista faz o dono abrir os sete.
 
 ## Quando algo dá errado
 

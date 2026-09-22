@@ -57,8 +57,10 @@ case "$TENANT" in
   santamaria) CONTAINER="m2ypghl41lbqhv7rdqzffdi3" ;;
   # BGK Assessoria/RS (6o tenant, aberto em 08/09/2026).
   bgk)        CONTAINER="evdmnadr2iiwqhjvnzvqrgvs" ;;
+  # Juranda/PR (7o tenant, aberto em 22/09/2026).
+  juranda)    CONTAINER="h9xagrmqvvyw5vauc4c9lxpr" ;;
   *)
-    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas|santamaria|bgk}" >&2
+    echo "uso: bash $0 {ensaiar|aplicar|conferir|desfazer} {montesiao|trust|freitas|santamaria|bgk|juranda}" >&2
     exit 2
     ;;
 esac

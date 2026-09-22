@@ -157,7 +157,8 @@ CAGEC_TRAVA = troca_trava("/tmp/scraper.lock", TRAVA_CAGEC)
 # IP. Slots de 30 min: 22:00 22:30 23:00 | 00:05 00:35 ... 09:05 09:35.
 #   22:00 santamaria · 22:30 montesiao · 23:00 novapalma
 #   :05 → trust  (00-04, 06-09 = 9 rodadas)      :35 → freitas (00-03, 05 = 5)
-#   :35 → bgk    (04, 06-08 = 4)                  LIVRES: 05:05 · 09:35
+#   :35 → bgk    (04, 06-08 = 4)                  05:05 → juranda (1)
+#   LIVRE: 09:35
 # O `transferegov` (base diaria) de cada cliente fica FORA dos slots do proprio lote
 # (mesma trava); ele pode cruzar com o lote de OUTRO cliente, como sempre cruzou.
 PLANO: dict[str, dict[str, dict]] = {
@@ -228,6 +229,18 @@ PLANO: dict[str, dict[str, dict]] = {
                                 "timeout": TIMEOUT_ARVORE, "criar": True},
         "fpe-rs":            {"frequency": "51 22 * * 1-6"},
         "cadin-rs":          {"frequency": "47 22 * * *"},
+    },
+    # Juranda/PR (22/09/2026): 1 municipio e so fontes federais (sem fpe-rs/cadin-rs).
+    # As outras tasks dele sao as do novapalma com +14 min (o bgk esta a +7).
+    "juranda": {
+        # um slot do lote cobre 1 municipio; ocupa o 05:05, que estava livre
+        "transferegov-lote": {"frequency": "5 5 * * *", "command": CMD_LOTE, "timeout": TIMEOUT_LOTE},
+        # fora do proprio lote (que acaba ate 05:34); kill em 30 min -> 07:20
+        "transferegov":      {"frequency": "50 6 * * *", "command": TG_BASE},
+        "faf-planos":        {"frequency": "40 7 * * *", "command": CMD_FAF, "timeout": TIMEOUT_FAF},
+        # base 06:50 -> 07:20; ultimo da escada (bgk 08:10), termina ate 09:12
+        "transferegov-arvore": {"frequency": "40 8 * * *", "command": CMD_ARVORE,
+                                "timeout": TIMEOUT_ARVORE},
     },
 }
 

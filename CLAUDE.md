@@ -36,18 +36,21 @@ Três regras:
 - **Um fato, um lugar.** Duplicar entre `README`/`INFRA`/`CONTINUAR` garante divergência;
   aponte para a fonte.
 
-**⚠️ One repo, SIX tenants — a merge to `main` deploys all six.** Freitas, Trust,
-Monte Sião/MG, Santa Maria/RS, Nova Palma/RS and BGK (assessoria com 10 municípios do RS,
-aberta em 08/09/2026) each get their own containers and own Postgres database,
+**⚠️ One repo, SEVEN tenants — a merge to `main` deploys all seven.** Freitas, Trust,
+Monte Sião/MG, Santa Maria/RS, Nova Palma/RS, BGK (assessoria com 10 municípios do RS,
+aberta em 08/09/2026) and Juranda/PR (22/09/2026 — o primeiro do Paraná, só com as fontes
+federais: não há coletor estadual do PR) each get their own containers and own Postgres database,
 all built from the same code (`backend/**` or `frontend/**` changes trigger `.github/workflows/build-backend.yml`
-/ `build-frontend.yml`, which build, then deploy all 6 tenants via the Coolify API). There is
+/ `build-frontend.yml`, which build, then deploy all 7 tenants via the Coolify API). There is
 no multi-tenancy in code — isolation is by *deploy*: env vars differ per tenant
 (`INSTANCE_SLUG`, `DATABASE_URL`, `JWT_SECRET`, `COFRE_KEY`, `NEXT_PUBLIC_CLIENT_LOGO`, …). A
-bug fix here ships to all six clients, and a schema change must be idempotent against all
-six databases — including a **fresh** one: Santa Maria/RS (08/2026) was the first database
+bug fix here ships to all seven clients, and a schema change must be idempotent against all
+seven databases — including a **fresh** one: Santa Maria/RS (08/2026) was the first database
 ever created from scratch, and Nova Palma/RS (01/09/2026) was the second — it exposed a
 migration ORDERING bug (`add_detalhe_pagina_rodizio.sql` altering a table created later in
-`MIGRATION_FILES`), now guarded by `tests/test_migrations_ordem_tabela.py`. Full infra facts (server, URLs, UUIDs, secrets) live in `INFRA.md`; project
+`MIGRATION_FILES`), now guarded by `tests/test_migrations_ordem_tabela.py`. Juranda/PR was the
+latest fresh database: 138/138 migrations on first boot. Cliente novo segue
+`PROVISIONAR_CLIENTE.md`. Full infra facts (server, URLs, UUIDs, secrets) live in `INFRA.md`; project
 history/decisions live in `CONTINUAR.md` — read both before large changes, they are written as
 AI-session handoff docs and are kept current.
 
