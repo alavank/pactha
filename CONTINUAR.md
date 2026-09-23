@@ -29,6 +29,27 @@
 
 ---
 
+## 1.35. Convênios estaduais de ENTIDADES: não descartar mais (23/09/2026)
+
+Terceira fonte do relatório do dono ("Portal da Transparência PR — convênios · SIT ·
+SEFA") **já estava no ar** (`convenios_pr.py`, #533). O que faltava era a regra do
+dono: o coletor jogava fora as linhas de quem está no município e não é a prefeitura
+(em Juranda, a APAE: 7 convênios, R$ 7,7 mi). Agora elas vão para
+`convenios_estadual_outros` e aparecem na tela de Convênios num bloco recolhido,
+"Outros convenentes no município".
+
+- **Tabela própria, e não coluna `municipal` em `convenios_estadual`**: 15 leitores somam
+  aquela tabela (dashboard, painel, BI, RM, parlamentares, consolidado...); uma coluna
+  exigiria o filtro nos 15 e o que esquecesse divergiria das outras telas. Aqui fica
+  fora das contas por construção, e `test_convenios_pr.py` falha se outro leitor além
+  de `routers/convenios.py` fizer `FROM`/`JOIN` nela.
+- Genérica por `fonte`: o RS (`convenios_rs.py`) descarta as mesmas linhas e pode
+  gravar aqui quando for a vez dele.
+- O SIT logado (credencial da prefeitura) e o sistema novo da SEFA (sem portal público)
+  continuam fora — nada a coletar.
+
+---
+
 ## 1.34. CGU — o dinheiro federal fora do TransfereGov (23/09/2026)
 
 Segunda fonte do relatório do dono: "Portal da Transparência — API de convênios",
