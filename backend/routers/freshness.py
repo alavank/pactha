@@ -161,6 +161,14 @@ _SOURCES = [
     # data e a da COBERTURA (ultima busca feita inteira), nao a do ato: semana
     # sem nada no DOU sobre o municipio e resultado, e nao coleta parada. Conta
     # as citacoes, sem as de `cidade` (endereco), que a tela esconde.
+    # CGU / Portal da Transparência (23/09/2026). NACIONAL (casa pelo CNPJ da
+    # prefeitura). A data é a da CARGA: a planilha da CGU não é diária (a de 11/09
+    # ainda era a mais nova em 22/09), e a rodada que acha o mesmo arquivo grava
+    # `success` sem regravar — o frescor da fonte é o `arquivo` na tela.
+    ("CGU — Convênios fora do TransfereGov (Defesa Civil)",
+     "SELECT (SELECT max(carregado_em) FROM cgu_convenios_carga), "
+     "(SELECT count(*) FROM cgu_convenios)",
+     "cgu_convenios"),
     ("DOU — Diário Oficial da União",
      "SELECT (SELECT max(atualizado_em) FROM dou_cobertura), "
      "(SELECT count(*) FROM dou_atos_municipio WHERE evidencia <> 'cidade')",

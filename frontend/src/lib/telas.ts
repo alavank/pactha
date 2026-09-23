@@ -120,6 +120,8 @@ export const TELAS: TelaDef[] = [
   { key: "obrasgov", label: "Obras Federais (Obras.gov.br)" },
   { key: "parcerias", label: "Parcerias (emendas de saúde)" },
   { key: "faf_planos", label: "Planos de Ação (Fundo a Fundo)" },
+  // CGU (23/09/2026): os repasses federais que o TransfereGov não tem.
+  { key: "cgu_convenios", label: "Defesa Civil e outros repasses (CGU)" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },

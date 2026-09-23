@@ -5,8 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **27 official data sources** (federal +
-MG/ES/GO/RS/PR state). The newest (22/09/2026) is the **DOU federal** (`dou_federal.py` —
+emendas) for Brazilian municipalities, tracking **28 official data sources** (federal +
+MG/ES/GO/RS/PR state). The newest (23/09/2026) is the **CGU convênios spreadsheet**
+(`cgu_convenios.py`): the federal money that does NOT go through TransfereGov — the
+Defesa Civil *transferências legais* (Nova Palma: 8 active, R$ 22,9 mi, R$ 20,8 mi still
+to be released) and the pre-2009 SIAFI history — from the Portal da Transparência's open
+spreadsheet (no token), matched by the prefeitura's CNPJ and its SIAFI município code.
+⚠️ Neither the API nor the spreadsheet links convênio to emenda, despite what the source
+report claimed. Screen: FEDERAIS › "Defesa Civil e outros (CGU)". Before it, the **DOU
+federal** (`dou_federal.py` —
 the Diário Oficial da União, the captação trigger: the portaria that authorizes a repasse
 comes out there before any system shows it). It uses the Imprensa Nacional's PUBLIC search
 (no INLABS login) to gather candidates per município and reads each act in full; an act
@@ -160,7 +167,7 @@ that area. Read the relevant one before making changes there:
 
 | Skill | Area |
 |---|---|
-| `ingestion` | scrapers/collectors, the 27 data sources, scheduling |
+| `ingestion` | scrapers/collectors, the 28 data sources, scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
 | — | **Permissão: Módulo › Tela › Ação** — a regra inteira em `docs/PERMISSOES_POR_TELA.md` |

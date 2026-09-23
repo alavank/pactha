@@ -202,6 +202,10 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- (PIT). Só `ver`. A concessão aos que já estão no ar é de
     -- `add_tela_tce_pr.sql`.
     ('tce_pr.ver', 'convenios', FALSE),
+    -- CGU (23/09/2026): Defesa Civil e outros repasses que o TransfereGov não
+    -- tem. Só `ver`; a concessão aos que já estão no ar é de
+    -- `add_tela_cgu_convenios.sql`.
+    ('cgu_convenios.ver', 'convenios', FALSE),
     ('cauc.ver', 'convenios', FALSE),
     ('cauc.exportar', 'convenios', FALSE),
     ('cauc.atualizar', 'convenios', TRUE),
@@ -427,6 +431,7 @@ WITH marca AS (
         ('emendas_rs', 'emendas_rs.ver', FALSE),
         ('tce_rs', 'tce_rs.ver', FALSE),
         ('tce_pr', 'tce_pr.ver', FALSE),
+        ('cgu_convenios', 'cgu_convenios.ver', FALSE),
         -- Parametros: tela NULL e admin, como as demais abas de administracao.
         (NULL, 'parametros.ver', TRUE),
         (NULL, 'parametros.editar', TRUE),

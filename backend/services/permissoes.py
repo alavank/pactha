@@ -465,6 +465,12 @@ _RECURSOS: tuple = (
     _Recurso("faf_planos", SEC_CONVENIOS, "Planos de Ação (Fundo a Fundo)",
              "os planos de ação e a origem do repasse fundo a fundo", "",
              ("ver",), fonte="no Transferegov", tela="faf_planos"),
+    # CGU (23/09/2026): os convênios federais que o TransfereGov NÃO tem — as
+    # transferências legais da Defesa Civil e o histórico anterior a 2009 —, pela
+    # planilha do Portal da Transparência. Só `ver`, pelo critério das vizinhas.
+    _Recurso("cgu_convenios", SEC_CONVENIOS, "Defesa Civil e outros repasses (CGU)",
+             "os repasses federais publicados pela CGU que o TransfereGov não tem", "",
+             ("ver",), fonte="no Portal da Transparência", tela="cgu_convenios"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG",

@@ -150,6 +150,10 @@ FRESCOR_HORAS_NACIONAL = {
     # municipio ativo, sem recorte de UF). 30h = um dia + folga. Busca que falhou
     # ou estouro de orcamento gravam 'partial', que aqui nao conta como sucesso.
     "dou_federal": 30,
+    # CGU / convênios pela planilha (23/09/2026): task diária em todo worker; o
+    # arquivo da CGU muda poucas vezes por mês, mas a rodada que o acha igual
+    # grava `success` do mesmo jeito — então 30h continua medindo a TASK.
+    "cgu_convenios": 30,
     # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
     # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
     # limit — e o CIPI muda devagar. 54h = dois dias + folga.
