@@ -643,6 +643,10 @@ MIGRATION_FILES = [
     # aditivos, despesa por fonte e o selo (ETag) de cada ano por municipio. Todas
     # as tabelas sao novas e so tem FK para `municipios`.
     "add_tce_pr.sql",
+    # DOU federal (22/09/2026): os atos lidos, a citacao de cada municipio e ate
+    # que dia a busca dele foi feita inteira. Tabelas novas, so com FK para
+    # `municipios` (e a citacao para `dou_atos`, criada no mesmo arquivo).
+    "add_dou_federal.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

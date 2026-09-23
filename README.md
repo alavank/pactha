@@ -1,7 +1,8 @@
 # PACTHA — Sistema de Monitoramento de Convenios
 
 Plataforma de monitoramento de convenios, repasses e emendas para municipios e
-assessorias — **22 fontes oficiais** (federais + estaduais de MG/ES/GO/RS), coletadas
+assessorias — fontes oficiais federais + estaduais de MG/ES/GO/RS/PR (a contagem em dia
+fica no `CLAUDE.md`), coletadas
 na cadencia real de cada uma, com selo "atualizado em" nas telas e vigilancia de
 frescor por municipio.
 
@@ -65,7 +66,7 @@ Juranda (22/09/2026) foi o ultimo banco criado do zero: 138/138 no primeiro boot
 - **Scraping**: httpx + Playwright (Chromium) + curl_cffi
 - **Deploy**: Coolify (Docker) na **AWS Lightsail**
 
-## Fontes de dados (22, cadencia propria por fonte)
+## Fontes de dados (cadencia propria por fonte; a contagem fica no `CLAUDE.md`)
 
 **Federais:** TransfereGov (portal Discricionarias + dumps SICONV/Novo PAC em
 `api-publica.transferegov.gestao.gov.br`), radar de captacao (`siconv_programa.zip` — a
@@ -77,11 +78,14 @@ InvestSUS/ConsultaFNS (fundo a fundo por bloco), CAUC/STN, SISMOB, Obras.gov.br/
 SIMEC/PAR, SICONFI/Tesouro (contas entregues + CAPAG), Portal da Transparencia/CGU
 (emendas parlamentares federais: a carteira sai do dump `siconv_emenda.zip` casada pelo
 CNPJ do beneficiario — e por isso alcanca as ~45% que nao viraram proposta e eram
-invisiveis —, e a execucao empenhado/liquidado/pago vem da API com `chave-api-dados`).
+invisiveis —, e a execucao empenhado/liquidado/pago vem da API com `chave-api-dados`),
+DOU/Imprensa Nacional (os atos do Diario Oficial da Uniao que citam o municipio pelo IBGE,
+CNPJ ou "Municipio de X/UF" — o gatilho da captacao, CONTINUAR §1.33).
 **Estaduais:** SIGCON-MG (portal logado, credencial por municipio no Cofre) + dump
 `dados.mg.gov.br`, CAGEC-MG, Acordo FES (SES-MG), GConv-ES, Transf. Voluntarias GO,
-COFIN/SES-GO, TCM-GO, TCE-RS/LicitaCon, Consulta Popular/COREDEs (RS), diarios oficiais
-MG/ES/GO/TO/RS.
+COFIN/SES-GO, TCM-GO, TCE-RS/LicitaCon, Consulta Popular/COREDEs (RS), TCE-PR/PIT,
+convenios do Estado do PR (SIT) e certidoes do PR (SEFA + Liberatoria do TCE-PR), diarios
+oficiais MG/ES/GO/TO/RS (busca em tempo real).
 
 Cada coletor vive em `backend/ingestion/` com as armadilhas anotadas no proprio
 arquivo. Frescor por municipio em `scraper_municipio_coleta`; resultado de cada rodada em

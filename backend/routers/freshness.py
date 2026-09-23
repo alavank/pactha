@@ -157,6 +157,14 @@ _SOURCES = [
     ("SICONFI — Contas no Tesouro",
      "SELECT max(atualizado_em), count(*) FROM siconfi_entregas",
      "siconfi"),
+    # DOU federal (22/09/2026). NACIONAL: todo municipio ativo com ibge_code. A
+    # data e a da COBERTURA (ultima busca feita inteira), nao a do ato: semana
+    # sem nada no DOU sobre o municipio e resultado, e nao coleta parada. Conta
+    # as citacoes, sem as de `cidade` (endereco), que a tela esconde.
+    ("DOU — Diário Oficial da União",
+     "SELECT (SELECT max(atualizado_em) FROM dou_cobertura), "
+     "(SELECT count(*) FROM dou_atos_municipio WHERE evidencia <> 'cidade')",
+     "dou_federal"),
     # Obras.gov.br/CIPI. NACIONAL: varre por UF da carteira e casa por CNPJ do
     # tomador. ⚠️ Contagem ZERO e estado legitimo (municipio sem obra federal
     # cadastrada) — o veredito e o `status` da rodada, que sai `partial` quando

@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 26 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 27 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 26 sources has its own collector file with source-specific gotchas documented
+Each of the 27 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -245,6 +245,26 @@ runs inside `run_dadosabertos_cron` with a 20 h self-limit.
 - **The Senado list per legislatura has no party.** Party comes only from `lista/atual`,
   and the upsert `COALESCE`s so a senator who left keeps the party already stored.
 - **The registry never deletes.** A house that fails makes the run `partial`.
+
+## DOU federal — the Diário Oficial da União (`ingestion/dou_federal.py`, 22/09/2026)
+
+Public search of `in.gov.br` (no INLABS login; 200 from the VPS IP, 10 searches in a row
+without a limit) → candidates per município → the full page of each NEW act → keep only
+acts with strong evidence. Full list of traps in the file header; the ones that bite:
+- **The name is not a key.** "Santa Maria" = 1.246 hits in 80 days (Herval, the DF, RN,
+  people). Evidence, strongest first: `orgao` (the prefeitura published it —
+  `hierarchyStr` "Prefeituras/Estado do .../Prefeitura Municipal de X", matched to the END),
+  `ibge` (7 digits, or 6 glued to the name — MS tables), `cnpj`, `municipio` ("Município
+  de X/UF", or "Prefeitura de X" with no UF only when X is unique nationally, from the
+  IBGE list), `cidade` (name + UF with nothing else: an ADDRESS — 20 of 28 in Santa Maria).
+  `cidade` is stored but hidden by default on the screen and never an alert.
+- **The search pages by CURSOR** (`newPage` + `score`/`id`/`displayDate` of the last hit);
+  `delta` max is 75, and asking 100 silently falls back to 20.
+- **The httpx default User-Agent is dropped** without a response; any `Mozilla/5.0 (...)` works.
+- **A 200 without the `..._params` block is a failure**, not zero results: coverage
+  (`dou_cobertura`) does not advance and the run is `partial`.
+- Acts already evaluated live in `dou_atos` (even those citing nobody) so the 2-day review
+  window does not refetch them: second run measured at 11 s against 158 s for the first.
 
 ## Authenticated sources
 

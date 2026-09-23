@@ -52,7 +52,7 @@ import {
 import {
   ABAS_CONFIGURACOES, ROTAS_LEGADAS_CONFIG, abasVisiveis,
 } from "@/lib/configuracoes";
-import { cofinanciamentoDaUf, consultaPopularDaUf, monitoramentoDaUf, programasDaUf, repassesDaUf, tceAbertoDaUf, temConteudoEstadual, temDiarioEstadual } from "@/lib/estadual";
+import { cofinanciamentoDaUf, consultaPopularDaUf, monitoramentoDaUf, programasDaUf, repassesDaUf, tceAbertoDaUf, temConteudoEstadual } from "@/lib/estadual";
 import { ehSuperAdmin } from "@/lib/conta";
 import { CONSOLIDADO, MunicipioProvider, useMunicipio } from "@/contexts/MunicipioContext";
 import { EnteAtendido, SUBTITULO_PACTHA } from "@/components/bi/Marca";
@@ -226,20 +226,12 @@ function SidebarContent({
   if (municipios.length <= 1) {
     visibleNav = visibleNav.filter((it) => !("href" in it) || it.href !== "/dashboard/consolidado");
   }
-  /* TELAS QUE DEPENDEM DA FONTE DO ESTADO. O Diário Oficial tem provedor por UF
-     (MG = Jornal Minas Gerais, ES = DOM/ES, RS = DOE-RS), então segue
-     `temDiarioEstadual`: some em GO/TO até existir o provedor daquele estado —
-     abrir a busca sem provedor iria ao diário errado. No consolidado (uf vazia)
-     fica: a carteira pode conter município mineiro. */
+  /* O Diário Oficial NÃO depende mais da UF (22/09/2026): a aba do DOU federal
+     vale para todo estado, e o diário do estado vira a segunda aba só onde há
+     provedor (`diarioDaUf`, decidido DENTRO da tela). Até aqui a tela sumia do
+     menu no PR e em qualquer UF sem provedor estadual. */
   const ufAmbiente = (municipios.find((m) => String(m.id) === selectedMunicipioId)?.uf || "")
     .toUpperCase();
-  if (ufAmbiente && ufAmbiente !== "MG") {
-    visibleNav = visibleNav.filter((it) => {
-      if (!("href" in it)) return true;
-      if (it.href === "/dashboard/dou") return temDiarioEstadual(ufAmbiente);
-      return true;
-    });
-  }
   /* "Repasses" é a tela dos estados que publicam EXECUÇÃO em vez de
      instrumento (hoje só GO). Some em MG/ES — lá o que existe é convênio, e um
      menu que abre sempre vazio ensina o usuário a ignorar o menu. No

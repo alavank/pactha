@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), DOU-MG, Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **26 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **27 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -26,6 +26,38 @@
 - `C:\projetos\PACTA` → clone do repo do Matheus (`MattMatiins/PACTA`), usado só para colaboração com ele. **NUNCA** pushe cruzado entre os dois.
 
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
+
+---
+
+## 1.33. DOU federal — o gatilho da captação (22/09/2026)
+
+Primeira fonte do relatório de fontes do dono (`pactha-fontes-de-dados.pdf`, que ele traz
+uma a uma): "DOU — INLABS e busca oficial", prioridade 2. Coletor
+`ingestion/dou_federal.py` (armadilhas no cabeçalho), rotas `/api/dou-federal/*`.
+
+- **Busca pública, e não INLABS.** Medido da VPS em 22/09: busca, página do ato e INLABS
+  respondem 200 ao IP do servidor, sem limite em 10 buscas seguidas. O INLABS daria a
+  edição inteira em XML, mas exige cadastro (conta da Alavank, não da prefeitura); fica
+  como segunda etapa se a busca mostrar lacuna. A leitura diária (`/leiturajornal`) foi
+  descartada: é índice com ~400 caracteres por ato, e a portaria com a tabela dos 5.570
+  municípios não mostra o município ali.
+- **Nome não é chave; a cidade não é a prefeitura.** Medido: Nova Palma, 11 atos de
+  verdade em 60 dias (Defesa Civil autorizando e prorrogando repasse, PSE e FUNDEB por
+  IBGE, contrato de repasse); Santa Maria, 28 em 14 dias, dos quais 20 são endereço (UFSM,
+  Exército, vara federal). Cada citação leva a evidência (`orgao` > `ibge` > `cnpj` >
+  `municipio` > `cidade`), e `cidade` fica escondida na tela e fora do Radar.
+- **A tela Diário Oficial virou federal**: a aba do DOU vale para toda UF (inclusive o PR,
+  onde a tela nem aparecia); o diário do estado é a segunda aba onde há provedor. Tirou o
+  `ufs=` do recurso `dou` nos dois catálogos (`test_catalogo_por_uf.py` agora cobra isso).
+- **Alerta em Captação** = bloco "Saiu no DOU" no Radar, só as categorias de captação
+  (repasse, habilitação, seleção, emergência) dos últimos 30 dias, sob
+  `transferegov_radar.ver`.
+- **Task:** `dou-federal` em escada de 10 min nos sete workers (08:00–09:00 UTC),
+  orçamento de 8 min — `scripts/criar_task_dou_federal.sh`, a rodar DEPOIS do deploy.
+- **Conferido contra Postgres de verdade** (lista inteira de migrations num banco zerado:
+  141/141): 1ª rodada com 4 municípios de 3 estados em 158 s, 2ª em 11 s sem rebaixar nada.
+  Pegou um defeito que teste de unidade não pega — `date - :dias` sem tipo vira
+  `date - date` no Postgres (`CAST(:dias AS integer)` nas rotas).
 
 ---
 
