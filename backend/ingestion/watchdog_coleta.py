@@ -655,18 +655,21 @@ def _sessao_govbr_vencendo(cur) -> list[dict]:
 
     Nao alarma: sem linha, sem marca de captura, login ja medido como caido (ai e o
     outro alarme), ou fora da janela [21h, 27h) desde o login."""
-    from services.sessao_govbr import login_em_da_observacao, texto_do_aviso, vencimento
+    from services.sessao_govbr import (login_em_da_observacao, sessao_esta_viva, texto_do_aviso,
+                                       vencimento)
     cur.execute("SELECT observacao FROM cofre_senhas WHERE automation_key='govbr' "
                 "AND municipio_id IS NULL ORDER BY updated_at DESC LIMIT 1")
     row = cur.fetchone()
     login_em = login_em_da_observacao(row[0] if row else None)
     if login_em is None:
         return []
-    cur.execute("SELECT status FROM ingestion_log WHERE source = %s ORDER BY id DESC LIMIT 1",
-                (SOURCE_SSO,))
+    # So login MEDIDO VIVO (success recente) — a mesma regua da rota de saude.
+    # Nunca medido, caido ou medicao velha (worker parado): nao e "vencendo".
+    cur.execute("SELECT status, EXTRACT(EPOCH FROM (now() - finished_at)) / 60.0 "
+                "FROM ingestion_log WHERE source = %s ORDER BY id DESC LIMIT 1", (SOURCE_SSO,))
     ult = cur.fetchone()
-    if ult and (ult[0] or "").lower() not in STATUS_SUCESSO:
-        return []            # caido ou nunca medido: nao e "vencendo"
+    if not ult or not sessao_esta_viva(ult[0], ult[1]):
+        return []
     if not vencimento(login_em)["vencendo"]:
         return []
     return [{"tipo": "sessao_govbr_vencendo", "chave": SOURCE_SSO,

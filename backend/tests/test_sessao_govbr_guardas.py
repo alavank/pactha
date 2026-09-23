@@ -747,16 +747,29 @@ def test_vencimento_previsto__24h_do_login_e_aviso_com_3h_de_folga():
     assert cedo["vence_previsto_em"] == (login + timedelta(hours=24)).isoformat()
     aviso = sg.vencimento(login, agora=login + timedelta(hours=21.5))
     assert aviso["vencendo"] is True and aviso["vence_em_h"] == 2.5 and aviso["login_ha_h"] == 21.5
-    # depois do teto + 3h a sessao ja caiu: quem fala e o alarme de sessao caida
-    assert sg.vencimento(login, agora=login + timedelta(hours=28))["vencendo"] is False
+    # SEM teto superior: 24h e padrao medido; sessao que dure 30h continua "vencendo"
+    # (o aviso nao pode apagar e voltar a "tudo certo" com o previsto ja passado)
+    tarde = sg.vencimento(login, agora=login + timedelta(hours=30))
+    assert tarde["vencendo"] is True and tarde["vence_em_h"] == -6.0
     assert sg.vencimento(None)["vencendo"] is False and sg.vencimento(None)["login_em"] is None
 
 
-def test_o_aviso_diz_hora_de_brasilia_acao_e_que_e_previsto():
+def test_a_regua_de_viva_e_uma_so__servico_vigia_e_rota():
+    assert sc.sessao_esta_viva is sg.sessao_esta_viva and sc.SESSAO_VIVA_MIN == sg.SESSAO_VIVA_MIN
+    assert sg.sessao_esta_viva("SUCCESS", 10) is True and sg.sessao_esta_viva("success", 181) is False
+
+
+def test_o_aviso_diz_hora_de_brasilia_e_a_ordem_certa__Sair_ANTES_da_captura():
     login = datetime(2026, 9, 23, 14, 27, tzinfo=timezone.utc)      # 11:27 BRT
     t = sg.texto_do_aviso(login, agora=login + timedelta(hours=21))
     assert "11:27 de 23/09" in t and "11:27 de 24/09" in t
     assert "extensao do PACTHA" in t and "Captura completa" in t and "padrao medido" in t
+    # Na hora do aviso o portal ainda abre LOGADO: sem o Sair primeiro, a "Captura
+    # completa" so recaptura a sessao velha e nada muda.
+    assert t.index("Sair") < t.index("Captura completa")
+    assert "derruba a sessao dos servidores na hora" in t, "a promessa 'sem derrubar' era falsa"
+    depois = sg.texto_do_aviso(login, agora=login + timedelta(hours=30))
+    assert "ja passou do previsto" in depois
 
 
 def test_resumo_de_saude_so_avisa_vencimento_de_login_VIVO():
@@ -801,14 +814,63 @@ def test_a_sonda_que_cai_no_login_registra_erro_SEM_tocar_o_jar_nem_o_veredito(m
         "a sonda nao pode ligar/desligar a guarda do endpoint"
 
 
-def test_a_promocao_copia_a_hora_do_login_da_candidata(monkeypatch, worker):
+SSO_A = {"name": "Session_Gov_Br_Prod", "value": "AAA", "domain": ".sso.acesso.gov.br"}
+SSO_B = {"name": "Session_Gov_Br_Prod", "value": "BBB", "domain": "sso.acesso.gov.br"}
+IDP_1 = {"name": "JSESSIONID", "value": "i1", "domain": "idp.transferegov.sistema.gov.br"}
+IDP_2 = {"name": "JSESSIONID", "value": "i2", "domain": "idp.transferegov.sistema.gov.br"}
+SP_1 = {"name": "JSESSIONID", "value": "s1", "domain": "discricionarias.transferegov.sistema.gov.br"}
+
+
+def test_mesma_sessao_sso__so_os_cookies_do_govbr_decidem():
+    assert gr.mesma_sessao_sso([SSO_A, IDP_1, SP_1], [SSO_A, IDP_2]) is True, \
+        "IdP e SP rotacionam a cada SAML; a identidade do login e o cookie do gov.br"
+    assert gr.mesma_sessao_sso([SSO_A], [SSO_B]) is False, "valor diferente = login novo"
+    assert gr.mesma_sessao_sso([IDP_1, SP_1], [SSO_A]) is False, "sem cookie do gov.br nao se sabe: login novo"
+    assert gr.mesma_sessao_sso([], []) is False
+
+
+def test_a_promocao_de_LOGIN_NOVO_copia_a_hora_do_login_da_candidata(monkeypatch, worker):
     copias = []
     monkeypatch.setattr(gr, "_copia_observacao", lambda de, para: copias.append((de, para)) or worker.passos.append(("copia",)))
+    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [SSO_B, SP_1], "c1"))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SSO_A, IDP_1], "v1"))
     _playwright_falso(monkeypatch, _Page(*LOGADO))
     assert asyncio.run(gr.processa_candidata()) == "promovida"
     assert copias == [(8, 7)]
     assert [p[0] for p in worker.passos] == ["save", "copia", "encerra"], \
         "a copia vem DEPOIS de gravar o jar e ANTES de apagar a candidata (senao nao ha de onde copiar)"
+
+
+def test_recaptura_da_MESMA_sessao_promove_o_jar_mas_NAO_reinicia_o_relogio(monkeypatch, worker):
+    """Com o Chrome aberto a extensao captura de novo a cada navegacao/alarme; cada
+    captura vira candidata e e promovida. Se cada promocao virasse 'login novo', o
+    vencimento previsto andaria para a frente a cada ciclo e o aviso nunca sairia."""
+    copias = []
+    monkeypatch.setattr(gr, "_copia_observacao", lambda de, para: copias.append((de, para)))
+    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [SSO_A, IDP_2, SP_1], "c1"))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SSO_A, IDP_1], "v1"))
+    _playwright_falso(monkeypatch, _Page(*LOGADO))
+    assert asyncio.run(gr.processa_candidata()) == "promovida"
+    assert copias == [] and worker.salvos() == [(7, None)] and worker.encerradas()[0][0] == 8
+
+
+def test_a_sonda_sem_cookie_de_sso_nao_diz_que_o_login_venceu(monkeypatch, rodada):
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append((v, d)))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SP_1], "v1"))       # jar so com o SP
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair", destinos=[URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected"
+    assert sondas and sondas[0][0] == "nao_sei" and "sem o que medir" in sondas[0][1]
+
+
+def test_a_sonda_tem_kill_switch_por_env(monkeypatch, rodada):
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append(v))
+    monkeypatch.setenv("GOVBR_SONDA_SSO", "0")
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair", destinos=[URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected" and sondas == []
+    monkeypatch.delenv("GOVBR_SONDA_SSO")
+    assert gr.sonda_ligada() is True
 
 
 class _DbSaude:

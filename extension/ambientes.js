@@ -327,6 +327,7 @@ async function consultarSaude(lista) {
         // que chega ANTES de cair; servidor antigo não manda e fica null.
         login_em: d.login_em || null,
         login_ha_h: typeof d.login_ha_h === "number" ? d.login_ha_h : null,
+        vence_previsto_em: d.vence_previsto_em || null,
         vence_em_h: typeof d.vence_em_h === "number" ? d.vence_em_h : null,
         vencendo: d.vencendo === true,
       };
@@ -346,10 +347,13 @@ function algumVencendo(itens) {
   return (itens || []).some((i) => i.ok && i.vencendo === true);
 }
 
-/** "vence ~09:27 (em 2,4h)" — hora local do Chrome; null sem previsão. */
+/** "login há 22h · vence ~09:27 (em 2,4h)" — hora local do Chrome; "" sem previsão.
+ *  A HORA vem do servidor (`vence_previsto_em`), nunca de um 24h fixo aqui: o teto
+ *  é padrão medido e vai ser recalibrado no servidor; duas contas divergiriam. */
 function textoVencimento(i) {
-  if (!i || i.vence_em_h == null || !i.login_em) return "";
-  const vence = new Date(Date.parse(i.login_em) + 24 * 3600 * 1000);
+  if (!i || i.vence_em_h == null || !i.vence_previsto_em) return "";
+  const vence = new Date(Date.parse(i.vence_previsto_em));
+  if (isNaN(vence.getTime())) return "";
   const hh = String(vence.getHours()).padStart(2, "0") + ":" + String(vence.getMinutes()).padStart(2, "0");
   const em = i.vence_em_h >= 0 ? `em ${i.vence_em_h.toFixed(1).replace(".", ",")}h` : "já passou do previsto";
   return `login há ${(i.login_ha_h || 0).toFixed(0)}h · vence ~${hh} (${em})`;

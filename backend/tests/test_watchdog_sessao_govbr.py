@@ -134,23 +134,34 @@ def _obs(ha_h: float) -> str:
 
 
 def test_vencendo__login_vivo_ha_22h_avisa_com_hora_e_acao():
-    cur = CursorFalso((_obs(22.0),), ("success",))
+    cur = CursorFalso((_obs(22.0),), ("success", 5.0))
     [a] = W._sessao_govbr_vencendo(cur)
     assert a["tipo"] == "sessao_govbr_vencendo" and a["chave"] == "govbr_sso"
     assert "extensao do PACTHA" in a["detalhe"] and "Captura completa" in a["detalhe"]
     assert "padrao medido" in a["detalhe"], "o teto de 24h e padrao, nao contrato — o aviso tem de dizer"
+    assert a["detalhe"].index("Sair") < a["detalhe"].index("Captura completa")
 
 
 def test_vencendo__login_recente_nao_avisa():
-    assert W._sessao_govbr_vencendo(CursorFalso((_obs(5.0),), ("success",))) == []
+    assert W._sessao_govbr_vencendo(CursorFalso((_obs(5.0),), ("success", 5.0))) == []
 
 
 def test_vencendo__login_ja_caido_e_do_outro_alarme():
-    assert W._sessao_govbr_vencendo(CursorFalso((_obs(22.0),), ("erro",))) == []
+    assert W._sessao_govbr_vencendo(CursorFalso((_obs(22.0),), ("erro", 5.0))) == []
 
 
-def test_vencendo__depois_do_teto_mais_folga_nao_e_vencendo():
-    assert W._sessao_govbr_vencendo(CursorFalso((_obs(30.0),), ("success",))) == []
+def test_vencendo__nunca_medido_ou_medicao_velha_nao_avisa():
+    """A mesma regua da rota /saude: so login MEDIDO vivo. Tenant recem-conectado
+    sem linha govbr_sso (Juranda) e worker parado ha 3h nao provam vida."""
+    assert W._sessao_govbr_vencendo(CursorFalso((_obs(22.0),), None)) == []
+    assert W._sessao_govbr_vencendo(CursorFalso((_obs(22.0),), ("success", 400.0))) == []
+
+
+def test_vencendo__depois_do_previsto_e_ainda_vivo_CONTINUA_avisando():
+    """24h e padrao medido: sessao que dure 30h nao pode ter o aviso apagado (o
+    cooldown de 12h do vigia e quem contem o Telegram)."""
+    [a] = W._sessao_govbr_vencendo(CursorFalso((_obs(30.0),), ("success", 5.0)))
+    assert "ja passou do previsto" in a["detalhe"]
 
 
 def test_vencendo__sem_linha_ou_sem_marca_de_captura_nao_avisa():

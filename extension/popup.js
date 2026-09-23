@@ -324,7 +324,7 @@ async function desenharSaude() {
   $("saude-titulo").textContent = caiu
     ? "⚠ A sessão gov.br CAIU nos servidores — recapture"
     : (vencendo
-      ? "⏰ A sessão gov.br vence em breve — faça o login de novo (Captura completa; se não pedir login: Sair e logar)"
+      ? "⏰ A sessão gov.br vence em breve — 1) Sair no TransfereGov, 2) «Captura completa» e faça o login"
       : (todasVivas ? "✓ Sessão gov.br viva nos servidores" : "Sessão gov.br nos servidores"));
 }
 

@@ -2197,16 +2197,31 @@ anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do rotei
    media o SP, não o login. success = o IdP/SSO re-deriva; erro = o SSO já venceu (o SP é zumbi e vai
    cair). Só mede: contexto descartado, jar intocado. É ela que vai calibrar o teto (e, se a vida for
    por ociosidade, renová-la de quebra).
-2. **Aviso antes de vencer**: `services/sessao_govbr.py` (puro): hora do login = `[SESSION] capturado
-   em …` da `observacao` da linha `govbr` (a promoção de candidata agora **copia** a observação da
-   candidata — senão a hora ficava a do login antigo); `VIDA_SSO_H=24`, `AVISO_VENCIMENTO_H=21`.
-   Vigia: achado `sessao_govbr_vencendo` (⏰, cooldown 12h) com hora prevista e a ação; rota
-   `/saude`: `login_em`, `login_ha_h`, `vence_previsto_em`, `vence_em_h`, `vencendo` (só com login
-   vivo); extensão 2.4.1: selo **⏰** laranja ("!" tem precedência), cartão e linha "login há Nh ·
-   vence ~HH:MM". ⚠️ 24h é **padrão medido, não contrato** — o texto diz "pelo padrão medido".
-3. **A ação certa ao avisar:** "Captura completa"; se o TransfereGov abrir sem pedir login, **Sair →
-   login** (só login novo renova o prazo). O servidor está vivo nessa hora → a captura vira candidata
-   e é promovida no keepalive seguinte, sem derrubar nada antes da hora.
+2. **Aviso antes de vencer**: `services/sessao_govbr.py` (puro; também dono da régua `sessao_esta_viva`
+   / `SESSAO_VIVA_MIN`, que a rota e o vigia importam): hora do login = `[SESSION] capturado em …` da
+   `observacao` da linha `govbr`; a promoção de candidata **copia** a observação da candidata **só
+   quando é login novo** (`mesma_sessao_sso`: os cookies do próprio gov.br — `sso.acesso.gov.br` /
+   `.gov.br` — diferem; IdP e SP rotacionam a cada SAML e não servem). ⚠️ Sem isso, com o Chrome
+   aberto a extensão recaptura a cada navegação/alarme, cada captura vira candidata e é promovida, e
+   a hora do login andaria para a frente a cada ciclo — o aviso nunca sairia (achado da revisão).
+   `VIDA_SSO_H=24`, `AVISO_VENCIMENTO_H=21`, **sem teto superior**: sessão que dure 30h continua
+   "vencendo" (o cooldown de 12h do vigia contém o Telegram; recapturar a mesma sessão não apaga o
+   aviso, de propósito). Vigia: achado `sessao_govbr_vencendo` (⏰, cooldown 12h), só com login
+   **medido vivo** (success ≤ 180 min — nunca medido ou worker parado não avisa); rota `/saude`:
+   `login_em`, `login_ha_h`, `vence_previsto_em`, `vence_em_h`, `vencendo`; extensão 2.4.1: selo
+   **⏰** laranja ("!" tem precedência), cartão e linha "login há Nh · vence ~HH:MM" com a hora vinda
+   do servidor. ⚠️ 24h é **padrão medido, não contrato** — o texto diz "pelo padrão medido".
+   `/api/control/session/status` passou a devolver `cookies_meta` (nome/domínio/`expira_em`, sem
+   valor) e o diagnóstico imprime: se o gov.br carimbar o cookie de sessão com login+N h, N é o teto
+   medido.
+3. **A ação certa ao avisar, nesta ordem:** **Sair** no TransfereGov (na hora do aviso o portal ainda
+   abre logado; só login novo renova o prazo) e depois **"Captura completa"** (para na tela de login,
+   espera o login, passa pelas 4 portas e manda o jar novo). ⚠️ O Sair **derruba a sessão dos
+   servidores na hora**; ela volta quando o keepalive promover a captura nova (≤ ~10 min). Sonda:
+   kill-switch `GOVBR_SONDA_SSO=0` (ela abre uma sessão própria no SP a cada hora — que o SP aceita
+   várias sessões do mesmo CPF é fato: os sete tenants convivem com a sua); espera adaptativa (2s × até
+   12, para ao autenticar ou com a URL parada 6s; URL em idp/sso em trânsito = inconclusivo); jar sem
+   cookie de IdP/SSO = inconclusivo, nunca "venceu"; o detalhe registra `SP proprio=sim/nao`.
 Previsão a conferir: login de 23/09 11:27 BRT → aviso ~08:27 de 24/09, morte ~11:27 de 24/09 se
 ninguém relogar; a sonda deve virar `erro` nessa hora enquanto o SP ainda diz vivo.
 

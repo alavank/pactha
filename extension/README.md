@@ -75,10 +75,17 @@ login caiu (`GET /api/session-capture/saude`, a cada 12 min e ao abrir o popup).
 **⏰ Vencimento (2.4.1):** a sessão do gov.br dura ~24h a partir do login (padrão
 medido em 22–23/09/2026; o gov.br não publica o prazo). Quando faltam ~3h, o
 servidor avisa no Telegram e o ícone ganha um **⏰** laranja; o popup mostra
-"login há Nh · vence ~HH:MM". Aí sim: **"Captura completa"** e, se o TransfereGov
-abrir sem pedir login, **Sair → login de novo** — só um login novo renova o prazo.
-O servidor testa a captura nova e a promove sozinho (candidata → promovida), sem
-derrubar a sessão em uso antes da hora.
+"login há Nh · vence ~HH:MM" (a hora vem do servidor). Aí, **nesta ordem**:
+1. **Sair** no TransfereGov — só um login novo renova o prazo (na hora do aviso o
+   portal ainda abre logado, então sem o Sair a "Captura completa" só recaptura a
+   sessão velha e nada muda).
+2. **"Captura completa (abre as 4 portas)"** — ela para na tela de login, espera
+   você logar e passa pelas 4 portas sozinha, mandando o jar novo.
+
+O Sair derruba a sessão dos servidores na hora; ela volta quando o keepalive
+promover a captura nova (candidata → promovida, até ~10 min). O ⏰ só apaga
+depois disso e da próxima consulta da extensão (até 12 min) — recapturar a
+mesma sessão sem o Sair **não** apaga o aviso, de propósito.
 
 **O porteiro (2.4.0):** toda captura `govbr` — navegação, cookie trocado, alarme
 e o botão manual — passa por `chromeEstaLogado()` (`ambientes.js`), que sonda a

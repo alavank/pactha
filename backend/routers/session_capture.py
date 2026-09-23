@@ -81,14 +81,9 @@ def conteudo_e_sessao(claro: str | None) -> bool:
 CHAVE_GOVBR = "govbr"
 CHAVE_CANDIDATA = "govbr_candidata"
 SOURCE_SSO = "govbr_sso"          # o mesmo nome de govbr_renew.SOURCE_SSO
-SESSAO_VIVA_MIN = 180
-
-
-def sessao_esta_viva(status: str | None, idade_min: float | None) -> bool:
-    """A ultima medicao do login gov.br diz que ele esta VIVO? Funcao pura."""
-    if status != "success" or idade_min is None:
-        return False
-    return 0 <= float(idade_min) <= SESSAO_VIVA_MIN
+# A regua de "viva" mora em services/sessao_govbr.py — o vigia (sync, sem
+# Playwright) usa a MESMA para o aviso de vencimento; duas copias divergiriam.
+from services.sessao_govbr import SESSAO_VIVA_MIN, sessao_esta_viva  # noqa: E402,F401
 
 
 async def _ultima_medicao(db: AsyncSession, source: str) -> tuple:
