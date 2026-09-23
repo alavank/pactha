@@ -512,7 +512,8 @@ async def capture_session(
     }
 
 
-def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool) -> dict:
+def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool,
+                 login_em=None, agora=None) -> dict:
     """O que a extensao mostra ao dono, NO CHROME, que e onde ele resolve.
 
     Funcao pura sobre as duas ultimas medicoes `(status, idade_min, mensagem)`.
@@ -526,6 +527,10 @@ def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool) -> dict:
     viva = sessao_esta_viva(st, idade)
     nunca_capturou = bool(msg) and "nenhuma sessao" in str(msg).lower()
     caiu = (st is not None) and (st != "success") and not nunca_capturou
+    # Hora do login e vencimento PREVISTO (padrao medido: ~24h) — e o que faz o
+    # selo da extensao avisar ANTES de cair, em vez de so depois.
+    from services.sessao_govbr import vencimento
+    venc = vencimento(login_em, agora)
     return {
         "login": "vivo" if viva else ("caiu" if caiu else "sem_medicao"),
         "login_medido_ha_min": round(idade) if idade is not None else None,
@@ -533,6 +538,12 @@ def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool) -> dict:
         "modulos_medidos_ha_min": round(sp_idade) if sp_idade is not None else None,
         "candidata_pendente": bool(tem_candidata),
         "precisa_recapturar": bool(caiu),
+        "login_em": venc["login_em"],
+        "login_ha_h": venc["login_ha_h"],
+        "vence_previsto_em": venc["vence_previsto_em"],
+        "vence_em_h": venc["vence_em_h"],
+        # so avisa vencimento de login VIVO: caido, quem fala e `precisa_recapturar`
+        "vencendo": bool(venc["vencendo"] and viva),
     }
 
 
@@ -555,7 +566,18 @@ async def saude_da_sessao(
         )).first() is not None
     except Exception:
         tem = False
-    return resumo_saude(sso, sps, tem)
+    login_em = None
+    try:
+        from services.sessao_govbr import login_em_da_observacao
+        obs = (await db.execute(
+            select(CofreSenha.observacao).where(CofreSenha.automation_key == CHAVE_GOVBR)
+            .where(CofreSenha.municipio_id.is_(None))
+            .order_by(CofreSenha.updated_at.desc())
+        )).scalars().first()
+        login_em = login_em_da_observacao(obs)
+    except Exception:
+        login_em = None
+    return resumo_saude(sso, sps, tem, login_em=login_em)
 
 
 # So o GET declara. O POST acima autentica por SERVICE TOKEN (a extensao do

@@ -64,6 +64,8 @@ ONDE_OLHAR = {
     # medido em 08/09/2026: 27 de 27 falhas de um tenant eram esta.
     "govbr_sessao": "sessao gov.br expirou — recapturar pela extensao do Chrome",
     "govbr_renew": "renovacao da sessao gov.br (extensao do Chrome)",
+    # erro aqui = o SSO do gov.br ja venceu; o SP so vive pelo keepalive e vai cair
+    "govbr_sso_roundtrip": "o login gov.br venceu no IdP/SSO — logar de novo (extensao > Captura completa)",
     "govbr_sso": "login gov.br expirou — no Chrome, extensao do PACTHA > \"Captura completa (abre as 4 portas)\"",
     "obrasgov": "api-publica.obrasgov.gestao.gov.br (o outro host devolve 429)",
     "transferegov_opendata": "dados abertos do TransfereGov (siconv_*.zip)",

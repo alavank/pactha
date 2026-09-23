@@ -2189,6 +2189,27 @@ anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do rotei
 ⚠️ Juranda (7º tenant, 22/09) está fora do secret `PACTHA_RESUMO_TENANTS` e a extensão instalada em
 `C:\CONVPREF\extension` não tem a linha nem o token dele.
 
+**"Garantir que não caia mais" (23/09/2026, mesma tarde):** se a vida é a do SSO, a garantia é
+**logar de novo antes de vencer e o login novo se propagar sozinho**. Três peças:
+1. **Sonda do SSO** (`govbr_renew.sso_roundtrip`, fonte `govbr_sso_roundtrip`, a cada renew horário):
+   navega a entrada **sem os cookies dos SPs** (só IdP + gov.br), o que obriga o SAML — o renew normal
+   entra já autenticado pelo JSESSIONID que o keepalive mantém e **nunca passa pelo IdP/SSO**, então
+   media o SP, não o login. success = o IdP/SSO re-deriva; erro = o SSO já venceu (o SP é zumbi e vai
+   cair). Só mede: contexto descartado, jar intocado. É ela que vai calibrar o teto (e, se a vida for
+   por ociosidade, renová-la de quebra).
+2. **Aviso antes de vencer**: `services/sessao_govbr.py` (puro): hora do login = `[SESSION] capturado
+   em …` da `observacao` da linha `govbr` (a promoção de candidata agora **copia** a observação da
+   candidata — senão a hora ficava a do login antigo); `VIDA_SSO_H=24`, `AVISO_VENCIMENTO_H=21`.
+   Vigia: achado `sessao_govbr_vencendo` (⏰, cooldown 12h) com hora prevista e a ação; rota
+   `/saude`: `login_em`, `login_ha_h`, `vence_previsto_em`, `vence_em_h`, `vencendo` (só com login
+   vivo); extensão 2.4.1: selo **⏰** laranja ("!" tem precedência), cartão e linha "login há Nh ·
+   vence ~HH:MM". ⚠️ 24h é **padrão medido, não contrato** — o texto diz "pelo padrão medido".
+3. **A ação certa ao avisar:** "Captura completa"; se o TransfereGov abrir sem pedir login, **Sair →
+   login** (só login novo renova o prazo). O servidor está vivo nessa hora → a captura vira candidata
+   e é promovida no keepalive seguinte, sem derrubar nada antes da hora.
+Previsão a conferir: login de 23/09 11:27 BRT → aviso ~08:27 de 24/09, morte ~11:27 de 24/09 se
+ninguém relogar; a sonda deve virar `erro` nessa hora enquanto o SP ainda diz vivo.
+
 **O que NÃO dá para garantir:** o login gov.br tem reCAPTCHA (não se automatiza, não se guarda senha) e
 o teto do SSO não é publicado nem foi medido isolado — as "vidas" de agosto podem ser sessões emendadas
 por recapturas silenciosas. "Sair" no portal ou logar outro CPF no Chrome derruba os seis (é a mesma

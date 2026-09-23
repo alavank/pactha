@@ -718,8 +718,97 @@ def test_a_rota_de_saude_nao_devolve_nada_do_cofre():
     """So estado e horario: a extensao consulta isto de 12 em 12 minutos."""
     d = sc.resumo_saude(("success", 1.0, None), ("success", 1.0, None), False)
     assert set(d) == {"login", "login_medido_ha_min", "modulos", "modulos_medidos_ha_min",
-                      "candidata_pendente", "precisa_recapturar"}
+                      "candidata_pendente", "precisa_recapturar",
+                      "login_em", "login_ha_h", "vence_previsto_em", "vence_em_h", "vencendo"}
     assert "observacao" not in json.dumps(d)
+
+
+# ------------------------------------------------ vencimento previsto do login --
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from services import sessao_govbr as sg  # noqa: E402
+
+OBS = "[SESSION] capturado em 2026-09-23T14:27:18.095649+00:00 | cookies=14 httpOnly=9 | url=https://x"
+
+
+def test_a_hora_do_login_vem_da_observacao_da_captura():
+    assert sg.login_em_da_observacao(OBS) == datetime(2026, 9, 23, 14, 27, 18, 95649, tzinfo=timezone.utc)
+    assert sg.login_em_da_observacao(OBS + " || [CANDIDATA] promovida em 2026-09-23 15:00 UTC") \
+        == datetime(2026, 9, 23, 14, 27, 18, 95649, tzinfo=timezone.utc)
+    assert sg.login_em_da_observacao(None) is None
+    assert sg.login_em_da_observacao("[SESSION] promovida de candidata") is None
+    assert sg.login_em_da_observacao("[SESSION] capturado em ontem | x") is None
+
+
+def test_vencimento_previsto__24h_do_login_e_aviso_com_3h_de_folga():
+    login = datetime(2026, 9, 23, 14, 27, tzinfo=timezone.utc)
+    cedo = sg.vencimento(login, agora=login + timedelta(hours=2))
+    assert cedo["vencendo"] is False and cedo["vence_em_h"] == 22.0
+    assert cedo["vence_previsto_em"] == (login + timedelta(hours=24)).isoformat()
+    aviso = sg.vencimento(login, agora=login + timedelta(hours=21.5))
+    assert aviso["vencendo"] is True and aviso["vence_em_h"] == 2.5 and aviso["login_ha_h"] == 21.5
+    # depois do teto + 3h a sessao ja caiu: quem fala e o alarme de sessao caida
+    assert sg.vencimento(login, agora=login + timedelta(hours=28))["vencendo"] is False
+    assert sg.vencimento(None)["vencendo"] is False and sg.vencimento(None)["login_em"] is None
+
+
+def test_o_aviso_diz_hora_de_brasilia_acao_e_que_e_previsto():
+    login = datetime(2026, 9, 23, 14, 27, tzinfo=timezone.utc)      # 11:27 BRT
+    t = sg.texto_do_aviso(login, agora=login + timedelta(hours=21))
+    assert "11:27 de 23/09" in t and "11:27 de 24/09" in t
+    assert "extensao do PACTHA" in t and "Captura completa" in t and "padrao medido" in t
+
+
+def test_resumo_de_saude_so_avisa_vencimento_de_login_VIVO():
+    login = datetime.now(timezone.utc) - timedelta(hours=22)
+    vivo = sc.resumo_saude(("success", 5.0, None), ("success", 1.0, None), False, login_em=login)
+    assert vivo["vencendo"] is True and vivo["login_em"] == login.isoformat() and 1.9 <= vivo["vence_em_h"] <= 2.1
+    caiu = sc.resumo_saude(("erro", 5.0, gr.FRASE_SSO_EXPIROU), (None, None, None), False, login_em=login)
+    assert caiu["vencendo"] is False and caiu["precisa_recapturar"] is True
+    assert sc.resumo_saude(("success", 5.0, None), (None, None, None), False)["vence_em_h"] is None
+
+
+def test_a_sonda_do_sso_navega_SEM_os_cookies_dos_SPs():
+    jar = [{"name": "JSESSIONID", "value": "a", "domain": "discricionarias.transferegov.sistema.gov.br"},
+           {"name": "JSESSIONID", "value": "b", "domain": "mandatarias.transferegov.sistema.gov.br"},
+           {"name": "JSESSIONID", "value": "c", "domain": "idp.transferegov.sistema.gov.br"},
+           {"name": "Session_Gov_Br_Prod", "value": "d", "domain": ".sso.acesso.gov.br"},
+           {"name": "Govbrid", "value": "e", "domain": ".gov.br"},
+           {"name": "x", "value": "f", "domain": ".transferegov.sistema.gov.br"}]
+    fica = [c["domain"] for c in gr.cookies_para_roundtrip(jar)]
+    assert fica == ["idp.transferegov.sistema.gov.br", ".sso.acesso.gov.br", ".gov.br",
+                    ".transferegov.sistema.gov.br"], "sem tirar o JSESSIONID do SP nao ha SAML — a sonda mediria o SP"
+
+
+def test_o_renew_VIVO_faz_a_sonda_do_sso_e_a_registra_a_parte(monkeypatch, rodada):
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append(v))
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair", destinos=[URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected"
+    assert sondas == ["logado"] and rodada.salvos() == [(7, "v1")]
+
+
+def test_a_sonda_que_cai_no_login_registra_erro_SEM_tocar_o_jar_nem_o_veredito(monkeypatch, rodada):
+    registrado = []
+    monkeypatch.setattr(gr, "_grava_estado", lambda *a: registrado.append(a))
+    # 1a navegacao (jar inteiro): logado; 2a (sem SP): tela de login
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair",
+                                         destinos=[URL_OK, URL_LOGIN] + [URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected", "a sonda nao pode mudar o veredito do renew"
+    assert rodada.salvos() == [(7, "v1")]
+    assert [(r[0], r[1]) for r in registrado if r[0] == gr.SOURCE_SSO_RT] == [(gr.SOURCE_SSO_RT, "erro")]
+    assert gr.SOURCE_SSO_RT not in (gr.SOURCE_SSO, gr.SOURCE_SESSAO, gr.SOURCE_RODADA), \
+        "a sonda nao pode ligar/desligar a guarda do endpoint"
+
+
+def test_a_promocao_copia_a_hora_do_login_da_candidata(monkeypatch, worker):
+    copias = []
+    monkeypatch.setattr(gr, "_copia_observacao", lambda de, para: copias.append((de, para)) or worker.passos.append(("copia",)))
+    _playwright_falso(monkeypatch, _Page(*LOGADO))
+    assert asyncio.run(gr.processa_candidata()) == "promovida"
+    assert copias == [(8, 7)]
+    assert [p[0] for p in worker.passos] == ["save", "copia", "encerra"], \
+        "a copia vem DEPOIS de gravar o jar e ANTES de apagar a candidata (senao nao ha de onde copiar)"
 
 
 class _DbSaude:

@@ -323,6 +323,12 @@ async function consultarSaude(lista) {
         modulos: d.modulos || "",
         candidata_pendente: d.candidata_pendente === true,
         medido_ha_min: d.login_medido_ha_min,
+        // vencimento PREVISTO (padrão medido ~24h a partir do login) — o aviso
+        // que chega ANTES de cair; servidor antigo não manda e fica null.
+        login_em: d.login_em || null,
+        login_ha_h: typeof d.login_ha_h === "number" ? d.login_ha_h : null,
+        vence_em_h: typeof d.vence_em_h === "number" ? d.vence_em_h : null,
+        vencendo: d.vencendo === true,
       };
     } catch (e) {
       return { nome: amb.nome, ok: false, detalhe: String(e && e.message || e).slice(0, 60) };
@@ -333,6 +339,20 @@ async function consultarSaude(lista) {
 /** Algum ambiente MEDIU que o login caiu? Falha de rede/404 não conta. */
 function algumPrecisaRecapturar(itens) {
   return (itens || []).some((i) => i.ok && i.precisa_recapturar);
+}
+
+/** Algum servidor diz que o login VIVO está para vencer (janela de aviso)? */
+function algumVencendo(itens) {
+  return (itens || []).some((i) => i.ok && i.vencendo === true);
+}
+
+/** "vence ~09:27 (em 2,4h)" — hora local do Chrome; null sem previsão. */
+function textoVencimento(i) {
+  if (!i || i.vence_em_h == null || !i.login_em) return "";
+  const vence = new Date(Date.parse(i.login_em) + 24 * 3600 * 1000);
+  const hh = String(vence.getHours()).padStart(2, "0") + ":" + String(vence.getMinutes()).padStart(2, "0");
+  const em = i.vence_em_h >= 0 ? `em ${i.vence_em_h.toFixed(1).replace(".", ",")}h` : "já passou do previsto";
+  return `login há ${(i.login_ha_h || 0).toFixed(0)}h · vence ~${hh} (${em})`;
 }
 
 /** "3 de 5 ambientes" — o resumo que acompanha a lista, nunca a substitui. */

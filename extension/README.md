@@ -69,8 +69,16 @@ O ícone ganha um **"!" vermelho** quando algum servidor PACTHA **mediu** que o
 login caiu (`GET /api/session-capture/saude`, a cada 12 min e ao abrir o popup).
 "Capturei" não é "está vivo no servidor" — o popup mostra uma linha por ambiente.
 
-⚠️ **Não clique em "Sair"** no TransfereGov nem no gov.br: é a mesma sessão que
-os seis servidores usam.
+⚠️ **Não clique em "Sair"** no TransfereGov nem no gov.br fora da hora de renovar:
+é a mesma sessão que os servidores usam.
+
+**⏰ Vencimento (2.4.1):** a sessão do gov.br dura ~24h a partir do login (padrão
+medido em 22–23/09/2026; o gov.br não publica o prazo). Quando faltam ~3h, o
+servidor avisa no Telegram e o ícone ganha um **⏰** laranja; o popup mostra
+"login há Nh · vence ~HH:MM". Aí sim: **"Captura completa"** e, se o TransfereGov
+abrir sem pedir login, **Sair → login de novo** — só um login novo renova o prazo.
+O servidor testa a captura nova e a promove sozinho (candidata → promovida), sem
+derrubar a sessão em uso antes da hora.
 
 **O porteiro (2.4.0):** toda captura `govbr` — navegação, cookie trocado, alarme
 e o botão manual — passa por `chromeEstaLogado()` (`ambientes.js`), que sonda a

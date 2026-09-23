@@ -238,6 +238,23 @@ const chk = (cond, msg) => {
       "não sobrou o portão antigo, que ignorava `forcar`");
   }
 
+  console.log("\n10) o aviso ANTES de vencer: selo ⏰ só com servidor dizendo «vencendo», e «!» tem precedência");
+  {
+    const { ctx } = montar({});
+    ctx.fetch = async () => ({ ok: true, status: 200, json: async () => ({
+      login: "vivo", precisa_recapturar: false, login_em: "2026-09-23T14:27:18+00:00",
+      login_ha_h: 21.6, vence_em_h: 2.4, vencendo: true }) });
+    const [i] = await ctx.consultarSaude([{ nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true }]);
+    chk(i.vencendo === true && i.vence_em_h === 2.4 && i.login_em, "os campos de vencimento chegam da rota /saude");
+    chk(ctx.algumVencendo([i]) === true, "vencendo acende");
+    chk(ctx.algumVencendo([{ ok: false, vencendo: true }]) === false, "sem resposta do servidor não acende");
+    chk(/login há 22h · vence ~\d\d:\d\d \(em 2,4h\)/.test(ctx.textoVencimento(i)), "texto: «login há 22h · vence ~HH:MM (em 2,4h)»");
+    chk(ctx.textoVencimento({ ok: true, login: "vivo" }) === "", "servidor antigo (sem campos) não inventa hora");
+    const bg = ler("background.js");
+    chk(/caiu \? "!" : \(vencendo \? "⏰" : ""\)/.test(bg), "selo: «!» (caiu) tem precedência sobre «⏰» (vencendo)");
+    chk(/\.vencendo/.test(ler("popup.html")) && /algumVencendo\(itens\)/.test(ler("popup.js")), "o popup pinta o cartão de vencendo");
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");
   process.exit(falhas ? 1 : 0);
 })();

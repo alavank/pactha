@@ -280,8 +280,10 @@ function textoDoItem(i) {
     return `${i.nome}: LOGIN CAIU${i.modulos ? " · " + i.modulos : ""} — recapturar`;
   }
   if (i.login === "vivo") {
-    return `${i.nome}: vivo`
+    const venc = textoVencimento(i);
+    return `${i.nome}: ${i.vencendo ? "⏰ VENCE EM BREVE" : "vivo"}`
       + (i.medido_ha_min != null ? ` (medido há ${i.medido_ha_min} min)` : "")
+      + (venc ? ` · ${venc}` : "")
       + (i.modulos && i.modulos.includes("CAIU") ? ` · ${i.modulos}` : "")
       + (i.candidata_pendente ? " · captura em teste" : "");
   }
@@ -315,11 +317,15 @@ async function desenharSaude() {
   const caiu = algumPrecisaRecapturar(itens);
   const respondeu = itens.filter((i) => i.ok);
   const todasVivas = respondeu.length > 0 && respondeu.every((i) => i.login === "vivo");
+  const vencendo = !caiu && algumVencendo(itens);
   card.classList.toggle("caiu", caiu);
-  card.classList.toggle("viva", !caiu && todasVivas);
+  card.classList.toggle("vencendo", vencendo);
+  card.classList.toggle("viva", !caiu && !vencendo && todasVivas);
   $("saude-titulo").textContent = caiu
     ? "⚠ A sessão gov.br CAIU nos servidores — recapture"
-    : (todasVivas ? "✓ Sessão gov.br viva nos servidores" : "Sessão gov.br nos servidores");
+    : (vencendo
+      ? "⏰ A sessão gov.br vence em breve — faça o login de novo (Captura completa; se não pedir login: Sair e logar)"
+      : (todasVivas ? "✓ Sessão gov.br viva nos servidores" : "Sessão gov.br nos servidores"));
 }
 
 function desenharPortas() {
