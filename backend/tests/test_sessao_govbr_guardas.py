@@ -157,10 +157,10 @@ def captura(monkeypatch):
     stub.run = _run
     monkeypatch.setitem(sys.modules, "ingestion.transferegov_voluntarias", stub)
 
-    def _chama(db, key="govbr", municipio_id=None):
+    def _chama(db, key="govbr", municipio_id=None, cookies=None):
         payload = sc.CapturedSession(
             automation_key=key, municipio_id=municipio_id, cookie="JSESSIONID=abc; outro=def",
-            cookies_full=[sc.CookieFull(name="JSESSIONID", value="abc", domain=".gov.br")],
+            cookies_full=cookies or [sc.CookieFull(name="JSESSIONID", value="abc", domain=".gov.br")],
             url_atual="auto:navigation@www.gov.br", domain_capturado="www.gov.br")
         principal = sc._CapturePrincipal(user_id=None, label="service:extensao", via="service_token")
 
@@ -276,6 +276,8 @@ class _Page:
             d = self._destinos.pop(0) if self._destinos else self.url
             if isinstance(d, Exception):
                 raise d
+            if isinstance(d, tuple):          # (url, corpo) — pagina com corpo proprio
+                d, self._body = d
             self.url = d
 
     async def wait_for_timeout(self, ms):
@@ -806,7 +808,8 @@ def test_a_sonda_que_cai_no_login_registra_erro_SEM_tocar_o_jar_nem_o_veredito(m
     monkeypatch.setattr(gr, "_grava_estado", lambda *a: registrado.append(a))
     # 1a navegacao (jar inteiro): logado; 2a (sem SP): tela de login
     _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair",
-                                         destinos=[URL_OK, URL_LOGIN] + [URL_OK] * 20))
+                                         destinos=[URL_OK, (URL_LOGIN, "Identifique-se no gov.br")]
+                                         + [(URL_OK, "Bem-vindo Sair")] * 20))
     assert asyncio.run(gr.renew()) == "reconnected", "a sonda nao pode mudar o veredito do renew"
     assert rodada.salvos() == [(7, "v1")]
     assert [(r[0], r[1]) for r in registrado if r[0] == gr.SOURCE_SSO_RT] == [(gr.SOURCE_SSO_RT, "erro")]
@@ -814,8 +817,12 @@ def test_a_sonda_que_cai_no_login_registra_erro_SEM_tocar_o_jar_nem_o_veredito(m
         "a sonda nao pode ligar/desligar a guarda do endpoint"
 
 
-SSO_A = {"name": "Session_Gov_Br_Prod", "value": "AAA", "domain": ".sso.acesso.gov.br"}
-SSO_B = {"name": "Session_Gov_Br_Prod", "value": "BBB", "domain": "sso.acesso.gov.br"}
+SSO_A = {"name": "Session_Gov_Br_Prod", "value": "AAA", "domain": ".sso.acesso.gov.br", "httpOnly": True}
+SSO_B = {"name": "Session_Gov_Br_Prod", "value": "BBB", "domain": "sso.acesso.gov.br", "httpOnly": True}
+ING_1 = {"name": "INGRESSCOOKIE", "value": "g1", "domain": "sso.acesso.gov.br", "httpOnly": True}
+ING_2 = {"name": "INGRESSCOOKIE", "value": "g2", "domain": "sso.acesso.gov.br", "httpOnly": True}
+TS_1 = {"name": "TSd2153684027", "value": "t1", "domain": "sso.acesso.gov.br", "httpOnly": False}
+TS_2 = {"name": "TSd2153684027", "value": "t2", "domain": "sso.acesso.gov.br", "httpOnly": False}
 IDP_1 = {"name": "JSESSIONID", "value": "i1", "domain": "idp.transferegov.sistema.gov.br"}
 IDP_2 = {"name": "JSESSIONID", "value": "i2", "domain": "idp.transferegov.sistema.gov.br"}
 SP_1 = {"name": "JSESSIONID", "value": "s1", "domain": "discricionarias.transferegov.sistema.gov.br"}
@@ -827,6 +834,20 @@ def test_mesma_sessao_sso__so_os_cookies_do_govbr_decidem():
     assert gr.mesma_sessao_sso([SSO_A], [SSO_B]) is False, "valor diferente = login novo"
     assert gr.mesma_sessao_sso([IDP_1, SP_1], [SSO_A]) is False, "sem cookie do gov.br nao se sabe: login novo"
     assert gr.mesma_sessao_sso([], []) is False
+
+
+def test_mesma_sessao_sso__so_httpOnly_e_o_cookie_de_sessao_decide():
+    """Medido em 23/09: `TS*` (F5, nao-httpOnly) muda a cada pagina do SSO; se
+    entrasse na conta, toda recaptura viraria 'login novo' e o relogio andaria."""
+    assert gr.mesma_sessao_sso([SSO_A, TS_1], [SSO_A, TS_2]) is True
+    assert gr.mesma_sessao_sso([SSO_A, ING_1], [SSO_A, ING_2]) is True, "o cookie de sessao decide sozinho"
+    assert gr.mesma_sessao_sso([ING_1], [ING_1, TS_2]) is True, "sem o de sessao: httpOnly em comum"
+    assert gr.mesma_sessao_sso([ING_1], [ING_2]) is False
+    assert gr.mesma_sessao_sso([SSO_A], [ING_1]) is False, "nada em comum: nao se sabe -> login novo"
+    assert gr.comparar_sessao_sso([SSO_A], [SSO_B]) == (False, ["Session_Gov_Br_Prod"])
+    # aceita o formato pydantic do POST (atributos) — e o que o endpoint compara
+    obj = sc.CookieFull(name="Session_Gov_Br_Prod", value="AAA", domain=".sso.acesso.gov.br", httpOnly=True)
+    assert gr.mesma_sessao_sso([obj], [SSO_A]) is True
 
 
 def test_a_promocao_de_LOGIN_NOVO_copia_a_hora_do_login_da_candidata(monkeypatch, worker):
@@ -861,6 +882,18 @@ def test_a_sonda_sem_cookie_de_sso_nao_diz_que_o_login_venceu(monkeypatch, rodad
     _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair", destinos=[URL_OK] * 20))
     assert asyncio.run(gr.renew()) == "reconnected"
     assert sondas and sondas[0][0] == "nao_sei" and "sem o que medir" in sondas[0][1]
+
+
+def test_a_sonda_com_URL_de_login_mas_SEM_prova_no_corpo_e_inconclusiva(monkeypatch, rodada):
+    """Pagina em transito/erro do IdP em /idp/ sem 'Identifique-se' no corpo nao e
+    veredito — um 'erro' falso aqui mandaria o dono dar Sair nos servidores."""
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append(v))
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair",
+                                         destinos=[URL_OK, ("https://idp.transferegov.sistema.gov.br/idp/profile/SAML2/POST/SSO", "")]
+                                         + [(URL_OK, "Bem-vindo Sair")] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected"
+    assert sondas == ["nao_sei"]
 
 
 def test_a_sonda_tem_kill_switch_por_env(monkeypatch, rodada):
@@ -934,3 +967,35 @@ def test_o_porteiro_da_extensao_olha_o_CORPO_e_vem_antes_do_debounce():
     corpo = bg[bg.index("async function capture("):bg.index("// 1) AUTO-CAPTURA")]
     assert corpo.index("await chromeEstaLogado()") < corpo.index("lastCaptureAt.set(dKey, now)")
     assert 'tab.status !== "complete"' in bg, "o roteiro avancava com o SAML ainda em transito"
+
+
+# ------------------------------------------- captura DIRETA e a hora do login --
+OBS_LOGIN = "[SESSION] capturado em 2026-09-23T14:27:18+00:00 | cookies=14 httpOnly=9 | url=x | ua=y"
+
+
+@pytest.mark.parametrize("sso_payload, preserva", [
+    (SSO_A, True),     # mesma sessao gov.br (worker parado, SP zumbi): nao e login
+    (SSO_B, False),    # cookie de sessao do gov.br novo: login NOVO
+])
+def test_captura_DIRETA_so_reinicia_a_hora_do_login_com_login_NOVO(monkeypatch, captura, sso_payload, preserva):
+    principal = SimpleNamespace(id=7, senha_encrypted="JAR", observacao=OBS_LOGIN,
+                                atualizado_por_id=None, municipio_id=None)
+    monkeypatch.setattr(sc.crypto, "decrypt", lambda s: json.dumps({"format": "cookies_full", "cookies": [SSO_A]}))
+    db = FakeDb(principal=principal, sso=("success", 999.0, None))      # medicao velha: grava direto
+    r = captura.chama(db, cookies=[sc.CookieFull(**sso_payload)])
+    assert r["status"] == "ok" and principal.senha_encrypted.startswith("CIFRADO:"), "o jar tem de ser trocado"
+    from services.sessao_govbr import login_em_da_observacao
+    hora = login_em_da_observacao(principal.observacao)
+    if preserva:
+        assert hora.isoformat() == "2026-09-23T14:27:18+00:00" and "recapturado em" in principal.observacao
+    else:
+        assert hora.isoformat() != "2026-09-23T14:27:18+00:00" and "recapturado em" not in principal.observacao
+
+
+def test_cookies_meta_nunca_leva_valor_e_aguenta_vencimento_absurdo():
+    from routers.control import _cookies_meta
+    m = _cookies_meta([{"name": "Session_Gov_Br_Prod", "value": "SEGREDO", "domain": ".sso.acesso.gov.br",
+                        "httpOnly": True, "expirationDate": 1e20},
+                       {"name": "x", "value": "SEGREDO2", "domain": "d", "expirationDate": 1790000000}])
+    assert "SEGREDO" not in json.dumps(m)
+    assert m[0]["expira_em"] is None and m[1]["expira_em"].startswith("2026-")

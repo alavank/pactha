@@ -82,6 +82,72 @@ def vencimento(login_em: datetime | None, agora: datetime | None = None) -> dict
     }
 
 
+# ---------------------------------------------------------------------------
+# IDENTIDADE DA SESSAO SSO — "esta captura e um LOGIN NOVO ou a mesma sessao?"
+# ---------------------------------------------------------------------------
+# O cookie de sessao do proprio gov.br. Medido em 23/09/2026 (Chromium anonimo no
+# sso.acesso.gov.br): os httpOnly do dominio sao `Session_Gov_Br_Prod` e
+# `INGRESSCOOKIE`, estaveis dentro da sessao; a familia F5 `TS*` NAO e httpOnly e
+# muda a cada pagina. Por isso so httpOnly entra, e o cookie de sessao decide.
+COOKIE_SESSAO_SSO = "Session_Gov_Br_Prod"
+
+
+def _dominio_sso(dom: str) -> bool:
+    return dom == "gov.br" or dom.endswith("acesso.gov.br")
+
+
+def _cookies_sso(cookies) -> dict:
+    """{(dominio, nome): valor} dos cookies httpOnly do PROPRIO gov.br. Aceita os dois
+    formatos que circulam: dict (Cofre, extensao) e objeto com atributos (pydantic)."""
+    out = {}
+    for c in cookies or []:
+        g = c.get if isinstance(c, dict) else (lambda k, _c=c: getattr(_c, k, None))
+        dom = (g("domain") or "").lstrip(".").lower()
+        if _dominio_sso(dom) and g("httpOnly"):
+            out[(dom, g("name"))] = g("value")
+    return out
+
+
+def comparar_sessao_sso(candidata, em_uso) -> tuple[bool, list]:
+    """(mesma_sessao, nomes que diferem — SEM valor, para calibrar pelo log).
+
+    ⭐ POR QUE (revisao de 23/09): a promocao copiava a hora da captura como hora
+    do LOGIN em toda candidata; com o Chrome aberto a extensao recaptura a cada
+    navegacao/alarme, e o relogio do vencimento andava para a frente a cada ciclo
+    — o aviso nunca sairia. So login NOVO troca o cookie de sessao do gov.br.
+
+    Regra: se os dois lados tem `Session_Gov_Br_Prod`, ele decide sozinho (mesma
+    sessao = algum valor em comum). Sem ele, compara os httpOnly do gov.br que os
+    DOIS lados tem (cookie a mais de um lado nao decide). Sem nada em comum nao ha
+    como saber: 'login novo' — o comportamento antigo, nunca pior."""
+    a, b = _cookies_sso(candidata), _cookies_sso(em_uso)
+    sa = {v for (d, n), v in a.items() if n == COOKIE_SESSAO_SSO}
+    sb = {v for (d, n), v in b.items() if n == COOKIE_SESSAO_SSO}
+    if sa and sb:
+        return (bool(sa & sb), [] if sa & sb else [COOKIE_SESSAO_SSO])
+    comuns = set(a) & set(b)
+    if not comuns:
+        return False, []
+    difere = sorted({n for (d, n) in comuns if a[(d, n)] != b[(d, n)]})
+    return (not difere), difere
+
+
+def mesma_sessao_sso(candidata, em_uso) -> bool:
+    return comparar_sessao_sso(candidata, em_uso)[0]
+
+
+def observacao_preservando_login(obs_nova: str, obs_atual) -> str:
+    """Recaptura da MESMA sessao: a observacao nova, mas com a hora do LOGIN antiga
+    no lugar da hora desta captura (o vigia le a hora do login dali)."""
+    antigo = login_em_da_observacao(obs_atual)
+    if antigo is None:
+        return obs_nova
+    novo = login_em_da_observacao(obs_nova)
+    agora = novo.isoformat() if novo else "?"
+    return _RE_CAPTURADO.sub(f"[SESSION] capturado em {antigo.isoformat()}", obs_nova, count=1) \
+        + f" | recapturado em {agora} (mesma sessao gov.br)"
+
+
 def _brt(dt: datetime) -> str:
     return dt.astimezone(timezone(timedelta(hours=-3))).strftime("%H:%M de %d/%m")
 
@@ -97,5 +163,7 @@ def texto_do_aviso(login_em: datetime, agora: datetime | None = None) -> str:
             "Como renovar (nesta ordem): 1) no TransfereGov, clique em Sair — so um login NOVO "
             "renova o prazo; 2) na extensao do PACTHA, \"Captura completa (abre as 4 portas)\": "
             "ela para na tela de login, espera voce logar e passa pelas 4 portas sozinha. "
+            "Se o gov.br entrar SEM pedir senha, a sessao dele continuou: saia tambem em "
+            "sso.acesso.gov.br e repita. "
             "O Sair derruba a sessao dos servidores na hora; ela volta quando o keepalive "
             "promover a captura nova (ate ~10 min).")

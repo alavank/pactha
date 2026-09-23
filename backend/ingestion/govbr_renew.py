@@ -388,8 +388,11 @@ async def sso_roundtrip(br, cookies: list) -> tuple[str, str]:
             url_ant = page.url
             if parada >= 3:
                 break
-        if v == "login" and parada < 3 and _eh_tela_de_login(page.url, "") and not _eh_tela_de_login("", body):
-            v = "nao_sei"       # ainda em transito no idp/sso: nao e veredito
+        if v == "login" and not _eh_tela_de_login("", body):
+            # 'login' so com PROVA NO CORPO (Identifique-se / Acesso restrito). URL em
+            # idp/sso sem marcador no corpo = SAML em transito ou pagina de erro do
+            # IdP (o `http_status` so cobre a 1a resposta) — nao e veredito.
+            v = "nao_sei"
         host = ""
         try:
             from urllib.parse import urlparse
@@ -423,30 +426,9 @@ def _registra_roundtrip(veredito: str, detalhe: str) -> None:
         _grava_estado(SOURCE_SSO_RT, "partial", 0, f"sonda inconclusiva ({detalhe})")
 
 
-def _cookies_sso(cookies: list) -> set:
-    """(dominio, nome, valor) dos cookies do PROPRIO gov.br (sso.acesso / .gov.br) —
-    a identidade da sessao SSO. Os do IdP e dos SPs rotacionam a cada SAML."""
-    out = set()
-    for c in cookies or []:
-        dom = (c.get("domain") or "").lstrip(".").lower()
-        if dom == "gov.br" or dom.endswith("acesso.gov.br"):
-            out.add((dom, c.get("name"), c.get("value")))
-    return out
-
-
-def mesma_sessao_sso(candidata: list, em_uso: list) -> bool:
-    """A candidata e o MESMO login que a sessao em uso?
-
-    ⭐ POR QUE (revisao de 23/09): a promocao copiava a hora da captura como hora
-    do LOGIN em toda candidata — e com o Chrome do dono aberto a extensao captura
-    de novo a cada navegacao/alarme, cada captura vira candidata e e promovida
-    (autentica: e o mesmo SSO). O relogio do vencimento era reiniciado a cada
-    ciclo e o aviso de "vence em breve" NUNCA saia. So login NOVO troca os cookies
-    de sessao do gov.br; captura da mesma sessao repete os valores. Sem cookies do
-    gov.br de um dos lados nao ha como saber: trata como login novo (o
-    comportamento antigo), nunca pior."""
-    a, b = _cookies_sso(candidata), _cookies_sso(em_uso)
-    return bool(a) and bool(b) and a == b
+# A identidade da sessao SSO ("login novo ou a mesma sessao?") mora no modulo
+# puro, porque o endpoint de captura tambem precisa dela (captura direta).
+from services.sessao_govbr import comparar_sessao_sso, mesma_sessao_sso  # noqa: E402,F401
 
 
 def _copia_observacao(de_id: int, para_id: int) -> None:
@@ -766,9 +748,13 @@ async def processa_candidata() -> str:
                 return "inconclusivo"
             # A hora do LOGIN so muda com login NOVO (cookies do gov.br diferentes);
             # recaptura da mesma sessao promove o jar mas nao reinicia o relogio.
-            if mesma_sessao_sso(cookies, em_uso_cookies):
+            _mesma, _difere = comparar_sessao_sso(cookies, em_uso_cookies)
+            if _mesma:
                 log.info("candidata: mesma sessao SSO — jar renovado, hora do login preservada")
             else:
+                # nomes (sem valor) do que mudou: e o que calibra a regra em producao
+                log.info(f"candidata: LOGIN NOVO (cookies do gov.br que mudaram: "
+                         f"{', '.join(_difere) or 'sem cookie de sessao em comum'})")
                 _copia_observacao(cand_id, principal_id)        # login novo: a hora e a NOVA
         else:
             # A consulta RESPONDEU e nao ha linha 'govbr': nasce a sessao em uso,
@@ -1007,7 +993,7 @@ async def keepalive() -> str:
     gravou = False
     if tem_prova_de_vida(entry_ok, private_ok, exec_ok, prest_ok):
         try:
-            gravou = _save_cookies(cofre_id, relevant)
+            gravou = _save_cookies(cofre_id, relevant, visto_em)
         except Exception as e:
             log.error(f"keepalive save: {str(e)[:100]}")
     else:

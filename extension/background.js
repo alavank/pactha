@@ -333,9 +333,16 @@ async function avancarRoteiro(details) {
   if (!rot || details.tabId !== rot.tabId) return;
   if (Date.now() - rot.em > ROTEIRO_TTL_MS) {
     await chrome.storage.local.remove("pactha_roteiro");
+    console.warn("[PACTHA] roteiro da captura completa venceu (20 min sem avançar) — clique de novo");
     return;
   }
-  if (pareceLogin(details.url)) return;            // esperando a PESSOA logar
+  if (pareceLogin(details.url)) {
+    // Esperando a PESSOA logar (reCAPTCHA, 2FA, telefone). O prazo de 20 min conta
+    // do ÚLTIMO carregamento da tela de login, não do clique — senão um login
+    // demorado fazia o roteiro morrer calado no meio, sem abrir as portas 2–4.
+    await chrome.storage.local.set({ pactha_roteiro: { ...rot, em: Date.now() } });
+    return;
+  }
   let host = "";
   try { host = new URL(details.url).hostname; } catch (_) { return; }
   // Só conta página do TransfereGov — e o `idp.` dele é o SAML EM TRÂNSITO

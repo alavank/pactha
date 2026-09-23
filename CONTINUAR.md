@@ -2199,9 +2199,14 @@ anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do rotei
    por ociosidade, renová-la de quebra).
 2. **Aviso antes de vencer**: `services/sessao_govbr.py` (puro; também dono da régua `sessao_esta_viva`
    / `SESSAO_VIVA_MIN`, que a rota e o vigia importam): hora do login = `[SESSION] capturado em …` da
-   `observacao` da linha `govbr`; a promoção de candidata **copia** a observação da candidata **só
-   quando é login novo** (`mesma_sessao_sso`: os cookies do próprio gov.br — `sso.acesso.gov.br` /
-   `.gov.br` — diferem; IdP e SP rotacionam a cada SAML e não servem). ⚠️ Sem isso, com o Chrome
+   `observacao` da linha `govbr`; a hora só muda com **login novo** (`comparar_sessao_sso`, em
+   `services/sessao_govbr.py`): só cookies **httpOnly** do próprio gov.br contam, e
+   `Session_Gov_Br_Prod` decide sozinho quando os dois lados o têm (medido em 23/09: os httpOnly de
+   `sso.acesso.gov.br` são `Session_Gov_Br_Prod` e `INGRESSCOOKIE`, estáveis na sessão; a família F5
+   `TS*` não é httpOnly e muda a cada página; IdP e SP rotacionam a cada SAML). Vale nos **dois**
+   caminhos: promoção de candidata (copia a observação só com login novo; loga os NOMES que mudaram)
+   e captura **direta** (sessão não medida viva: mesma sessão troca o jar e preserva a hora —
+   `observacao_preservando_login` anexa "recapturado em"). ⚠️ Sem isso, com o Chrome
    aberto a extensão recaptura a cada navegação/alarme, cada captura vira candidata e é promovida, e
    a hora do login andaria para a frente a cada ciclo — o aviso nunca sairia (achado da revisão).
    `VIDA_SSO_H=24`, `AVISO_VENCIMENTO_H=21`, **sem teto superior**: sessão que dure 30h continua
@@ -2220,8 +2225,19 @@ anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do rotei
    servidores na hora**; ela volta quando o keepalive promover a captura nova (≤ ~10 min). Sonda:
    kill-switch `GOVBR_SONDA_SSO=0` (ela abre uma sessão própria no SP a cada hora — que o SP aceita
    várias sessões do mesmo CPF é fato: os sete tenants convivem com a sua); espera adaptativa (2s × até
-   12, para ao autenticar ou com a URL parada 6s; URL em idp/sso em trânsito = inconclusivo); jar sem
+   12, para ao autenticar ou com a URL parada 6s); **"login" só com prova no CORPO** (Identifique-se /
+   Acesso restrito) — URL em idp/sso sem marcador é trânsito ou erro do IdP = inconclusivo; jar sem
    cookie de IdP/SSO = inconclusivo, nunca "venceu"; o detalhe registra `SP proprio=sim/nao`.
+   ⚠️ A premissa da sonda (o IdP re-deriva sem o cookie do SP) **ainda não foi vista dando success em
+   produção**: o resumo diário mostra a fonte com texto neutro ("não agir só por ela") até lá.
+   Se o gov.br entrar **sem pedir senha** depois do Sair do TransfereGov (não medido se o SLO do IdP
+   encerra a sessão do gov.br), sair também em `sso.acesso.gov.br` — o relógio só reinicia quando
+   `Session_Gov_Br_Prod` muda. O roteiro da "Captura completa" renova o prazo de 20 min a cada
+   carregamento da tela de login.
+   ⚠️ **Lição do processo (23/09):** uma rodada de mutação abortou no Windows no meio da restauração
+   e deixou `visto_em` removido do keepalive; foi commitado sem rodar a suíte de novo, e a 2ª revisão
+   pegou (3 testes vermelhos). O script de mutação agora confere a restauração byte a byte; e **toda
+   rodada de mutação é seguida de `git diff` comparado ao snapshot de antes**.
 Previsão a conferir: login de 23/09 11:27 BRT → aviso ~08:27 de 24/09, morte ~11:27 de 24/09 se
 ninguém relogar; a sonda deve virar `erro` nessa hora enquanto o SP ainda diz vivo.
 

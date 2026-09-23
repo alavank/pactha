@@ -260,6 +260,13 @@ const chk = (cond, msg) => {
     chk(/\.vencendo/.test(ler("popup.html")) && /algumVencendo\(itens\)/.test(ler("popup.js")), "o popup pinta o cartão de vencendo");
   }
 
+  console.log("\n11) o roteiro espera o login sem prazo curto: os 20 min recomeçam na tela de login");
+  {
+    const bg = ler("background.js");
+    chk(/if \(pareceLogin\(details\.url\)\) \{[\s\S]{0,400}pactha_roteiro: \{ \.\.\.rot, em: Date\.now\(\) \}/.test(bg),
+      "na tela de login o roteiro regrava `em` (login demorado não mata o roteiro no meio)");
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");
   process.exit(falhas ? 1 : 0);
 })();

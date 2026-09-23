@@ -80,7 +80,12 @@ servidor avisa no Telegram e o ícone ganha um **⏰** laranja; o popup mostra
    portal ainda abre logado, então sem o Sair a "Captura completa" só recaptura a
    sessão velha e nada muda).
 2. **"Captura completa (abre as 4 portas)"** — ela para na tela de login, espera
-   você logar e passa pelas 4 portas sozinha, mandando o jar novo.
+   você logar e passa pelas 4 portas sozinha, mandando o jar novo. O prazo de 20
+   min do roteiro recomeça a cada carregamento da tela de login.
+3. Se o gov.br entrar **sem pedir senha**, a sessão dele continuou (o Sair do
+   TransfereGov nem sempre encerra a do gov.br — não medido): saia também em
+   `sso.acesso.gov.br` e repita. O servidor só reinicia o relógio quando o cookie de
+   sessão do gov.br (`Session_Gov_Br_Prod`) muda.
 
 O Sair derruba a sessão dos servidores na hora; ela volta quando o keepalive
 promover a captura nova (candidata → promovida, até ~10 min). O ⏰ só apaga

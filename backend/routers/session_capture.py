@@ -413,6 +413,21 @@ async def capture_session(
             }
 
     if item:
+        # A hora do LOGIN (lida da observacao pelo vigia e pela rota de saude) so
+        # muda com login NOVO. Captura direta da MESMA sessao gov.br (worker parado
+        # ha >3h, tenant sem medicao ainda, SP zumbi no Chrome com o SSO morto) nao
+        # e login: troca o jar e preserva a hora antiga. Best-effort: sem conseguir
+        # comparar, vale a hora desta captura (o comportamento antigo).
+        if payload.automation_key == CHAVE_GOVBR and mid is None and payload.cookies_full:
+            try:
+                from services.sessao_govbr import mesma_sessao_sso, observacao_preservando_login
+                import json as _json
+                _dec = crypto.decrypt(item.senha_encrypted) or ""
+                _atual = _json.loads(_dec).get("cookies", []) if _dec.startswith("{") else []
+                if mesma_sessao_sso(payload.cookies_full, _atual):
+                    obs = observacao_preservando_login(obs, item.observacao)
+            except Exception as e:
+                log.info("session-capture: hora do login nao comparada (%s)", str(e)[:60])
         # Atualiza observacao + senha (com cookie cifrado)
         item.senha_encrypted = crypto.encrypt(storage_payload)
         item.observacao = obs
