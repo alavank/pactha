@@ -1,0 +1,96 @@
+# VOLTA AUTOMATICA DO BOTAO DE PARADA DAS COLETAS (pedido do dono, 23/09/2026).
+#
+# O dono desenvolve a noite, dentro da janela de coleta (19h-7h BRT), e pede para parar as
+# coletas enquanto trabalha: deploy com coleta ligada mata coleta em voo ou prende o boot da
+# API atras de lock. O botao (script local `pactha-pausa-coletas.ps1`, na maquina do dono)
+# desliga as tasks de coleta dos workers no Coolify e DISPARA ESTE WORKFLOW com a lista do que
+# religar e em quantos minutos. A volta acontece aqui, no runner do GitHub, e nao no PC do
+# dono: ele pode desligar a maquina e ir dormir (a primeira versao usava o Agendador do
+# Windows e exigia o PC ligado — foi o que o dono recusou).
+#
+# - ADIAR = disparar de novo. `cancel-in-progress` cancela a espera anterior, e um run
+#   CANCELADO nao religa nada (o passo de religar so roda com a espera concluida).
+# - RETOMAR JA = o script cancela o run pendente e religa por conta propria.
+# - PAUSA MAIOR QUE 5h40: um job do GitHub vive no maximo 6h, entao o run espera 340 min e
+#   dispara outro com o resto ("passar o bastao").
+# - CUSTO: o job fica parado esperando e conta minutos de Actions (3h de pausa = 180 min).
+#
+# `tarefas` = pares "<worker_uuid>/<task_uuid>" separados por espaco: EXATAMENTE as que
+# estavam ligadas antes da pausa (as desligadas por decisao continuam desligadas).
+name: retomar-coletas
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutos:
+        description: "Em quantos minutos religar"
+        required: true
+        type: number
+      tarefas:
+        description: "Pares worker_uuid/task_uuid separados por espaco"
+        required: true
+        type: string
+
+concurrency:
+  group: retomar-coletas
+  cancel-in-progress: true
+
+permissions:
+  actions: write     # passar o bastao (disparar o proximo run) em pausa > 5h40
+  contents: read
+
+jobs:
+  retomar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      MINUTOS: ${{ inputs.minutos }}
+      TAREFAS: ${{ inputs.tarefas }}
+    steps:
+      - name: Esperar
+        id: espera
+        run: |
+          set -eu
+          espera="$MINUTOS"; resto=0
+          if [ "$espera" -gt 340 ]; then resto=$((espera - 340)); espera=340; fi
+          echo "resto=$resto" >> "$GITHUB_OUTPUT"
+          n=$(echo "$TAREFAS" | wc -w)
+          volta=$(TZ=America/Sao_Paulo date -d "+$espera min" '+%d/%m %H:%M')
+          echo "::notice::$n task(s) de coleta pausada(s). Volta as $volta (Brasilia)$([ "$resto" = 0 ] || echo ", e passa o bastao com mais $resto min")."
+          sleep $((espera * 60))
+
+      - name: Passar o bastao (pausa maior que 5h40)
+        if: steps.espera.outputs.resto != '0'
+        env:
+          RESTO: ${{ steps.espera.outputs.resto }}
+        run: |
+          gh workflow run retomar-coletas.yml -R "$GITHUB_REPOSITORY" \
+            -f minutos="$RESTO" -f tarefas="$TAREFAS"
+
+      - name: Religar as coletas
+        if: steps.espera.outputs.resto == '0'
+        run: |
+          set -u
+          ok=0; falhas=0
+          for par in $TAREFAS; do
+            w="${par%%/*}"; t="${par##*/}"
+            code=000
+            for tentativa in 1 2 3; do
+              code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 \
+                -X PATCH "$COOLIFY_URL/api/v1/applications/$w/scheduled-tasks/$t" \
+                -H "Authorization: Bearer $COOLIFY_TOKEN" -H "Content-Type: application/json" \
+                -d '{"enabled":true}' || echo 000)
+              case "$code" in 2??) break ;; esac
+              sleep 15
+            done
+            case "$code" in
+              2??) ok=$((ok + 1)) ;;
+              *) falhas=$((falhas + 1)); echo "::error::nao religou $w/$t (HTTP $code)" ;;
+            esac
+            sleep 1.3   # rate limit do Coolify (INFRA.md secao 8)
+          done
+          echo "::notice::$ok task(s) religada(s), $falhas falha(s), as $(TZ=America/Sao_Paulo date '+%d/%m %H:%M') (Brasilia)."
+          [ "$falhas" = 0 ]

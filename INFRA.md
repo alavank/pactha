@@ -437,6 +437,18 @@ schema+seed. Migrações idempotentes rodam no boot da API (`backend/services/st
 > noite (403, timeout, "detalhe parcial") e só então pensar em 3. A regra não se negocia;
 > o desenho, sim.
 
+> 🛑 **BOTÃO DE PARADA (23/09/2026) — a única exceção que o dono aciona à mão.** Quando ele
+> desenvolve à noite, pede para parar as coletas (deploy com coleta ligada mata coleta em
+> voo ou prende o boot da API atrás de lock). O script local
+> `~/pactha-pausa-coletas.ps1 -Acao pausar -Minutos N` (máquina do dono) grava o estado,
+> desliga toda task de coleta dos sete workers — manutenção (`govbr-renew`,
+> `private-keepalive`, `watchdog`, `painel-alertas`) fica ligada — e dispara o workflow
+> [`retomar-coletas.yml`](.github/workflows/retomar-coletas.yml), que espera N minutos
+> **no runner do GitHub** e religa exatamente o que estava ligado. O PC do dono pode ser
+> desligado. Adiar = disparar de novo (o run anterior é cancelado sem religar); `-Acao
+> retomar` religa já. Custa minutos de Actions do tamanho da pausa. Ao religar, o Coolify
+> roda na hora a task diária cujo horário caiu na pausa (medido 19/09).
+
 > ⚠️ **Mudar o horário de uma task no Coolify pode DISPARÁ-LA NA HORA.** Medido em
 > 13/09/2026, 1 min depois do `--aplicar`: rodaram sozinhos o `transferegov-lote` da trust
 > e da bgk, o `transferegov` (base) da freitas e os três `fpe-rs` (~24 min cada lote). A
