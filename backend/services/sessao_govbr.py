@@ -85,26 +85,45 @@ def vencimento(login_em: datetime | None, agora: datetime | None = None) -> dict
 # ---------------------------------------------------------------------------
 # IDENTIDADE DA SESSAO SSO — "esta captura e um LOGIN NOVO ou a mesma sessao?"
 # ---------------------------------------------------------------------------
-# O cookie de sessao do proprio gov.br. Medido em 23/09/2026 (Chromium anonimo no
-# sso.acesso.gov.br): os httpOnly do dominio sao `Session_Gov_Br_Prod` e
-# `INGRESSCOOKIE`, estaveis dentro da sessao; a familia F5 `TS*` NAO e httpOnly e
-# muda a cada pagina. Por isso so httpOnly entra, e o cookie de sessao decide.
+# ⚠️ MEDIDO EM PRODUCAO (23/09/2026, `cookies_meta` do jar real, sem valores): o
+# login de 23/09 11:27 NAO trouxe `Session_Gov_Br_Prod` nem `INGRESSCOOKIE`. Do
+# gov.br vieram so `Govbrid` e `GovbrUid_*` — PERSISTENTES, validos ate 2027, e o
+# `Govbrid` vence em 15/06/2027: nao foi reemitido no login, e identificador do
+# APARELHO. Comparar esses dava "mesma sessao" para sempre (a hora do login nunca
+# mudava, o aviso nunca apagava). O que e da SESSAO sao os cookies httpOnly SEM
+# validade: o `JSESSIONID` do IdP (`idp.transferegov...`) e, se vier, o
+# `Session_Gov_Br_Prod` do gov.br. Afinidade de balanceador nao e identidade.
 COOKIE_SESSAO_SSO = "Session_Gov_Br_Prod"
+_NAO_IDENTIDADE = {"INGRESSCOOKIE"}
 
 
 def _dominio_sso(dom: str) -> bool:
     return dom == "gov.br" or dom.endswith("acesso.gov.br")
 
 
+def _persistente(expira) -> bool:
+    try:
+        return bool(expira) and float(expira) > 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _cookies_sso(cookies) -> dict:
-    """{(dominio, nome): valor} dos cookies httpOnly do PROPRIO gov.br. Aceita os dois
-    formatos que circulam: dict (Cofre, extensao) e objeto com atributos (pydantic)."""
+    """{(dominio, nome): valor} dos cookies que identificam a SESSAO de login:
+    httpOnly, SEM data de validade (cookie de sessao do navegador), no gov.br ou o
+    JSESSIONID do IdP. Aceita os dois formatos que circulam: dict (Cofre, extensao)
+    e objeto com atributos (pydantic)."""
     out = {}
     for c in cookies or []:
         g = c.get if isinstance(c, dict) else (lambda k, _c=c: getattr(_c, k, None))
         dom = (g("domain") or "").lstrip(".").lower()
-        if _dominio_sso(dom) and g("httpOnly"):
-            out[(dom, g("name"))] = g("value")
+        nome = g("name")
+        if not g("httpOnly") or nome in _NAO_IDENTIDADE:
+            continue
+        if _persistente(g("expirationDate") or g("expires")):
+            continue                      # Govbrid/GovbrUid: aparelho, nao sessao
+        if _dominio_sso(dom) or (dom.startswith("idp.") and nome == "JSESSIONID"):
+            out[(dom, nome)] = g("value")
     return out
 
 
@@ -114,26 +133,15 @@ def comparar_sessao_sso(candidata, em_uso) -> tuple[bool, list]:
     ⭐ POR QUE (revisao de 23/09): a promocao copiava a hora da captura como hora
     do LOGIN em toda candidata; com o Chrome aberto a extensao recaptura a cada
     navegacao/alarme, e o relogio do vencimento andava para a frente a cada ciclo
-    — o aviso nunca sairia. So login NOVO troca o cookie de sessao do gov.br.
+    — o aviso nunca sairia. So login NOVO troca os cookies de sessao (IdP/gov.br).
 
-    Regra: se os dois lados tem `Session_Gov_Br_Prod`, ele decide sozinho (mesma
-    sessao = algum valor em comum). Sem ele, compara os httpOnly do gov.br que os
-    DOIS lados tem (cookie a mais de um lado nao decide). Sem nada em comum nao ha
-    como saber: 'login novo' — o comportamento antigo, nunca pior."""
+    Regra: compara os cookies de identidade que os DOIS lados tem; algum diferente =
+    login novo, todos iguais = mesma sessao. Nada em comum: nao ha como saber, e
+    vale 'login novo' — o comportamento antigo, nunca pior."""
     a, b = _cookies_sso(candidata), _cookies_sso(em_uso)
-    sa = {v for (d, n), v in a.items() if n == COOKIE_SESSAO_SSO}
-    sb = {v for (d, n), v in b.items() if n == COOKIE_SESSAO_SSO}
-    if sa and sb:
-        return (bool(sa & sb), [] if sa & sb else [COOKIE_SESSAO_SSO])
-    if sa and not sb:
-        # A captura TRAZ o cookie de sessao do gov.br e o jar em uso nao: e login
-        # novo. (O `INGRESSCOOKIE` e afinidade de balanceador — nao prova que e a
-        # mesma sessao.) O contrario — captura SEM o cookie, o SP zumbi — segue
-        # para o desempate abaixo e preserva a hora.
-        return False, [COOKIE_SESSAO_SSO]
     comuns = set(a) & set(b)
     if not comuns:
-        return False, []
+        return False, sorted({n for (_d, n) in a})
     difere = sorted({n for (d, n) in comuns if a[(d, n)] != b[(d, n)]})
     return (not difere), difere
 

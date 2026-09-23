@@ -823,43 +823,49 @@ ING_1 = {"name": "INGRESSCOOKIE", "value": "g1", "domain": "sso.acesso.gov.br", 
 ING_2 = {"name": "INGRESSCOOKIE", "value": "g2", "domain": "sso.acesso.gov.br", "httpOnly": True}
 TS_1 = {"name": "TSd2153684027", "value": "t1", "domain": "sso.acesso.gov.br", "httpOnly": False}
 TS_2 = {"name": "TSd2153684027", "value": "t2", "domain": "sso.acesso.gov.br", "httpOnly": False}
-IDP_1 = {"name": "JSESSIONID", "value": "i1", "domain": "idp.transferegov.sistema.gov.br"}
-IDP_2 = {"name": "JSESSIONID", "value": "i2", "domain": "idp.transferegov.sistema.gov.br"}
+# O formato REAL medido em producao em 23/09 (nomes/dominios/validade do `cookies_meta`;
+# valores falsos): do gov.br so vem identificador PERSISTENTE (2027); a sessao e o
+# JSESSIONID do IdP (httpOnly, sem validade).
+GOVBRID = {"name": "Govbrid", "value": "aparelho", "domain": ".sso.acesso.gov.br", "httpOnly": True,
+           "expirationDate": 1812850445.5}
+GOVBRUID = {"name": "GovbrUid_H6vLKr2c8FQB5mqW", "value": "u", "domain": ".sso.acesso.gov.br", "httpOnly": True,
+            "expirationDate": 1812850445.5}
+IDP_1 = {"name": "JSESSIONID", "value": "i1", "domain": "idp.transferegov.sistema.gov.br", "httpOnly": True}
+IDP_2 = {"name": "JSESSIONID", "value": "i2", "domain": "idp.transferegov.sistema.gov.br", "httpOnly": True}
 SP_1 = {"name": "JSESSIONID", "value": "s1", "domain": "discricionarias.transferegov.sistema.gov.br"}
 
 
-def test_mesma_sessao_sso__so_os_cookies_do_govbr_decidem():
-    assert gr.mesma_sessao_sso([SSO_A, IDP_1, SP_1], [SSO_A, IDP_2]) is True, \
-        "IdP e SP rotacionam a cada SAML; a identidade do login e o cookie do gov.br"
-    assert gr.mesma_sessao_sso([SSO_A], [SSO_B]) is False, "valor diferente = login novo"
-    assert gr.mesma_sessao_sso([IDP_1, SP_1], [SSO_A]) is False, "sem cookie do gov.br nao se sabe: login novo"
-    assert gr.mesma_sessao_sso([], []) is False
+def test_identidade_da_sessao__o_formato_REAL_de_producao():
+    """Login de 23/09 11:27: sem Session_Gov_Br_Prod; Govbrid/GovbrUid persistentes
+    (ate 2027, NAO reemitidos no login). Se eles contassem, dois jars seriam sempre
+    'a mesma sessao' e a hora do login nunca mudaria — o aviso nunca apagaria."""
+    antigo = [GOVBRID, GOVBRUID, IDP_1, SP_1]
+    assert gr.comparar_sessao_sso([GOVBRID, GOVBRUID, IDP_2, SP_1], antigo) == (False, ["JSESSIONID"]),         "login novo = sessao nova no IdP, mesmo com o aparelho igual"
+    assert gr.mesma_sessao_sso([GOVBRID, GOVBRUID, IDP_1, SP_1], antigo) is True, "recaptura da mesma sessao"
+    assert gr.mesma_sessao_sso([GOVBRID, GOVBRUID], [GOVBRID, GOVBRUID]) is False,         "so identificador de aparelho: nao ha como saber -> login novo (comportamento antigo)"
 
 
-def test_mesma_sessao_sso__so_httpOnly_e_o_cookie_de_sessao_decide():
-    """Medido em 23/09: `TS*` (F5, nao-httpOnly) muda a cada pagina do SSO; se
-    entrasse na conta, toda recaptura viraria 'login novo' e o relogio andaria."""
-    assert gr.mesma_sessao_sso([SSO_A, TS_1], [SSO_A, TS_2]) is True
-    assert gr.mesma_sessao_sso([SSO_A, ING_1], [SSO_A, ING_2]) is True, "o cookie de sessao decide sozinho"
-    assert gr.mesma_sessao_sso([ING_1], [ING_1, TS_2]) is True, "sem o de sessao: httpOnly em comum"
-    assert gr.mesma_sessao_sso([ING_1], [ING_2]) is False
-    assert gr.mesma_sessao_sso([SSO_A], [ING_1]) is False, "nada em comum: nao se sabe -> login novo"
+def test_identidade_da_sessao__so_cookie_de_sessao_httpOnly_conta():
+    assert gr.mesma_sessao_sso([SSO_A, TS_1], [SSO_A, TS_2]) is True, "TS* (F5, nao httpOnly) rotaciona e nao conta"
+    assert gr.mesma_sessao_sso([SSO_A, ING_1], [SSO_A, ING_2]) is True, "INGRESSCOOKIE e balanceador, nao identidade"
+    assert gr.mesma_sessao_sso([ING_1], [ING_1]) is False, "so balanceador: nao ha como saber"
     assert gr.comparar_sessao_sso([SSO_A], [SSO_B]) == (False, ["Session_Gov_Br_Prod"])
-    # login NOVO (traz o cookie de sessao) contra jar em uso SEM ele: o INGRESSCOOKIE
-    # (afinidade do balanceador) nao pode decidir "mesma sessao"
-    assert gr.comparar_sessao_sso([SSO_B, ING_1], [ING_1]) == (False, ["Session_Gov_Br_Prod"])
-    # o contrario (captura sem o cookie de sessao — SP zumbi) desempata pelo que ha em comum
-    assert gr.mesma_sessao_sso([ING_1], [SSO_A, ING_1]) is True
+    assert gr.mesma_sessao_sso([SSO_A, IDP_1], [IDP_1]) is True, "o que ha em comum decide"
+    assert gr.mesma_sessao_sso([SSO_B, IDP_2], [IDP_1]) is False
+    assert gr.mesma_sessao_sso([], []) is False
     # aceita o formato pydantic do POST (atributos) — e o que o endpoint compara
-    obj = sc.CookieFull(name="Session_Gov_Br_Prod", value="AAA", domain=".sso.acesso.gov.br", httpOnly=True)
-    assert gr.mesma_sessao_sso([obj], [SSO_A]) is True
+    obj = sc.CookieFull(name="JSESSIONID", value="i1", domain="idp.transferegov.sistema.gov.br", httpOnly=True)
+    assert gr.mesma_sessao_sso([obj], [IDP_1]) is True
+    persist = sc.CookieFull(name="Govbrid", value="aparelho", domain=".sso.acesso.gov.br", httpOnly=True,
+                            expirationDate=1812850445.5)
+    assert gr.mesma_sessao_sso([persist], [GOVBRID]) is False, "persistente nao conta, nem no formato pydantic"
 
 
 def test_a_promocao_de_LOGIN_NOVO_copia_a_hora_do_login_da_candidata(monkeypatch, worker):
     copias = []
     monkeypatch.setattr(gr, "_copia_observacao", lambda de, para: copias.append((de, para)) or worker.passos.append(("copia",)))
-    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [SSO_B, SP_1], "c1"))
-    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SSO_A, IDP_1], "v1"))
+    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [GOVBRID, IDP_2, SP_1], "c1"))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [GOVBRID, IDP_1], "v1"))
     _playwright_falso(monkeypatch, _Page(*LOGADO))
     assert asyncio.run(gr.processa_candidata()) == "promovida"
     assert copias == [(8, 7)]
@@ -873,8 +879,8 @@ def test_recaptura_da_MESMA_sessao_promove_o_jar_mas_NAO_reinicia_o_relogio(monk
     vencimento previsto andaria para a frente a cada ciclo e o aviso nunca sairia."""
     copias = []
     monkeypatch.setattr(gr, "_copia_observacao", lambda de, para: copias.append((de, para)))
-    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [SSO_A, IDP_2, SP_1], "c1"))
-    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SSO_A, IDP_1], "v1"))
+    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [GOVBRID, IDP_1, SP_1], "c1"))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [GOVBRID, IDP_1], "v1"))
     _playwright_falso(monkeypatch, _Page(*LOGADO))
     assert asyncio.run(gr.processa_candidata()) == "promovida"
     assert copias == [] and worker.salvos() == [(7, None)] and worker.encerradas()[0][0] == 8
@@ -979,15 +985,15 @@ OBS_LOGIN = "[SESSION] capturado em 2026-09-23T14:27:18+00:00 | cookies=14 httpO
 
 
 @pytest.mark.parametrize("sso_payload, preserva", [
-    (SSO_A, True),     # mesma sessao gov.br (worker parado, SP zumbi): nao e login
-    (SSO_B, False),    # cookie de sessao do gov.br novo: login NOVO
+    (IDP_1, True),     # mesma sessao do IdP (worker parado, SP zumbi): nao e login
+    (IDP_2, False),    # sessao nova no IdP: login NOVO
 ])
 def test_captura_DIRETA_so_reinicia_a_hora_do_login_com_login_NOVO(monkeypatch, captura, sso_payload, preserva):
     principal = SimpleNamespace(id=7, senha_encrypted="JAR", observacao=OBS_LOGIN,
                                 atualizado_por_id=None, municipio_id=None)
-    monkeypatch.setattr(sc.crypto, "decrypt", lambda s: json.dumps({"format": "cookies_full", "cookies": [SSO_A]}))
+    monkeypatch.setattr(sc.crypto, "decrypt", lambda s: json.dumps({"format": "cookies_full", "cookies": [GOVBRID, IDP_1]}))
     db = FakeDb(principal=principal, sso=("success", 999.0, None))      # medicao velha: grava direto
-    r = captura.chama(db, cookies=[sc.CookieFull(**sso_payload)])
+    r = captura.chama(db, cookies=[sc.CookieFull(**GOVBRID), sc.CookieFull(**sso_payload)])
     assert r["status"] == "ok" and principal.senha_encrypted.startswith("CIFRADO:"), "o jar tem de ser trocado"
     from services.sessao_govbr import login_em_da_observacao
     hora = login_em_da_observacao(principal.observacao)
