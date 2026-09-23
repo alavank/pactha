@@ -2171,6 +2171,24 @@ ponta; cada correção foi conferida por mutação: desfeita, a suíte fica verm
    TransfereGov toda noite. Mesmo religado por env, roda **um por vez** com intervalo mínimo de 6h
    (`pode_auto_scrape`).
 
+**Medido em 23/09/2026 — a morte seguinte veio SEM captura.** A sessão caiu de novo nos seis em 22/09
+entre ~09:00 e ~10:00 BRT, ~24h depois da recaptura de 21/09 09:42. O `audit_log` (`session.*`) dos
+seis, lido por `scripts/diag_sessao_govbr.py` (passo do dry run do `resumo-coleta`): **nenhum
+`session.update` nem `session.candidata` desde 21/09 12:42 UTC** — ninguém gravou por cima; a sessão do
+gov.br morreu sozinha (teto/idle do SSO ou logout/novo login do dono em outro lugar). E os eventos de
+captura são esparsos há semanas (02/09, 09/09, 11/09, 12/09, 21/09, 23/09 — só recapturas manuais): a
+extensão **não vem capturando automaticamente** (modo automático desligado ou Chrome fechado). Logo a
+hipótese "espelho do Chrome matou a sessão" perde força; a vida útil observada é a do próprio SSO
+(~35h em 12→14/09, ~24h em 21→22/09), e as duas últimas mortes foram ~09:00 BRT. Recaptura de 23/09
+11:27: 1 `session.update` em cada um dos seis (14 cookies), gravação direta (sessão morta), login
+confirmado pelo keepalive em minutos. **Porteiro da extensão:** a assinatura do muro foi medida
+(3.469 bytes, `<TITLE>HTTP Post Binding (Request)` + `<FORM ACTION="https://idp.transferegov.../idp/">`
++ `<INPUT NAME="SAMLRequest">`) e `corpoEhLogin` passou a exigir ELA, não palavras soltas — página
+logada pode ter `SAMLRequest=` no link "Sair" e "Acesso Restrito" oculto no HTML cru, e a versão
+anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do roteiro de 23/09 chegou).
+⚠️ Juranda (7º tenant, 22/09) está fora do secret `PACTHA_RESUMO_TENANTS` e a extensão instalada em
+`C:\CONVPREF\extension` não tem a linha nem o token dele.
+
 **O que NÃO dá para garantir:** o login gov.br tem reCAPTCHA (não se automatiza, não se guarda senha) e
 o teto do SSO não é publicado nem foi medido isolado — as "vidas" de agosto podem ser sessões emendadas
 por recapturas silenciosas. "Sair" no portal ou logar outro CPF no Chrome derruba os seis (é a mesma

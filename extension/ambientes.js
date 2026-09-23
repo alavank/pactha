@@ -237,18 +237,31 @@ function pareceLogin(url) {
  * TransfereGov e `pareceLogin(r.url)` diz "logado". (É o mesmo muro de 3469
  * bytes que o backend conhece — `transferegov._eh_muro_saml`.) */
 function corpoEhLogin(texto) {
-  return /SAMLRequest|HTTP Post Binding|name=["']?RelayState|identifique-se|acesso restrito/i
-    .test(String(texto || ""));
+  const t = String(texto || "");
+  /* ⚠️ ASSINATURA MEDIDA, não palavra solta. O muro (medido em 23/09/2026:
+     3.469 bytes) é `<TITLE>HTTP Post Binding (Request)` + `<FORM METHOD="POST"
+     ACTION="https://idp.transferegov.../idp/"` + `<INPUT NAME="SAMLRequest">`.
+     A versão anterior barrava com QUALQUER "SAMLRequest"/"acesso restrito" no
+     HTML cru — e uma página LOGADA pode ter os dois escondidos (o link "Sair" do
+     SAML leva `SAMLRequest=` na URL; o menu tem "Acesso Restrito" oculto, que o
+     innerText do servidor não vê mas o fetch daqui vê). Resultado: a captura
+     boa barrada para sempre, em silêncio. */
+  if (/<title>\s*HTTP Post Binding/i.test(t)) return true;
+  const formIdp = /<form[^>]*action=["'][^"']*(\/idp\/|idp\.transferegov|sso\.acesso)[^"']*["']/i.test(t);
+  const inputSaml = /<input[^>]*name=["']SAMLRequest["']/i.test(t);
+  if (formIdp && inputSaml) return true;
+  return /identifique-se no gov\.br|<title>[^<]*identifique-se/i.test(t);
 }
 
 /**
  * Veredito da sonda: true (logado) | false (deslogado) | null (não sei).
  *
  * Mesma régua do servidor (`govbr_renew._is_authenticated`): logado é PROVA
- * POSITIVA — a página tem o "Sair". Marcador de login é prova negativa. Sem
- * nenhum dos dois (layout mudou, portal devolveu erro) o veredito é `null`, e
- * `null` NÃO barra captura: o servidor tem a guarda dele (sessão viva → vira
- * candidata), e travar aqui por dúvida impediria justamente a recaptura.
+ * POSITIVA — a página tem o "Sair". Deslogado é a ASSINATURA do muro/tela de
+ * login (`corpoEhLogin`). Sem nenhum dos dois (layout mudou, portal devolveu
+ * erro) o veredito é `null`, e `null` NÃO barra captura: o servidor tem a guarda
+ * dele (sessão viva → vira candidata), e travar aqui por dúvida impediria
+ * justamente a recaptura.
  */
 function vereditoLogin(url, corpo) {
   if (pareceLogin(url) || corpoEhLogin(corpo)) return false;

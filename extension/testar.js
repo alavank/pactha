@@ -196,6 +196,19 @@ const chk = (cond, msg) => {
     chk(ctx.vereditoLogin("https://sso.acesso.gov.br/login", "<html>") === false, "tela de login = deslogado");
     chk(ctx.vereditoLogin(URL_TG, "<a href='/logout'>Sair</a> Consultar Proposta") === true, "página com «Sair» = logado");
     chk(ctx.vereditoLogin(URL_TG, "<html>erro 500</html>") === null, "sem prova para nenhum lado = não sei (null)");
+    // O muro REAL, medido em 23/09/2026 (3.469 bytes; só o valor do SAMLRequest foi cortado).
+    const muroReal = '<HTML><HEAD><TITLE>HTTP Post Binding (Request)</TITLE></HEAD><BODY Onload="document.forms[0].submit()">'
+      + '<FORM METHOD="POST" ACTION="https://idp.transferegov.sistema.gov.br/idp/"><INPUT TYPE="HIDDEN" NAME="SAMLRequest" VALUE="..."/>'
+      + '<NOSCRIPT><P>JavaScript is disabled.</P><INPUT TYPE="SUBMIT" VALUE="CONTINUE" /></NOSCRIPT></FORM></BODY></HTML>';
+    chk(ctx.vereditoLogin(URL_TG, muroReal) === false, "o muro REAL (maiúsculas, TITLE + FORM p/ idp + INPUT SAMLRequest) = deslogado");
+    // ⚠️ Página LOGADA com as palavras do muro ESCONDIDAS no HTML cru: o link
+    // "Sair" do SAML leva `SAMLRequest=` na URL e o menu tem "Acesso Restrito"
+    // oculto. A versão anterior barrava isto — e a captura boa nunca saía.
+    const logadaComPalavras = '<html><body><ul style="display:none"><li>Acesso Restrito</li></ul>'
+      + '<a href="/idp/profile/SAML2/Redirect/SLO?SAMLRequest=abc&RelayState=x">Sair</a>'
+      + '<script>var RelayState = "SAMLRequest";</script><h1>Consultar Proposta</h1></body></html>';
+    chk(ctx.vereditoLogin(URL_TG, logadaComPalavras) === true,
+      "página LOGADA com «SAMLRequest»/«Acesso Restrito» escondidos no HTML = logado (era barrada)");
 
     let corpo = muro;
     let sondas = 0;
