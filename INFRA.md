@@ -525,8 +525,9 @@ O desenho atual (13/09/2026, "coleta noturna"):
   `in.gov.br` do mesmo IP. 10 min de passo, de 08:00 (freitas) a 09:00 UTC (juranda), na
   ordem da tabela de uuids; orçamento interno de 8 min (`DOU_BUDGET_S=480`), kill em 600 s,
   timeout da task 720 s. O que não couber volta na noite seguinte, pelo município há mais
-  tempo sem conferir. Criação: `scripts/criar_task_dou_federal.sh`, **depois** do deploy
-  do PR que trouxe o coletor — até isso rodar, a task NÃO existe em nenhum worker.
+  tempo sem conferir. **Criada nos sete em 23/09/2026 ~00:25 UTC** por
+  `scripts/criar_task_dou_federal.sh` (idempotente: pula o worker que já tem), depois do
+  deploy do #536 — a migration conferida "141/141 em dia" no log das sete APIs.
 - **`transferegov-te` é escalonado ENTRE TENANTS de propósito** (17/08). Os tenants saem
   do MESMO IP e a API `especiais` do TransfereGov tem quota por IP (~10 páginas/janela,
   renova em ~15 min): com todos no mesmo minuto — como era — quem roda por último só
