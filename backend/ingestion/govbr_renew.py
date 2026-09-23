@@ -331,16 +331,16 @@ def cookies_para_roundtrip(cookies: list) -> list:
     return out
 
 
-async def sso_roundtrip(p, cookies: list) -> tuple[str, str]:
-    """('logado' | 'login' | 'nao_sei', detalhe). Navegador proprio, descartado."""
+async def sso_roundtrip(br, cookies: list) -> tuple[str, str]:
+    """('logado' | 'login' | 'nao_sei', detalhe). CONTEXTO proprio no navegador que o
+    renew ja abriu (jar isolado), fechado no fim — nao um segundo Chromium: o host
+    tem 2 vCPU e dois navegadores ao mesmo tempo ja colidiram antes."""
     jar = cookies_para_roundtrip(cookies)
-    br = await p.chromium.launch(headless=True,
-                                 args=["--ignore-certificate-errors", "--no-sandbox", "--disable-dev-shm-usage"])
+    ctx = await br.new_context(ignore_https_errors=True,
+                               user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                          "Chrome/131.0.0.0 Safari/537.36")
     try:
-        ctx = await br.new_context(ignore_https_errors=True,
-                                   user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                                              "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                              "Chrome/131.0.0.0 Safari/537.36")
         n = await _add_cookies_tolerante(ctx, jar)
         page = await ctx.new_page()
         resp = None
@@ -363,7 +363,10 @@ async def sso_roundtrip(p, cookies: list) -> tuple[str, str]:
             pass
         return v, f"{n} cookie(s) de IdP/SSO; terminou em {host or '?'}"
     finally:
-        await br.close()
+        try:
+            await ctx.close()
+        except Exception:
+            pass
 
 
 def _registra_roundtrip(veredito: str, detalhe: str) -> None:
@@ -799,7 +802,7 @@ async def renew() -> str:
         # A entrada autenticou — mas foi o SP (vivo pelo keepalive) ou o SSO? A
         # sonda responde, em navegador proprio e descartado. Nunca derruba o renew.
         try:
-            _rt, _det = await sso_roundtrip(p, cookies)
+            _rt, _det = await sso_roundtrip(br, cookies)
             _registra_roundtrip(_rt, _det)
             log.info(f"sonda SSO (sem cookie do SP): {_rt} — {_det}")
         except Exception as e:
