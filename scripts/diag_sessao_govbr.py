@@ -53,6 +53,10 @@ def linhas_do_tenant(tenant: dict, limite: int) -> list:
     out.append("sessao em uso: " + json.dumps({k: st.get(k) for k in CAMPOS_SESSAO if k in st},
                                               ensure_ascii=False))
     out.append("observacao:    " + " ".join(str(st.get("observacao") or "").split())[:500])
+    # nome/dominio/vencimento de cada cookie (sem valor): e daqui que sai o teto medido
+    for c in st.get("cookies_meta") or []:
+        out.append(f"  cookie {str(c.get('name'))[:28]:<28} {str(c.get('domain'))[:40]:<40} "
+                   f"httpOnly={'s' if c.get('httpOnly') else 'n'} expira_em={c.get('expira_em') or '(sessao)'}")
 
     ev = _get(tenant, f"/api/control/audit?action=session.&limit={limite}")
     if isinstance(ev, dict):

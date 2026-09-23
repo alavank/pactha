@@ -300,6 +300,153 @@ def _registra_rodada(resultado: str) -> None:
         _grava_estado(SOURCE_RODADA, "success", 1, None)
 
 
+# A SONDA DO SSO — a pergunta que o renew de hora em hora NAO fazia.
+#
+# ⭐ POR QUE (23/09/2026): a sessao caiu ~24h depois do login SEM nenhuma captura
+# por cima (audit_log dos seis). O keepalive mantem o JSESSIONID do SP vivo de 10
+# em 10 min, entao o renew navega a entrada JA autenticado e NUNCA passa pelo
+# IdP/SSO — mede o SP, nao o login. Quando o SSO do gov.br morre, ninguem ve ate o
+# SP tambem morrer. Esta sonda navega a entrada SEM os cookies do SP (so IdP +
+# gov.br): forca o SAML e responde "o IdP/SSO ainda re-deriva sessao?". Fonte
+# `govbr_sso_roundtrip`: success = re-derivou; erro = caiu no login (o SSO ja
+# morreu, o SP e um zumbi que vai cair); partial = pagina irreconhecivel.
+# ⚠️ SO MEDE. O contexto e descartado; o jar em uso nao e tocado. Se um dia a
+# vida do SSO se mostrar por OCIOSIDADE (e nao teto), esta rodada tambem a renova.
+SOURCE_SSO_RT = "govbr_sso_roundtrip"
+_SP_HOSTS = ("discricionarias.", "mandatarias.", "fiscalizacao.", "transfere.", "parcerias.",
+             "cadastro.", "especiais.", "fundos.", "ted.")
+
+
+def cookies_para_roundtrip(cookies: list) -> list:
+    """O jar SEM os cookies dos SPs (JSESSIONID de discricionarias, mandatarias...):
+    ficam os do IdP (`idp.transferegov...`), do gov.br (`sso.acesso.gov.br`, `.gov.br`)
+    e os do dominio-pai `transferegov.sistema.gov.br`. Sem sessao no SP, a entrada
+    obriga o SAML — que e o que se quer medir."""
+    out = []
+    for c in cookies or []:
+        dom = (c.get("domain") or "").lstrip(".").lower()
+        if any(dom.startswith(h) for h in _SP_HOSTS):
+            continue
+        out.append(c)
+    return out
+
+
+def sonda_ligada() -> bool:
+    """Kill-switch sem deploy: GOVBR_SONDA_SSO=0 no env do worker desliga a sonda.
+    Ela cria, a cada hora, uma sessao a mais do SP para o mesmo CPF (descartada).
+    Que o SP aceite varias sessoes do mesmo usuario e FATO ja medido em producao —
+    os sete tenants re-derivam cada um o seu JSESSIONID do mesmo login e convivem
+    — mas se um dia o portal mudar isso, desliga-se aqui."""
+    return (os.getenv("GOVBR_SONDA_SSO", "1") or "1").strip() not in ("0", "false", "no")
+
+
+def _sp_jsessionid(cookies: list) -> str | None:
+    for c in cookies or []:
+        if c.get("name") == "JSESSIONID" and "discricionarias" in (c.get("domain") or ""):
+            return c.get("value")
+    return None
+
+
+async def sso_roundtrip(br, cookies: list) -> tuple[str, str]:
+    """('logado' | 'login' | 'nao_sei', detalhe). CONTEXTO proprio no navegador que o
+    renew ja abriu (jar isolado), fechado no fim — nao um segundo Chromium: o host
+    tem 2 vCPU e dois navegadores ao mesmo tempo ja colidiram antes.
+
+    ⚠️ ESPERA ADAPTATIVA, nao 8s fixos: a sonda e a unica rodada que SEMPRE faz o
+    salto SAML inteiro (SP -> idp -> talvez gov.br -> SP). Julgar com a URL ainda
+    em `/idp/` ou em `sso.acesso` EM TRANSITO daria 'login' falso — e um falso
+    'erro' aqui calibra o teto errado. Poll de 2s ate 24s; para ao autenticar ou
+    quando a URL fica parada por 6s (pagina final, seja ela qual for)."""
+    jar = cookies_para_roundtrip(cookies)
+    ctx = await br.new_context(ignore_https_errors=True,
+                               user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                          "Chrome/131.0.0.0 Safari/537.36")
+    try:
+        n = await _add_cookies_tolerante(ctx, jar)
+        if n == 0:
+            # Navegador anonimo nao mede o SSO: cairia no login e diria "venceu".
+            return "nao_sei", "nenhum cookie de IdP/SSO no jar — sonda sem o que medir"
+        page = await ctx.new_page()
+        resp = None
+        try:
+            resp = await page.goto(ENTRY, timeout=60000, wait_until="domcontentloaded")
+        except Exception as e:
+            return "nao_sei", f"navegacao nao completou ({str(e)[:60]})"
+        v, body, parada, passos = "nao_sei", "", 0, 0
+        url_ant = None
+        for passos in range(1, 13):
+            await page.wait_for_timeout(2000)
+            try:
+                body = await page.evaluate("() => document.body.innerText")
+            except Exception:
+                body = ""
+            v = veredito_login(page.url, body, getattr(resp, "status", None))
+            if v == "logado":
+                break
+            parada = parada + 1 if page.url == url_ant else 0
+            url_ant = page.url
+            if parada >= 3:
+                break
+        if v == "login" and not _eh_tela_de_login("", body):
+            # 'login' so com PROVA NO CORPO (Identifique-se / Acesso restrito). URL em
+            # idp/sso sem marcador no corpo = SAML em transito ou pagina de erro do
+            # IdP (o `http_status` so cobre a 1a resposta) — nao e veredito.
+            v = "nao_sei"
+        host = ""
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(page.url or "").hostname or ""
+        except Exception:
+            pass
+        # Prova de que a sonda abriu uma sessao PROPRIA no SP (e nao reusou a em uso).
+        sp_novo = "?"
+        try:
+            sp = _sp_jsessionid(await ctx.cookies())
+            sp_novo = "sim" if (sp and sp != _sp_jsessionid(cookies)) else "nao"
+        except Exception:
+            pass
+        return v, (f"{n} cookie(s) de IdP/SSO; terminou em {host or '?'} apos {passos * 2}s; "
+                   f"SP proprio={sp_novo}")
+    finally:
+        try:
+            await ctx.close()
+        except Exception:
+            pass
+
+
+def _registra_roundtrip(veredito: str, detalhe: str) -> None:
+    if veredito == "logado":
+        _grava_estado(SOURCE_SSO_RT, "success", 1, None)
+    elif veredito == "login":
+        _grava_estado(SOURCE_SSO_RT, "erro", 0,
+                      f"IdP/SSO gov.br NAO re-deriva sessao sem o cookie do SP ({detalhe}) — o login "
+                      "ja venceu no gov.br; o SP so esta vivo pelo keepalive e vai cair")
+    else:
+        _grava_estado(SOURCE_SSO_RT, "partial", 0, f"sonda inconclusiva ({detalhe})")
+
+
+# A identidade da sessao SSO ("login novo ou a mesma sessao?") mora no modulo
+# puro, porque o endpoint de captura tambem precisa dela (captura direta).
+from services.sessao_govbr import comparar_sessao_sso, mesma_sessao_sso  # noqa: E402,F401
+
+
+def _copia_observacao(de_id: int, para_id: int) -> None:
+    """Na promocao, a hora do LOGIN passa a ser a da candidata: e da `observacao`
+    ("[SESSION] capturado em ...") que o vigia e a rota de saude tiram a hora do
+    login para prever o vencimento. Sem isto a promocao trocava o jar e deixava a
+    hora do login antigo — e o aviso de vencimento sairia na hora errada."""
+    try:
+        conn = psycopg2.connect(_sync_url(), connect_timeout=10)
+        with conn, conn.cursor() as cur:
+            cur.execute("UPDATE cofre_senhas SET observacao = (SELECT observacao FROM cofre_senhas "
+                        "WHERE id=%s) WHERE id=%s AND (SELECT observacao FROM cofre_senhas WHERE id=%s) "
+                        "LIKE '[SESSION] capturado em %%'", (de_id, para_id, de_id))
+        conn.close()
+    except Exception as e:
+        log.info(f"candidata: observacao nao copiada ({str(e)[:70]})")
+
+
 # O destino de cada captura CANDIDATA, no banco e nao so no log do container: a
 # promocao troca o jar inteiro da sessao em uso, e "a sessao morreu depois de uma
 # promocao?" precisa ter resposta. 'partial' (e nao 'erro') na recusa: a sessao
@@ -522,6 +669,12 @@ async def processa_candidata() -> str:
     except Exception as e:
         log.warning(f"candidata: nao consegui ler a sessao em uso ({str(e)[:80]}) — proxima rodada")
         return "inconclusivo"
+    # O jar em uso ORIGINAL (antes de qualquer gravacao desta rodada): e contra ele
+    # que se decide se a candidata e login novo (`mesma_sessao_sso`).
+    try:
+        _, em_uso_cookies, _ = _load_govbr_v()
+    except Exception:
+        em_uso_cookies = None
     if not cookies:
         _encerra_candidata(cand_id, "recusada (jar vazio/ilegivel)", principal_id, versao)
         _registra_candidata("recusada", "jar vazio ou ilegivel")
@@ -593,6 +746,16 @@ async def processa_candidata() -> str:
             if not _save_cookies(principal_id, relevant):       # promocao: incondicional
                 log.warning("candidata: a sessao em uso nao foi gravada — proxima rodada")
                 return "inconclusivo"
+            # A hora do LOGIN so muda com login NOVO (cookies do gov.br diferentes);
+            # recaptura da mesma sessao promove o jar mas nao reinicia o relogio.
+            _mesma, _difere = comparar_sessao_sso(cookies, em_uso_cookies)
+            if _mesma:
+                log.info("candidata: mesma sessao SSO — jar renovado, hora do login preservada")
+            else:
+                # nomes (sem valor) do que mudou: e o que calibra a regra em producao
+                log.info(f"candidata: LOGIN NOVO (cookies do gov.br que mudaram: "
+                         f"{', '.join(_difere) or 'sem cookie de sessao em comum'})")
+                _copia_observacao(cand_id, principal_id)        # login novo: a hora e a NOVA
         else:
             # A consulta RESPONDEU e nao ha linha 'govbr': nasce a sessao em uso,
             # com o jar FRESCO desta navegacao.
@@ -702,6 +865,15 @@ async def renew() -> str:
                         f"(login tem reCAPTCHA, nao automatizavel)")
             await br.close()
             return "needs_recapture"
+        # A entrada autenticou — mas foi o SP (vivo pelo keepalive) ou o SSO? A
+        # sonda responde, em navegador proprio e descartado. Nunca derruba o renew.
+        if sonda_ligada():
+            try:
+                _rt, _det = await sso_roundtrip(br, cookies)
+                _registra_roundtrip(_rt, _det)
+                log.info(f"sonda SSO (sem cookie do SP): {_rt} — {_det}")
+            except Exception as e:
+                log.warning(f"sonda SSO: {str(e)[:100]}")
         # SSO vivo -> re-derivado. Repovoa JSESSIONIDs dos subdominios + mantem SSO quente.
         for sd in SUBDOMINIOS[1:]:
             try:

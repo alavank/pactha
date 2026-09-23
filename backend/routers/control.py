@@ -966,6 +966,10 @@ async def control_session_status(
                   "observacao": row[3]}
     try:
         data = _json.loads(crypto.decrypt(row[4]) or "")
+        try:    # nunca pode apagar exp_minutes/expired (o que o Console usa)
+            base["cookies_meta"] = _cookies_meta(data.get("cookies", []))
+        except Exception:
+            base["cookies_meta"] = None
         uid = next((c for c in data.get("cookies", []) if c.get("name") == "user-id"), None)
         if uid:
             parts = (uid.get("value") or "").split(".")
@@ -983,6 +987,24 @@ async def control_session_status(
         base["decode_error"] = str(e)[:80]
     base["expired"] = (age_h or 1) > 0.33   # fallback pela idade da captura (~20min)
     return base
+
+
+def _cookies_meta(cookies: list) -> list:
+    """Nome, dominio e VENCIMENTO de cada cookie do jar — sem valor. E o que
+    calibra a vida da sessao: se o gov.br carimbar o proprio cookie de sessao com
+    `expires` = login + N horas, N e o teto medido, nao suposto (23/09/2026)."""
+    out = []
+    for c in cookies or []:
+        exp = c.get("expirationDate") or c.get("expires")
+        quando = None
+        try:
+            if exp and float(exp) > 0:
+                quando = datetime.fromtimestamp(float(exp), tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OSError, OverflowError):
+            quando = None
+        out.append({"name": c.get("name"), "domain": c.get("domain"),
+                    "httpOnly": bool(c.get("httpOnly")), "expira_em": quando})
+    return out
 
 
 @router.post("/session/token")

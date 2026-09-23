@@ -157,10 +157,10 @@ def captura(monkeypatch):
     stub.run = _run
     monkeypatch.setitem(sys.modules, "ingestion.transferegov_voluntarias", stub)
 
-    def _chama(db, key="govbr", municipio_id=None):
+    def _chama(db, key="govbr", municipio_id=None, cookies=None):
         payload = sc.CapturedSession(
             automation_key=key, municipio_id=municipio_id, cookie="JSESSIONID=abc; outro=def",
-            cookies_full=[sc.CookieFull(name="JSESSIONID", value="abc", domain=".gov.br")],
+            cookies_full=cookies or [sc.CookieFull(name="JSESSIONID", value="abc", domain=".gov.br")],
             url_atual="auto:navigation@www.gov.br", domain_capturado="www.gov.br")
         principal = sc._CapturePrincipal(user_id=None, label="service:extensao", via="service_token")
 
@@ -276,6 +276,8 @@ class _Page:
             d = self._destinos.pop(0) if self._destinos else self.url
             if isinstance(d, Exception):
                 raise d
+            if isinstance(d, tuple):          # (url, corpo) — pagina com corpo proprio
+                d, self._body = d
             self.url = d
 
     async def wait_for_timeout(self, ms):
@@ -718,8 +720,195 @@ def test_a_rota_de_saude_nao_devolve_nada_do_cofre():
     """So estado e horario: a extensao consulta isto de 12 em 12 minutos."""
     d = sc.resumo_saude(("success", 1.0, None), ("success", 1.0, None), False)
     assert set(d) == {"login", "login_medido_ha_min", "modulos", "modulos_medidos_ha_min",
-                      "candidata_pendente", "precisa_recapturar"}
+                      "candidata_pendente", "precisa_recapturar",
+                      "login_em", "login_ha_h", "vence_previsto_em", "vence_em_h", "vencendo"}
     assert "observacao" not in json.dumps(d)
+
+
+# ------------------------------------------------ vencimento previsto do login --
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+from services import sessao_govbr as sg  # noqa: E402
+
+OBS = "[SESSION] capturado em 2026-09-23T14:27:18.095649+00:00 | cookies=14 httpOnly=9 | url=https://x"
+
+
+def test_a_hora_do_login_vem_da_observacao_da_captura():
+    assert sg.login_em_da_observacao(OBS) == datetime(2026, 9, 23, 14, 27, 18, 95649, tzinfo=timezone.utc)
+    assert sg.login_em_da_observacao(OBS + " || [CANDIDATA] promovida em 2026-09-23 15:00 UTC") \
+        == datetime(2026, 9, 23, 14, 27, 18, 95649, tzinfo=timezone.utc)
+    assert sg.login_em_da_observacao(None) is None
+    assert sg.login_em_da_observacao("[SESSION] promovida de candidata") is None
+    assert sg.login_em_da_observacao("[SESSION] capturado em ontem | x") is None
+
+
+def test_vencimento_previsto__24h_do_login_e_aviso_com_3h_de_folga():
+    login = datetime(2026, 9, 23, 14, 27, tzinfo=timezone.utc)
+    cedo = sg.vencimento(login, agora=login + timedelta(hours=2))
+    assert cedo["vencendo"] is False and cedo["vence_em_h"] == 22.0
+    assert cedo["vence_previsto_em"] == (login + timedelta(hours=24)).isoformat()
+    aviso = sg.vencimento(login, agora=login + timedelta(hours=21.5))
+    assert aviso["vencendo"] is True and aviso["vence_em_h"] == 2.5 and aviso["login_ha_h"] == 21.5
+    # SEM teto superior: 24h e padrao medido; sessao que dure 30h continua "vencendo"
+    # (o aviso nao pode apagar e voltar a "tudo certo" com o previsto ja passado)
+    tarde = sg.vencimento(login, agora=login + timedelta(hours=30))
+    assert tarde["vencendo"] is True and tarde["vence_em_h"] == -6.0
+    assert sg.vencimento(None)["vencendo"] is False and sg.vencimento(None)["login_em"] is None
+
+
+def test_a_regua_de_viva_e_uma_so__servico_vigia_e_rota():
+    assert sc.sessao_esta_viva is sg.sessao_esta_viva and sc.SESSAO_VIVA_MIN == sg.SESSAO_VIVA_MIN
+    assert sg.sessao_esta_viva("SUCCESS", 10) is True and sg.sessao_esta_viva("success", 181) is False
+
+
+def test_o_aviso_diz_hora_de_brasilia_e_a_ordem_certa__Sair_ANTES_da_captura():
+    login = datetime(2026, 9, 23, 14, 27, tzinfo=timezone.utc)      # 11:27 BRT
+    t = sg.texto_do_aviso(login, agora=login + timedelta(hours=21))
+    assert "11:27 de 23/09" in t and "11:27 de 24/09" in t
+    assert "extensao do PACTHA" in t and "Captura completa" in t and "padrao medido" in t
+    # Na hora do aviso o portal ainda abre LOGADO: sem o Sair primeiro, a "Captura
+    # completa" so recaptura a sessao velha e nada muda.
+    assert t.index("Sair") < t.index("Captura completa")
+    assert "derruba a sessao dos servidores na hora" in t, "a promessa 'sem derrubar' era falsa"
+    depois = sg.texto_do_aviso(login, agora=login + timedelta(hours=30))
+    assert "ja passou do previsto" in depois
+
+
+def test_resumo_de_saude_so_avisa_vencimento_de_login_VIVO():
+    login = datetime.now(timezone.utc) - timedelta(hours=22)
+    vivo = sc.resumo_saude(("success", 5.0, None), ("success", 1.0, None), False, login_em=login)
+    assert vivo["vencendo"] is True and vivo["login_em"] == login.isoformat() and 1.9 <= vivo["vence_em_h"] <= 2.1
+    caiu = sc.resumo_saude(("erro", 5.0, gr.FRASE_SSO_EXPIROU), (None, None, None), False, login_em=login)
+    assert caiu["vencendo"] is False and caiu["precisa_recapturar"] is True
+    assert sc.resumo_saude(("success", 5.0, None), (None, None, None), False)["vence_em_h"] is None
+
+
+def test_a_sonda_do_sso_navega_SEM_os_cookies_dos_SPs():
+    jar = [{"name": "JSESSIONID", "value": "a", "domain": "discricionarias.transferegov.sistema.gov.br"},
+           {"name": "JSESSIONID", "value": "b", "domain": "mandatarias.transferegov.sistema.gov.br"},
+           {"name": "JSESSIONID", "value": "c", "domain": "idp.transferegov.sistema.gov.br"},
+           {"name": "Session_Gov_Br_Prod", "value": "d", "domain": ".sso.acesso.gov.br"},
+           {"name": "Govbrid", "value": "e", "domain": ".gov.br"},
+           {"name": "x", "value": "f", "domain": ".transferegov.sistema.gov.br"}]
+    fica = [c["domain"] for c in gr.cookies_para_roundtrip(jar)]
+    assert fica == ["idp.transferegov.sistema.gov.br", ".sso.acesso.gov.br", ".gov.br",
+                    ".transferegov.sistema.gov.br"], "sem tirar o JSESSIONID do SP nao ha SAML — a sonda mediria o SP"
+
+
+def test_o_renew_VIVO_faz_a_sonda_do_sso_e_a_registra_a_parte(monkeypatch, rodada):
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append(v))
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair", destinos=[URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected"
+    assert sondas == ["logado"] and rodada.salvos() == [(7, "v1")]
+
+
+def test_a_sonda_que_cai_no_login_registra_erro_SEM_tocar_o_jar_nem_o_veredito(monkeypatch, rodada):
+    registrado = []
+    monkeypatch.setattr(gr, "_grava_estado", lambda *a: registrado.append(a))
+    # 1a navegacao (jar inteiro): logado; 2a (sem SP): tela de login
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair",
+                                         destinos=[URL_OK, (URL_LOGIN, "Identifique-se no gov.br")]
+                                         + [(URL_OK, "Bem-vindo Sair")] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected", "a sonda nao pode mudar o veredito do renew"
+    assert rodada.salvos() == [(7, "v1")]
+    assert [(r[0], r[1]) for r in registrado if r[0] == gr.SOURCE_SSO_RT] == [(gr.SOURCE_SSO_RT, "erro")]
+    assert gr.SOURCE_SSO_RT not in (gr.SOURCE_SSO, gr.SOURCE_SESSAO, gr.SOURCE_RODADA), \
+        "a sonda nao pode ligar/desligar a guarda do endpoint"
+
+
+SSO_A = {"name": "Session_Gov_Br_Prod", "value": "AAA", "domain": ".sso.acesso.gov.br", "httpOnly": True}
+SSO_B = {"name": "Session_Gov_Br_Prod", "value": "BBB", "domain": "sso.acesso.gov.br", "httpOnly": True}
+ING_1 = {"name": "INGRESSCOOKIE", "value": "g1", "domain": "sso.acesso.gov.br", "httpOnly": True}
+ING_2 = {"name": "INGRESSCOOKIE", "value": "g2", "domain": "sso.acesso.gov.br", "httpOnly": True}
+TS_1 = {"name": "TSd2153684027", "value": "t1", "domain": "sso.acesso.gov.br", "httpOnly": False}
+TS_2 = {"name": "TSd2153684027", "value": "t2", "domain": "sso.acesso.gov.br", "httpOnly": False}
+IDP_1 = {"name": "JSESSIONID", "value": "i1", "domain": "idp.transferegov.sistema.gov.br"}
+IDP_2 = {"name": "JSESSIONID", "value": "i2", "domain": "idp.transferegov.sistema.gov.br"}
+SP_1 = {"name": "JSESSIONID", "value": "s1", "domain": "discricionarias.transferegov.sistema.gov.br"}
+
+
+def test_mesma_sessao_sso__so_os_cookies_do_govbr_decidem():
+    assert gr.mesma_sessao_sso([SSO_A, IDP_1, SP_1], [SSO_A, IDP_2]) is True, \
+        "IdP e SP rotacionam a cada SAML; a identidade do login e o cookie do gov.br"
+    assert gr.mesma_sessao_sso([SSO_A], [SSO_B]) is False, "valor diferente = login novo"
+    assert gr.mesma_sessao_sso([IDP_1, SP_1], [SSO_A]) is False, "sem cookie do gov.br nao se sabe: login novo"
+    assert gr.mesma_sessao_sso([], []) is False
+
+
+def test_mesma_sessao_sso__so_httpOnly_e_o_cookie_de_sessao_decide():
+    """Medido em 23/09: `TS*` (F5, nao-httpOnly) muda a cada pagina do SSO; se
+    entrasse na conta, toda recaptura viraria 'login novo' e o relogio andaria."""
+    assert gr.mesma_sessao_sso([SSO_A, TS_1], [SSO_A, TS_2]) is True
+    assert gr.mesma_sessao_sso([SSO_A, ING_1], [SSO_A, ING_2]) is True, "o cookie de sessao decide sozinho"
+    assert gr.mesma_sessao_sso([ING_1], [ING_1, TS_2]) is True, "sem o de sessao: httpOnly em comum"
+    assert gr.mesma_sessao_sso([ING_1], [ING_2]) is False
+    assert gr.mesma_sessao_sso([SSO_A], [ING_1]) is False, "nada em comum: nao se sabe -> login novo"
+    assert gr.comparar_sessao_sso([SSO_A], [SSO_B]) == (False, ["Session_Gov_Br_Prod"])
+    # login NOVO (traz o cookie de sessao) contra jar em uso SEM ele: o INGRESSCOOKIE
+    # (afinidade do balanceador) nao pode decidir "mesma sessao"
+    assert gr.comparar_sessao_sso([SSO_B, ING_1], [ING_1]) == (False, ["Session_Gov_Br_Prod"])
+    # o contrario (captura sem o cookie de sessao — SP zumbi) desempata pelo que ha em comum
+    assert gr.mesma_sessao_sso([ING_1], [SSO_A, ING_1]) is True
+    # aceita o formato pydantic do POST (atributos) — e o que o endpoint compara
+    obj = sc.CookieFull(name="Session_Gov_Br_Prod", value="AAA", domain=".sso.acesso.gov.br", httpOnly=True)
+    assert gr.mesma_sessao_sso([obj], [SSO_A]) is True
+
+
+def test_a_promocao_de_LOGIN_NOVO_copia_a_hora_do_login_da_candidata(monkeypatch, worker):
+    copias = []
+    monkeypatch.setattr(gr, "_copia_observacao", lambda de, para: copias.append((de, para)) or worker.passos.append(("copia",)))
+    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [SSO_B, SP_1], "c1"))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SSO_A, IDP_1], "v1"))
+    _playwright_falso(monkeypatch, _Page(*LOGADO))
+    assert asyncio.run(gr.processa_candidata()) == "promovida"
+    assert copias == [(8, 7)]
+    assert [p[0] for p in worker.passos] == ["save", "copia", "encerra"], \
+        "a copia vem DEPOIS de gravar o jar e ANTES de apagar a candidata (senao nao ha de onde copiar)"
+
+
+def test_recaptura_da_MESMA_sessao_promove_o_jar_mas_NAO_reinicia_o_relogio(monkeypatch, worker):
+    """Com o Chrome aberto a extensao captura de novo a cada navegacao/alarme; cada
+    captura vira candidata e e promovida. Se cada promocao virasse 'login novo', o
+    vencimento previsto andaria para a frente a cada ciclo e o aviso nunca sairia."""
+    copias = []
+    monkeypatch.setattr(gr, "_copia_observacao", lambda de, para: copias.append((de, para)))
+    monkeypatch.setattr(gr, "_load_candidata", lambda: (8, [SSO_A, IDP_2, SP_1], "c1"))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SSO_A, IDP_1], "v1"))
+    _playwright_falso(monkeypatch, _Page(*LOGADO))
+    assert asyncio.run(gr.processa_candidata()) == "promovida"
+    assert copias == [] and worker.salvos() == [(7, None)] and worker.encerradas()[0][0] == 8
+
+
+def test_a_sonda_sem_cookie_de_sso_nao_diz_que_o_login_venceu(monkeypatch, rodada):
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append((v, d)))
+    monkeypatch.setattr(gr, "_load_govbr_v", lambda: (7, [SP_1], "v1"))       # jar so com o SP
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair", destinos=[URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected"
+    assert sondas and sondas[0][0] == "nao_sei" and "sem o que medir" in sondas[0][1]
+
+
+def test_a_sonda_com_URL_de_login_mas_SEM_prova_no_corpo_e_inconclusiva(monkeypatch, rodada):
+    """Pagina em transito/erro do IdP em /idp/ sem 'Identifique-se' no corpo nao e
+    veredito — um 'erro' falso aqui mandaria o dono dar Sair nos servidores."""
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append(v))
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair",
+                                         destinos=[URL_OK, ("https://idp.transferegov.sistema.gov.br/idp/profile/SAML2/POST/SSO", "")]
+                                         + [(URL_OK, "Bem-vindo Sair")] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected"
+    assert sondas == ["nao_sei"]
+
+
+def test_a_sonda_tem_kill_switch_por_env(monkeypatch, rodada):
+    sondas = []
+    monkeypatch.setattr(gr, "_registra_roundtrip", lambda v, d: sondas.append(v))
+    monkeypatch.setenv("GOVBR_SONDA_SSO", "0")
+    _playwright_falso(monkeypatch, _Page("about:blank", "Bem-vindo Sair", destinos=[URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected" and sondas == []
+    monkeypatch.delenv("GOVBR_SONDA_SSO")
+    assert gr.sonda_ligada() is True
 
 
 class _DbSaude:
@@ -783,3 +972,35 @@ def test_o_porteiro_da_extensao_olha_o_CORPO_e_vem_antes_do_debounce():
     corpo = bg[bg.index("async function capture("):bg.index("// 1) AUTO-CAPTURA")]
     assert corpo.index("await chromeEstaLogado()") < corpo.index("lastCaptureAt.set(dKey, now)")
     assert 'tab.status !== "complete"' in bg, "o roteiro avancava com o SAML ainda em transito"
+
+
+# ------------------------------------------- captura DIRETA e a hora do login --
+OBS_LOGIN = "[SESSION] capturado em 2026-09-23T14:27:18+00:00 | cookies=14 httpOnly=9 | url=x | ua=y"
+
+
+@pytest.mark.parametrize("sso_payload, preserva", [
+    (SSO_A, True),     # mesma sessao gov.br (worker parado, SP zumbi): nao e login
+    (SSO_B, False),    # cookie de sessao do gov.br novo: login NOVO
+])
+def test_captura_DIRETA_so_reinicia_a_hora_do_login_com_login_NOVO(monkeypatch, captura, sso_payload, preserva):
+    principal = SimpleNamespace(id=7, senha_encrypted="JAR", observacao=OBS_LOGIN,
+                                atualizado_por_id=None, municipio_id=None)
+    monkeypatch.setattr(sc.crypto, "decrypt", lambda s: json.dumps({"format": "cookies_full", "cookies": [SSO_A]}))
+    db = FakeDb(principal=principal, sso=("success", 999.0, None))      # medicao velha: grava direto
+    r = captura.chama(db, cookies=[sc.CookieFull(**sso_payload)])
+    assert r["status"] == "ok" and principal.senha_encrypted.startswith("CIFRADO:"), "o jar tem de ser trocado"
+    from services.sessao_govbr import login_em_da_observacao
+    hora = login_em_da_observacao(principal.observacao)
+    if preserva:
+        assert hora.isoformat() == "2026-09-23T14:27:18+00:00" and "recapturado em" in principal.observacao
+    else:
+        assert hora.isoformat() != "2026-09-23T14:27:18+00:00" and "recapturado em" not in principal.observacao
+
+
+def test_cookies_meta_nunca_leva_valor_e_aguenta_vencimento_absurdo():
+    from routers.control import _cookies_meta
+    m = _cookies_meta([{"name": "Session_Gov_Br_Prod", "value": "SEGREDO", "domain": ".sso.acesso.gov.br",
+                        "httpOnly": True, "expirationDate": 1e20},
+                       {"name": "x", "value": "SEGREDO2", "domain": "d", "expirationDate": 1790000000}])
+    assert "SEGREDO" not in json.dumps(m)
+    assert m[0]["expira_em"] is None and m[1]["expira_em"].startswith("2026-")

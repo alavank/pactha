@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PACTHA - Captura Automática",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Captura a sessão gov.br/TransfereGov/FNS e envia a TODOS os ambientes PACTHA de uma vez, mostrando o resultado por ambiente. Mostra no ícone quando a sessão do SERVIDOR cai e abre as 4 portas da captura completa. Não captura na tela de login.",
   "permissions": [
     "cookies",

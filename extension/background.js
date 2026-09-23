@@ -333,9 +333,16 @@ async function avancarRoteiro(details) {
   if (!rot || details.tabId !== rot.tabId) return;
   if (Date.now() - rot.em > ROTEIRO_TTL_MS) {
     await chrome.storage.local.remove("pactha_roteiro");
+    console.warn("[PACTHA] roteiro da captura completa venceu (20 min sem avançar) — clique de novo");
     return;
   }
-  if (pareceLogin(details.url)) return;            // esperando a PESSOA logar
+  if (pareceLogin(details.url)) {
+    // Esperando a PESSOA logar (reCAPTCHA, 2FA, telefone). O prazo de 20 min conta
+    // do ÚLTIMO carregamento da tela de login, não do clique — senão um login
+    // demorado fazia o roteiro morrer calado no meio, sem abrir as portas 2–4.
+    await chrome.storage.local.set({ pactha_roteiro: { ...rot, em: Date.now() } });
+    return;
+  }
   let host = "";
   try { host = new URL(details.url).hostname; } catch (_) { return; }
   // Só conta página do TransfereGov — e o `idp.` dele é o SAML EM TRÂNSITO
@@ -472,15 +479,20 @@ async function atualizarSaude(opts) {
     // como estava — apagar o "!" aqui seria afirmar que a sessão voltou.
     if (!itens.some((i) => i.ok)) return;
     const caiu = algumPrecisaRecapturar(itens);
+    // ⏰ = ainda vivo, mas dentro da janela de aviso (padrão medido ~24h): logar
+    // de novo AGORA evita a noite de coleta sem login. "!" (caiu) tem precedência.
+    const vencendo = !caiu && algumVencendo(itens);
     if (chrome.action && chrome.action.setBadgeText) {
-      chrome.action.setBadgeText({ text: caiu ? "!" : "" });
-      if (caiu && chrome.action.setBadgeBackgroundColor) {
-        chrome.action.setBadgeBackgroundColor({ color: "#c53030" });
+      chrome.action.setBadgeText({ text: caiu ? "!" : (vencendo ? "⏰" : "") });
+      if ((caiu || vencendo) && chrome.action.setBadgeBackgroundColor) {
+        chrome.action.setBadgeBackgroundColor({ color: caiu ? "#c53030" : "#dd6b20" });
       }
       chrome.action.setTitle({
         title: caiu
           ? "PACTHA — a sessão gov.br do servidor CAIU. Clique para recapturar."
-          : "PACTHA - Captura Automática",
+          : (vencendo
+            ? "PACTHA — a sessão gov.br vence em breve. Clique e faça o login de novo."
+            : "PACTHA - Captura Automática"),
       });
     }
   } catch (e) {

@@ -643,6 +643,39 @@ def _garante_tabela(cur) -> None:
     """)
 
 
+def _sessao_govbr_vencendo(cur) -> list[dict]:
+    """O login gov.br esta VIVO mas vai vencer — avisar ANTES, com hora e acao.
+
+    ⭐ POR QUE (23/09/2026): a sessao caiu nos seis ~24h depois do login sem que
+    ninguem gravasse por cima (audit_log): a vida e a do proprio SSO. O alarme de
+    sessao caida chega DEPOIS do estrago (a noite de coleta ja rodou sem login).
+    Este chega 3h antes, com a hora prevista, para o dono logar de novo e o login
+    novo se propagar sozinho (candidata -> promovida). Hora do login = a captura
+    gravada na `observacao` da linha `govbr` (`services.sessao_govbr`).
+
+    Nao alarma: sem linha, sem marca de captura, login ja medido como caido (ai e o
+    outro alarme), ou fora da janela [21h, 27h) desde o login."""
+    from services.sessao_govbr import (login_em_da_observacao, sessao_esta_viva, texto_do_aviso,
+                                       vencimento)
+    cur.execute("SELECT observacao FROM cofre_senhas WHERE automation_key='govbr' "
+                "AND municipio_id IS NULL ORDER BY updated_at DESC LIMIT 1")
+    row = cur.fetchone()
+    login_em = login_em_da_observacao(row[0] if row else None)
+    if login_em is None:
+        return []
+    # So login MEDIDO VIVO (success recente) — a mesma regua da rota de saude.
+    # Nunca medido, caido ou medicao velha (worker parado): nao e "vencendo".
+    cur.execute("SELECT status, EXTRACT(EPOCH FROM (now() - finished_at)) / 60.0 "
+                "FROM ingestion_log WHERE source = %s ORDER BY id DESC LIMIT 1", (SOURCE_SSO,))
+    ult = cur.fetchone()
+    if not ult or not sessao_esta_viva(ult[0], ult[1]):
+        return []
+    if not vencimento(login_em)["vencendo"]:
+        return []
+    return [{"tipo": "sessao_govbr_vencendo", "chave": SOURCE_SSO,
+             "detalhe": texto_do_aviso(login_em)}]
+
+
 def _deve_alertar(cur, tipo: str, chave: str, cooldown_min: int) -> bool:
     """True se este alerta nao foi enviado dentro do cooldown. Registra o envio."""
     cur.execute(
@@ -828,7 +861,8 @@ def main() -> None:
         logger.info("frescor esperado neste tenant: %s",
                     ", ".join(sorted(esperado)) or "(nenhuma fonte)")
         achados = (_fontes_paradas(cur, esperado) + _municipios_defasados(cur)
-                   + _sessao_govbr_caida(cur) + _processos_travados())
+                   + _sessao_govbr_caida(cur) + _sessao_govbr_vencendo(cur)
+                   + _processos_travados())
         if not achados:
             logger.info("coleta saudavel: nenhuma fonte parada, nenhum municipio defasado, nenhum processo travado")
         else:
@@ -837,14 +871,20 @@ def main() -> None:
                        # Chave: e acao de PESSOA (trocar a senha), nao de maquina.
                        "credencial_recusada": "\U0001F511",
                        # Mesma natureza: so uma pessoa faz o login.
-                       "sessao_govbr_caida": "\U0001F511"}
+                       "sessao_govbr_caida": "\U0001F511",
+                       # Antes de cair: relogio, nao chave — ainda da tempo.
+                       "sessao_govbr_vencendo": "⏰"}
             _TITULOS = {"processo_travado": "processo travado", "fonte_parada": "fonte parada",
                         "municipio_defasado": "municipios defasados",
                         "credencial_recusada": "credencial recusada — coleta suspensa",
-                        "sessao_govbr_caida": "sessao gov.br caida — recapturar"}
+                        "sessao_govbr_caida": "sessao gov.br caida — recapturar",
+                        "sessao_govbr_vencendo": "sessao gov.br vence em breve — logar de novo"}
             enviados = 0
             for a in achados:
-                cd = SESSAO_COOLDOWN_MIN if a["tipo"] == "sessao_govbr_caida" else cooldown
+                # Os dois alarmes de sessao pedem uma PESSOA: cooldown longo (12h),
+                # senao viram spam que ensina a silenciar o canal.
+                cd = (SESSAO_COOLDOWN_MIN if a["tipo"] in ("sessao_govbr_caida", "sessao_govbr_vencendo")
+                      else cooldown)
                 if _deve_alertar(cur, a["tipo"], a["chave"], cd):
                     conn.commit()
                     icone = _ICONES.get(a["tipo"], "\U0001F7E0")

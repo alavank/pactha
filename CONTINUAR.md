@@ -2189,6 +2189,58 @@ anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do rotei
 ⚠️ Juranda (7º tenant, 22/09) está fora do secret `PACTHA_RESUMO_TENANTS` e a extensão instalada em
 `C:\CONVPREF\extension` não tem a linha nem o token dele.
 
+**"Garantir que não caia mais" (23/09/2026, mesma tarde):** se a vida é a do SSO, a garantia é
+**logar de novo antes de vencer e o login novo se propagar sozinho**. Três peças:
+1. **Sonda do SSO** (`govbr_renew.sso_roundtrip`, fonte `govbr_sso_roundtrip`, a cada renew horário):
+   navega a entrada **sem os cookies dos SPs** (só IdP + gov.br), o que obriga o SAML — o renew normal
+   entra já autenticado pelo JSESSIONID que o keepalive mantém e **nunca passa pelo IdP/SSO**, então
+   media o SP, não o login. success = o IdP/SSO re-deriva; erro = o SSO já venceu (o SP é zumbi e vai
+   cair). Só mede: contexto descartado, jar intocado. É ela que vai calibrar o teto (e, se a vida for
+   por ociosidade, renová-la de quebra).
+2. **Aviso antes de vencer**: `services/sessao_govbr.py` (puro; também dono da régua `sessao_esta_viva`
+   / `SESSAO_VIVA_MIN`, que a rota e o vigia importam): hora do login = `[SESSION] capturado em …` da
+   `observacao` da linha `govbr`; a hora só muda com **login novo** (`comparar_sessao_sso`, em
+   `services/sessao_govbr.py`): só cookies **httpOnly** do próprio gov.br contam, e
+   `Session_Gov_Br_Prod` decide sozinho quando os dois lados o têm (medido em 23/09: os httpOnly de
+   `sso.acesso.gov.br` são `Session_Gov_Br_Prod` e `INGRESSCOOKIE`, estáveis na sessão; a família F5
+   `TS*` não é httpOnly e muda a cada página; IdP e SP rotacionam a cada SAML). Vale nos **dois**
+   caminhos: promoção de candidata (copia a observação só com login novo; loga os NOMES que mudaram)
+   e captura **direta** (sessão não medida viva: mesma sessão troca o jar e preserva a hora —
+   `observacao_preservando_login` anexa "recapturado em"). ⚠️ Sem isso, com o Chrome
+   aberto a extensão recaptura a cada navegação/alarme, cada captura vira candidata e é promovida, e
+   a hora do login andaria para a frente a cada ciclo — o aviso nunca sairia (achado da revisão).
+   `VIDA_SSO_H=24`, `AVISO_VENCIMENTO_H=21`, **sem teto superior**: sessão que dure 30h continua
+   "vencendo" (o cooldown de 12h do vigia contém o Telegram; recapturar a mesma sessão não apaga o
+   aviso, de propósito). Vigia: achado `sessao_govbr_vencendo` (⏰, cooldown 12h), só com login
+   **medido vivo** (success ≤ 180 min — nunca medido ou worker parado não avisa); rota `/saude`:
+   `login_em`, `login_ha_h`, `vence_previsto_em`, `vence_em_h`, `vencendo`; extensão 2.4.1: selo
+   **⏰** laranja ("!" tem precedência), cartão e linha "login há Nh · vence ~HH:MM" com a hora vinda
+   do servidor. ⚠️ 24h é **padrão medido, não contrato** — o texto diz "pelo padrão medido".
+   `/api/control/session/status` passou a devolver `cookies_meta` (nome/domínio/`expira_em`, sem
+   valor) e o diagnóstico imprime: se o gov.br carimbar o cookie de sessão com login+N h, N é o teto
+   medido.
+3. **A ação certa ao avisar, nesta ordem:** **Sair** no TransfereGov (na hora do aviso o portal ainda
+   abre logado; só login novo renova o prazo) e depois **"Captura completa"** (para na tela de login,
+   espera o login, passa pelas 4 portas e manda o jar novo). ⚠️ O Sair **derruba a sessão dos
+   servidores na hora**; ela volta quando o keepalive promover a captura nova (≤ ~10 min). Sonda:
+   kill-switch `GOVBR_SONDA_SSO=0` (ela abre uma sessão própria no SP a cada hora — que o SP aceita
+   várias sessões do mesmo CPF é fato: os sete tenants convivem com a sua); espera adaptativa (2s × até
+   12, para ao autenticar ou com a URL parada 6s); **"login" só com prova no CORPO** (Identifique-se /
+   Acesso restrito) — URL em idp/sso sem marcador é trânsito ou erro do IdP = inconclusivo; jar sem
+   cookie de IdP/SSO = inconclusivo, nunca "venceu"; o detalhe registra `SP proprio=sim/nao`.
+   ⚠️ A premissa da sonda (o IdP re-deriva sem o cookie do SP) **ainda não foi vista dando success em
+   produção**: o resumo diário mostra a fonte com texto neutro ("não agir só por ela") até lá.
+   Se o gov.br entrar **sem pedir senha** depois do Sair do TransfereGov (não medido se o SLO do IdP
+   encerra a sessão do gov.br), sair também em `sso.acesso.gov.br` — o relógio só reinicia quando
+   `Session_Gov_Br_Prod` muda. O roteiro da "Captura completa" renova o prazo de 20 min a cada
+   carregamento da tela de login.
+   ⚠️ **Lição do processo (23/09):** uma rodada de mutação abortou no Windows no meio da restauração
+   e deixou `visto_em` removido do keepalive; foi commitado sem rodar a suíte de novo, e a 2ª revisão
+   pegou (3 testes vermelhos). O script de mutação agora confere a restauração byte a byte; e **toda
+   rodada de mutação é seguida de `git diff` comparado ao snapshot de antes**.
+Previsão a conferir: login de 23/09 11:27 BRT → aviso ~08:27 de 24/09, morte ~11:27 de 24/09 se
+ninguém relogar; a sonda deve virar `erro` nessa hora enquanto o SP ainda diz vivo.
+
 **O que NÃO dá para garantir:** o login gov.br tem reCAPTCHA (não se automatiza, não se guarda senha) e
 o teto do SSO não é publicado nem foi medido isolado — as "vidas" de agosto podem ser sessões emendadas
 por recapturas silenciosas. "Sair" no portal ou logar outro CPF no Chrome derruba os seis (é a mesma

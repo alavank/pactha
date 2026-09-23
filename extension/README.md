@@ -69,8 +69,28 @@ O ícone ganha um **"!" vermelho** quando algum servidor PACTHA **mediu** que o
 login caiu (`GET /api/session-capture/saude`, a cada 12 min e ao abrir o popup).
 "Capturei" não é "está vivo no servidor" — o popup mostra uma linha por ambiente.
 
-⚠️ **Não clique em "Sair"** no TransfereGov nem no gov.br: é a mesma sessão que
-os seis servidores usam.
+⚠️ **Não clique em "Sair"** no TransfereGov nem no gov.br fora da hora de renovar:
+é a mesma sessão que os servidores usam.
+
+**⏰ Vencimento (2.4.1):** a sessão do gov.br dura ~24h a partir do login (padrão
+medido em 22–23/09/2026; o gov.br não publica o prazo). Quando faltam ~3h, o
+servidor avisa no Telegram e o ícone ganha um **⏰** laranja; o popup mostra
+"login há Nh · vence ~HH:MM" (a hora vem do servidor). Aí, **nesta ordem**:
+1. **Sair** no TransfereGov — só um login novo renova o prazo (na hora do aviso o
+   portal ainda abre logado, então sem o Sair a "Captura completa" só recaptura a
+   sessão velha e nada muda).
+2. **"Captura completa (abre as 4 portas)"** — ela para na tela de login, espera
+   você logar e passa pelas 4 portas sozinha, mandando o jar novo. O prazo de 20
+   min do roteiro recomeça a cada carregamento da tela de login.
+3. Se o gov.br entrar **sem pedir senha**, a sessão dele continuou (o Sair do
+   TransfereGov nem sempre encerra a do gov.br — não medido): saia também em
+   `sso.acesso.gov.br` e repita. O servidor só reinicia o relógio quando o cookie de
+   sessão do gov.br (`Session_Gov_Br_Prod`) muda.
+
+O Sair derruba a sessão dos servidores na hora; ela volta quando o keepalive
+promover a captura nova (candidata → promovida, até ~10 min). O ⏰ só apaga
+depois disso e da próxima consulta da extensão (até 12 min) — recapturar a
+mesma sessão sem o Sair **não** apaga o aviso, de propósito.
 
 **O porteiro (2.4.0):** toda captura `govbr` — navegação, cookie trocado, alarme
 e o botão manual — passa por `chromeEstaLogado()` (`ambientes.js`), que sonda a

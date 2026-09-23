@@ -238,6 +238,35 @@ const chk = (cond, msg) => {
       "não sobrou o portão antigo, que ignorava `forcar`");
   }
 
+  console.log("\n10) o aviso ANTES de vencer: selo ⏰ só com servidor dizendo «vencendo», e «!» tem precedência");
+  {
+    const { ctx } = montar({});
+    ctx.fetch = async () => ({ ok: true, status: 200, json: async () => ({
+      login: "vivo", precisa_recapturar: false, login_em: "2026-09-23T14:27:18+00:00",
+      login_ha_h: 21.6, vence_previsto_em: "2026-09-24T14:27:18+00:00", vence_em_h: 2.4, vencendo: true }) });
+    const [i] = await ctx.consultarSaude([{ nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true }]);
+    chk(i.vencendo === true && i.vence_em_h === 2.4 && i.login_em && i.vence_previsto_em, "os campos de vencimento chegam da rota /saude");
+    chk(ctx.algumVencendo([i]) === true, "vencendo acende");
+    chk(ctx.algumVencendo([{ ok: false, vencendo: true }]) === false, "sem resposta do servidor não acende");
+    chk(/login há 22h · vence ~\d\d:\d\d \(em 2,4h\)/.test(ctx.textoVencimento(i)), "texto: «login há 22h · vence ~HH:MM (em 2,4h)»");
+    const esperado = new Date(Date.parse("2026-09-24T14:27:18+00:00"));
+    const hhmm = String(esperado.getHours()).padStart(2, "0") + ":" + String(esperado.getMinutes()).padStart(2, "0");
+    chk(ctx.textoVencimento(i).includes("vence ~" + hhmm), "a HORA vem do servidor (vence_previsto_em), não de 24h fixas no Chrome");
+    chk(ctx.textoVencimento({ ...i, vence_previsto_em: null }) === "", "sem vence_previsto_em não inventa hora");
+    chk(ctx.textoVencimento({ ok: true, login: "vivo" }) === "", "servidor antigo (sem campos) não inventa hora");
+    chk(/já passou do previsto/.test(ctx.textoVencimento({ ...i, vence_em_h: -2 })), "passou do previsto e ainda vivo: diz isso, não apaga");
+    const bg = ler("background.js");
+    chk(/caiu \? "!" : \(vencendo \? "⏰" : ""\)/.test(bg), "selo: «!» (caiu) tem precedência sobre «⏰» (vencendo)");
+    chk(/\.vencendo/.test(ler("popup.html")) && /algumVencendo\(itens\)/.test(ler("popup.js")), "o popup pinta o cartão de vencendo");
+  }
+
+  console.log("\n11) o roteiro espera o login sem prazo curto: os 20 min recomeçam na tela de login");
+  {
+    const bg = ler("background.js");
+    chk(/if \(pareceLogin\(details\.url\)\) \{[\s\S]{0,400}pactha_roteiro: \{ \.\.\.rot, em: Date\.now\(\) \}/.test(bg),
+      "na tela de login o roteiro regrava `em` (login demorado não mata o roteiro no meio)");
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");
   process.exit(falhas ? 1 : 0);
 })();

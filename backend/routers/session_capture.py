@@ -81,14 +81,9 @@ def conteudo_e_sessao(claro: str | None) -> bool:
 CHAVE_GOVBR = "govbr"
 CHAVE_CANDIDATA = "govbr_candidata"
 SOURCE_SSO = "govbr_sso"          # o mesmo nome de govbr_renew.SOURCE_SSO
-SESSAO_VIVA_MIN = 180
-
-
-def sessao_esta_viva(status: str | None, idade_min: float | None) -> bool:
-    """A ultima medicao do login gov.br diz que ele esta VIVO? Funcao pura."""
-    if status != "success" or idade_min is None:
-        return False
-    return 0 <= float(idade_min) <= SESSAO_VIVA_MIN
+# A regua de "viva" mora em services/sessao_govbr.py — o vigia (sync, sem
+# Playwright) usa a MESMA para o aviso de vencimento; duas copias divergiriam.
+from services.sessao_govbr import SESSAO_VIVA_MIN, sessao_esta_viva  # noqa: E402,F401
 
 
 async def _ultima_medicao(db: AsyncSession, source: str) -> tuple:
@@ -418,6 +413,21 @@ async def capture_session(
             }
 
     if item:
+        # A hora do LOGIN (lida da observacao pelo vigia e pela rota de saude) so
+        # muda com login NOVO. Captura direta da MESMA sessao gov.br (worker parado
+        # ha >3h, tenant sem medicao ainda, SP zumbi no Chrome com o SSO morto) nao
+        # e login: troca o jar e preserva a hora antiga. Best-effort: sem conseguir
+        # comparar, vale a hora desta captura (o comportamento antigo).
+        if payload.automation_key == CHAVE_GOVBR and mid is None and payload.cookies_full:
+            try:
+                from services.sessao_govbr import mesma_sessao_sso, observacao_preservando_login
+                import json as _json
+                _dec = crypto.decrypt(item.senha_encrypted) or ""
+                _atual = _json.loads(_dec).get("cookies", []) if _dec.startswith("{") else []
+                if mesma_sessao_sso(payload.cookies_full, _atual):
+                    obs = observacao_preservando_login(obs, item.observacao)
+            except Exception as e:
+                log.info("session-capture: hora do login nao comparada (%s)", str(e)[:60])
         # Atualiza observacao + senha (com cookie cifrado)
         item.senha_encrypted = crypto.encrypt(storage_payload)
         item.observacao = obs
@@ -512,7 +522,8 @@ async def capture_session(
     }
 
 
-def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool) -> dict:
+def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool,
+                 login_em=None, agora=None) -> dict:
     """O que a extensao mostra ao dono, NO CHROME, que e onde ele resolve.
 
     Funcao pura sobre as duas ultimas medicoes `(status, idade_min, mensagem)`.
@@ -526,6 +537,10 @@ def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool) -> dict:
     viva = sessao_esta_viva(st, idade)
     nunca_capturou = bool(msg) and "nenhuma sessao" in str(msg).lower()
     caiu = (st is not None) and (st != "success") and not nunca_capturou
+    # Hora do login e vencimento PREVISTO (padrao medido: ~24h) — e o que faz o
+    # selo da extensao avisar ANTES de cair, em vez de so depois.
+    from services.sessao_govbr import vencimento
+    venc = vencimento(login_em, agora)
     return {
         "login": "vivo" if viva else ("caiu" if caiu else "sem_medicao"),
         "login_medido_ha_min": round(idade) if idade is not None else None,
@@ -533,6 +548,12 @@ def resumo_saude(sso: tuple, sps: tuple, tem_candidata: bool) -> dict:
         "modulos_medidos_ha_min": round(sp_idade) if sp_idade is not None else None,
         "candidata_pendente": bool(tem_candidata),
         "precisa_recapturar": bool(caiu),
+        "login_em": venc["login_em"],
+        "login_ha_h": venc["login_ha_h"],
+        "vence_previsto_em": venc["vence_previsto_em"],
+        "vence_em_h": venc["vence_em_h"],
+        # so avisa vencimento de login VIVO: caido, quem fala e `precisa_recapturar`
+        "vencendo": bool(venc["vencendo"] and viva),
     }
 
 
@@ -555,7 +576,18 @@ async def saude_da_sessao(
         )).first() is not None
     except Exception:
         tem = False
-    return resumo_saude(sso, sps, tem)
+    login_em = None
+    try:
+        from services.sessao_govbr import login_em_da_observacao
+        obs = (await db.execute(
+            select(CofreSenha.observacao).where(CofreSenha.automation_key == CHAVE_GOVBR)
+            .where(CofreSenha.municipio_id.is_(None))
+            .order_by(CofreSenha.updated_at.desc())
+        )).scalars().first()
+        login_em = login_em_da_observacao(obs)
+    except Exception:
+        login_em = None
+    return resumo_saude(sso, sps, tem, login_em=login_em)
 
 
 # So o GET declara. O POST acima autentica por SERVICE TOKEN (a extensao do
