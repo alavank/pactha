@@ -53,7 +53,8 @@ uma a uma): "DOU — INLABS e busca oficial", prioridade 2. Coletor
   (repasse, habilitação, seleção, emergência) dos últimos 30 dias, sob
   `transferegov_radar.ver`.
 - **Task:** `dou-federal` em escada de 10 min nos sete workers (08:00–09:00 UTC),
-  orçamento de 8 min — `scripts/criar_task_dou_federal.sh`, a rodar DEPOIS do deploy.
+  orçamento de 8 min — criada em 23/09/2026 por `scripts/criar_task_dou_federal.sh`, depois
+  do deploy (#536). Primeira rodada na manhã de 23/09: conferir `ingestion_log` `dou_federal`.
 - **Conferido contra Postgres de verdade** (lista inteira de migrations num banco zerado:
   141/141): 1ª rodada com 4 municípios de 3 estados em 158 s, 2ª em 11 s sem rebaixar nada.
   Pegou um defeito que teste de unidade não pega — `date - :dias` sem tipo vira
