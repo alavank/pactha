@@ -357,10 +357,11 @@ export function cofinanciamentoDaUf(uf?: string | null) {
   return COFINANCIAMENTO_POR_UF[(uf || "").trim().toUpperCase()] || null;
 }
 
-/** UFs cujo Diário Oficial este sistema JÁ busca. MG = Jornal Minas Gerais
- *  (dou_mg); ES = Diário dos Municípios do ES (dou_es). Um estado sem provedor
- *  não mostra a tela — o menu a esconde, em vez de abrir uma busca que iria ao
- *  diário errado. ⚠️ Cada UF nova aqui exige um provedor no backend.
+/** UFs cujo Diário Oficial do ESTADO este sistema JÁ busca. MG = Jornal Minas
+ *  Gerais (dou_mg); ES = Diário dos Municípios do ES (dou_es). Desde 22/09/2026
+ *  a tela Diário Oficial abre em TODA UF, pela aba do DOU federal; um estado sem
+ *  provedor só não ganha a segunda aba — nunca uma busca que iria ao diário
+ *  errado. ⚠️ Cada UF nova aqui exige um provedor no backend.
  *
  *  O valor é o PREFIXO da rota da API, e é o que a tela usa para falar com o
  *  provedor certo — assim entrar com um estado novo é uma linha aqui, e não um
@@ -387,10 +388,6 @@ export const DIARIO_POR_UF: Record<string, { api: string; titulo: string; fonte:
 
 export function diarioDaUf(uf?: string | null) {
   return DIARIO_POR_UF[(uf || "").trim().toUpperCase()] || null;
-}
-
-export function temDiarioEstadual(uf?: string | null): boolean {
-  return !!diarioDaUf(uf);
 }
 
 

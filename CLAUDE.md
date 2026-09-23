@@ -5,8 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **26 official data sources** (federal +
-MG/ES/GO/RS/PR state). The three newest (22/09/2026) are Paraná's: **regularidade**
+emendas) for Brazilian municipalities, tracking **27 official data sources** (federal +
+MG/ES/GO/RS/PR state). The newest (22/09/2026) is the **DOU federal** (`dou_federal.py` —
+the Diário Oficial da União, the captação trigger: the portaria that authorizes a repasse
+comes out there before any system shows it). It uses the Imprensa Nacional's PUBLIC search
+(no INLABS login) to gather candidates per município and reads each act in full; an act
+only counts with strong evidence — IBGE code, CNPJ, "Município de X/UF", or published by
+the prefeitura itself — because the name alone is noise ("Santa Maria" = 1.246 hits in 80
+days), and a citation that is only an ADDRESS (UFSM, a federal court) is stored as
+`cidade` and hidden by default. It lives as the first tab of the Diário Oficial screen,
+now federal (every UF), and as an alert block in the Radar. The three before it are
+Paraná's: **regularidade**
 (`regularidade_pr.py` — PR has no convenentes registry, it demands CERTIDÕES; the two
 public ones, SEFA's Certidão para Transferências Voluntárias and TCE-PR's Liberatória
 pendências, go to `cagec_situacao` with `fonte='CERTIDOES-PR'`; ⚠️ the SEFA route ISSUES
@@ -151,7 +160,7 @@ that area. Read the relevant one before making changes there:
 
 | Skill | Area |
 |---|---|
-| `ingestion` | scrapers/collectors, the 26 data sources, scheduling |
+| `ingestion` | scrapers/collectors, the 27 data sources, scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
 | — | **Permissão: Módulo › Tela › Ação** — a regra inteira em `docs/PERMISSOES_POR_TELA.md` |

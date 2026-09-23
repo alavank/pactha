@@ -155,11 +155,16 @@ def test_a_tela_e_a_permissao_concordam_sobre_os_estados():
 # ===========================================================================
 # 3. Os dois catalogos x a VERDADE de estadual.ts
 # ===========================================================================
-def test_o_diario_oficial_cobre_os_estados_com_provedor():
-    """`DIARIO_POR_UF` e quem decide se a tela do Diario aparece no menu. UF que
-    ganha provedor e nao entra no catalogo vira tela visivel e impossivel de
-    conceder."""
-    assert _ufs_dos_recursos()["dou"] == _ufs_do_mapa("DIARIO_POR_UF")
+def test_o_diario_oficial_e_federal():
+    """⭐ INVERTIDO EM 22/09/2026. Ate aqui `DIARIO_POR_UF` decidia se a tela
+    aparecia, e a caixinha tinha as mesmas UFs. Com o DOU federal a tela abre em
+    TODA UF (a primeira aba), e o diario do estado vira a segunda aba onde ha
+    provedor. Uma `ufs=` que voltasse aqui esconderia de novo a caixinha no PR —
+    onde a tela aparece e ha o que conceder."""
+    assert _ufs_dos_recursos()["dou"] == set()
+    assert _ufs_das_telas()["dou"] == set()
+    # E o mapa continua existindo: e ele que desenha a segunda aba.
+    assert _ufs_do_mapa("DIARIO_POR_UF") >= {"MG", "ES", "GO", "TO", "RS"}
 
 
 def test_as_emendas_estaduais_cobrem_os_estados_com_coletor():

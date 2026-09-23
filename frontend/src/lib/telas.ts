@@ -129,9 +129,9 @@ export const TELAS: TelaDef[] = [
   // ⭐ Ganhou chave de AÇÃO (`paineis.ver`) em 05/09/2026: era a única tela do
   // menu governada só por `user_telas`, sem nada na língua das permissões.
   { key: "paineis", label: "Painéis Municipais" },
-  // Um provedor por estado (DIARIO_POR_UF em `lib/estadual.ts`). Sem provedor
-  // a tela já some do menu — oferecer a caixinha seria conceder o que não abre.
-  { key: "dou", label: "Diário Oficial", ufs: ["MG", "ES", "GO", "TO", "RS"] },
+  // FEDERAL desde 22/09/2026: a aba do DOU vale para toda UF. O diário do
+  // ESTADO é a segunda aba, só onde há provedor (DIARIO_POR_UF em `lib/estadual.ts`).
+  { key: "dou", label: "Diário Oficial" },
   { key: "documentos", label: "Geração de Documentos" },
   { key: "gestao", label: "Gestão Interna" },
 

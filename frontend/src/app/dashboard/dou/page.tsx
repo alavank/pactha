@@ -4,12 +4,16 @@ import React, { useState } from "react";
 import api from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
+import { Abas, Bloco, BlocoHead, Campos, ItemLinha, Lista, Selo, Vazio } from "@/components/ui/superficies";
 import { Search, Loader2, Eye, Download, Newspaper } from "lucide-react";
 import { useUfDoMunicipio } from "@/lib/useUfDoMunicipio";
+import { useMunicipio } from "@/contexts/MunicipioContext";
 import { diarioDaUf } from "@/lib/estadual";
 import { TituloTela } from "@/components/TituloTela";
 import { VisualizadorDocumento, type DocumentoAlvo } from "@/components/ui/VisualizadorDocumento";
+import { DouFederal } from "./DouFederal";
+
+type ProvedorDiario = NonNullable<ReturnType<typeof diarioDaUf>>;
 
 interface JmgItem {
   id_jornal: number;
@@ -66,24 +70,58 @@ const ROTULO_COR = { color: "var(--bi-muted)" } as const;
    pintar — o unico selo (caderno) e sempre neutro, que ja e o padrao. A unica
    cor da tela e a do erro de busca, que e alerta de verdade. */
 
-export default function DouMGPage() {
+/** A tela tem DUAS ABAS desde 22/09/2026:
+ *  - «DOU» (federal): os atos do Diário Oficial da União que citam o município,
+ *    coletados toda noite. Vale para TODA UF — e é por isso que a tela deixou
+ *    de sumir do menu no PR e onde não há provedor estadual.
+ *  - o diário do ESTADO: a busca em tempo real de sempre, só onde há provedor
+ *    (`DIARIO_POR_UF`). */
+export default function DiarioOficialPage() {
+  const { municipioId } = useMunicipio();
+  /* ⚠️ SEM FALLBACK "MG" para o diário estadual: enquanto a UF não chega, a
+     aba estadual simplesmente não existe — antes, um servidor de Nova Palma via
+     por um instante o Jornal Minas Gerais e uma busca que ia ao diário de outro
+     estado, sem erro nenhum. */
+  const prov = diarioDaUf(useUfDoMunicipio());
+  const [aba, setAba] = useState<"federal" | "estadual">("federal");
+  const abaReal = aba === "estadual" && prov ? "estadual" : "federal";
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <TituloTela>Diário Oficial</TituloTela>
+        <p className="text-sm text-muted-foreground">
+          O que saiu no Diário Oficial da União sobre o município
+          {prov ? ` e a busca no ${prov.titulo}` : ""}
+        </p>
+      </div>
+      {prov && (
+        <Abas valor={abaReal} onChange={setAba} tamanho="md" opcoes={[
+          { valor: "federal", label: "DOU (federal)" },
+          { valor: "estadual", label: prov.titulo },
+        ]} />
+      )}
+      {abaReal === "estadual" && prov ? (
+        <DiarioEstadual key={prov.api} prov={prov} />
+      ) : municipioId ? (
+        <DouFederal key={municipioId} municipioId={municipioId} />
+      ) : (
+        /* No consolidado não há UM município: os atos são por município, e
+           misturar a carteira numa lista só esconderia de quem é cada portaria. */
+        <Vazio>Escolha um município no seletor para ver os atos do DOU que o citam.</Vazio>
+      )}
+    </div>
+  );
+}
+
+function DiarioEstadual({ prov }: { prov: ProvedorDiario }) {
   /* ⭐ O DIÁRIO SEGUE O ESTADO DO AMBIENTE, pelo registro por UF de
      `lib/estadual.ts` — estado novo é uma linha lá, não um `if` a mais aqui.
      `temCaderno` é só de MG: os 3 cadernos (Executivo/Municípios/Terceiros) são
      conceito do Jornal Minas Gerais — as plataformas dos outros estados servem
-     edição única.
-
-     ⚠️ SEM FALLBACK "MG", e a diferença aparece na tela do cliente. Enquanto
-     a UF não chega (primeira pintura, ou carteira sem estado), a tela caía no
-     Jornal Minas Gerais: um servidor de Nova Palma via o título "Diário Oficial
-     MG" e uma busca que ia ao diário de outro estado — sem erro nenhum, só
-     resultado errado. Agora ela espera saber onde está antes de dizer onde
-     busca. O `prov` só é nulo neste intervalo: o menu já esconde a tela onde
-     não há provedor. */
-  const ufAmbiente = useUfDoMunicipio();
-  const prov = diarioDaUf(ufAmbiente);
-  const temCaderno = prov?.api === "/dou-mg";
-  const base = prov?.api || "";
+     edição única. */
+  const temCaderno = prov.api === "/dou-mg";
+  const base = prov.api;
   const [texto, setTexto] = useState("");
   // Periodo padrao = ultimos 30 dias, IGUAL ao de antes. So mudou onde a conta
   // acontece: no inicializador preguicoso do estado em vez do corpo do
@@ -197,19 +235,11 @@ export default function DouMGPage() {
       .catch(() => setError("Não foi possível gerar o PDF. Tente novamente."));
   };
 
-  /* Depois dos hooks, nunca antes: um `return` acima deles mudaria a ordem de
-     chamada entre renders. Aqui a UF ainda não chegou — e a tela prefere ficar
-     em branco por um instante a apontar para o diário do estado errado. */
-  if (!prov) {
-    return <Vazio>Identificando o estado do município…</Vazio>;
-  }
-
   return (
     <div className="space-y-4">
-      <div>
-        <TituloTela>{prov.titulo}</TituloTela>
-        <p className="text-sm text-muted-foreground">Busca em tempo real no {prov.fonte}</p>
-      </div>
+      <p className="text-[11px]" style={{ color: "var(--bi-faint)" }}>
+        Busca em tempo real no {prov.fonte}
+      </p>
 
       {/* O FORMULARIO DEIXOU DE SER UM PAINEL VIOLETA.
           Era um bloco `bg-primary text-white` — a cor mais forte da tela gasta

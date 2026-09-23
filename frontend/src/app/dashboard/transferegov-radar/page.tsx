@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/superficies";
 import { TituloTela } from "@/components/TituloTela";
 import { FichaPrograma } from "./FichaPrograma";
+import { AlertasDou } from "./AlertasDou";
 
 interface Programa {
   id_programa: string;
@@ -325,6 +326,9 @@ export default function RadarPage() {
           </a>
         </div>
       </Bloco>
+      {/* Depois dos programas, e não antes: a lista de portas abertas é o
+          produto do Radar; o DOU é o aviso de que uma delas já virou portaria. */}
+      {municipioId && <AlertasDou key={municipioId} municipioId={municipioId} />}
       {ficha && municipioId && (
         <FichaPrograma key={`${municipioId}:${ficha}`} idPrograma={ficha} municipioId={municipioId}
                        onFechar={() => setFicha(null)} />

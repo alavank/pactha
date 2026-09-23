@@ -9,7 +9,7 @@ from database import get_db
 from routers import (
     auth, municipios, convenios, cofre, service_tokens,
     session_capture, emendas_estaduais, dou_mg, dou_es, dou_go, dou_to, dou_rs,
-    fns, transferegov, emendas_federais, emendas_parlamentares, export_pdf,
+    dou_federal, fns, transferegov, emendas_federais, emendas_parlamentares, export_pdf,
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, siconfi, negativos, acordofes, control, freshness, painel, bi,
     sismob, obrasgov, parcerias, faf_planos, investsus, auditoria, permissoes,
@@ -173,6 +173,9 @@ app.include_router(dou_es.router)
 app.include_router(dou_go.router)
 app.include_router(dou_to.router)
 app.include_router(dou_rs.router)
+# DOU federal: COLETADO (ingestion/dou_federal.py), nao busca em tempo real como
+# os diarios estaduais acima — os atos que citam cada municipio da carteira.
+app.include_router(dou_federal.router)
 app.include_router(repasses.router)
 app.include_router(contas_irregulares.router)
 app.include_router(cofinanciamento.router)

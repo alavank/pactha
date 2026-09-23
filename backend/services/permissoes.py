@@ -517,13 +517,14 @@ _RECURSOS: tuple = (
     # da tela de Usuarios desenha o interruptor de acesso mesmo sem acoes
     # embaixo (o mesmo desenho de «Modo Tela (TV)»). A chave entra no dia em que
     # existir um endpoint que ela proteja.
-    # ⚠️ Diario Oficial e ESTADUAL: cada UF tem seu provedor (Jornal Minas,
-    # DOM/ES, DOE-GO, DOE-TO, DOE-RS). A caixinha aparece para o tenant cuja
-    # carteira cruza alguma UF com provedor — ver `DIARIO_POR_UF` em
-    # `frontend/src/lib/estadual.ts` e os routers `dou_*`.
+    # ⭐ Diario Oficial e FEDERAL desde 22/09/2026: a aba do DOU (atos coletados
+    # por `ingestion/dou_federal.py`) vale para todo municipio, de qualquer UF.
+    # O diario ESTADUAL continua sendo a SEGUNDA aba, so onde ha provedor
+    # (`DIARIO_POR_UF` em `frontend/src/lib/estadual.ts`, routers `dou_*`). Ate
+    # aqui a caixinha tinha `ufs=` e sumia no PR — onde agora ha o que conceder.
     _Recurso("dou", SEC_CONSULTAS, "Diário Oficial",
              "as publicações do Diário Oficial", "", ("ver", "exportar"),
-             ufs=("MG", "ES", "GO", "TO", "RS"), tela="dou"),
+             tela="dou"),
     _Recurso("frescor", SEC_CONSULTAS, "Status dos Dados",
              "há quanto tempo cada fonte foi coletada", "", ("ver", "exportar"),
              tela="frescor"),
