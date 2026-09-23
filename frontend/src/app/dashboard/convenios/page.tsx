@@ -19,6 +19,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
 import type { Convenio, ConvenioList } from "@/types";
 import ConvenioDetailModal from "./ConvenioDetailModal";
+import { OutrosConvenentes } from "./OutrosConvenentes";
 import { TituloTela } from "@/components/TituloTela";
 
 /* CARREGA TUDO, e nao 20 por vez.
@@ -908,6 +909,10 @@ export default function ConveniosPage() {
           </div>
         </>
       )}
+
+      {/* Quem está no município e NÃO é a prefeitura (APAE, associação): fora das
+          contas acima por construção — tabela e rota próprias. Some quando vazio. */}
+      {municipioId && <OutrosConvenentes key={municipioId} municipioId={municipioId} />}
 
       <ConvenioDetailModal conv={selectedConv} onClose={() => setSelectedConv(null)} />
     </div>

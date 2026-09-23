@@ -272,6 +272,40 @@ async def list_fontes(
     return sorted(vistas, key=lambda f: (1 if "FNS" in f.upper() else 0, f))
 
 
+@router.get("/outros-convenentes", dependencies=[exige("convenios.ver")])
+async def outros_convenentes(
+    municipio_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Convênios ESTADUAIS de quem está no município e NÃO é a prefeitura (APAE,
+    associação, câmara) — `convenios_estadual_outros`, preenchida pelo coletor do
+    PR desde 23/09/2026.
+
+    ⚠️ Rota PRÓPRIA, fora da listagem e dos totais: é a regra do dono ("nada é
+    descartado, nada entra na conta como se fosse da prefeitura"). A tela mostra
+    num bloco recolhido, embaixo, e nenhum outro leitor soma esta tabela."""
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "convenios")
+    rows = (await db.execute(text("""
+        SELECT chave, fonte, convenente_nome, orgao_concedente, objeto, situacao,
+               valor_concedente, valor_repassado, dt_assinatura, dt_vigencia_final,
+               raw_data->>'nr_instrumento'
+          FROM convenios_estadual_outros
+         WHERE municipio_id = :m
+         ORDER BY dt_vigencia_final DESC NULLS LAST, valor_concedente DESC NULLS LAST
+    """), {"m": municipio_id})).fetchall()
+    return [{
+        "chave": r[0], "fonte": r[1], "convenente": r[2], "orgao": r[3],
+        "objeto": r[4], "situacao": r[5],
+        "valor_concedente": float(r[6]) if r[6] is not None else None,
+        "valor_repassado": float(r[7]) if r[7] is not None else None,
+        "dt_assinatura": r[8].isoformat() if r[8] else None,
+        "dt_vigencia_final": r[9].isoformat() if r[9] else None,
+        "numero": r[10],
+    } for r in rows]
+
+
 @router.get("", response_model=ConvenioListResponse,
             dependencies=[exige("convenios.ver")])
 async def list_convenios(

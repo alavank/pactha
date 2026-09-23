@@ -22,10 +22,13 @@ AS ARMADILHAS, todas medidas contra a fonte em 22/09/2026:
    zero à esquerda: Juranda 4112959 -> `12959`, Curitiba 4106902 -> `6902`.
 
 3. ⚠️ **O TOMADOR NÃO TEM CNPJ**, só nome. O `ibge` diz ONDE ele está, não QUEM é:
-   em Juranda, 6 das 26 linhas de 2026 são da APAE local. Entra só ente
-   MUNICIPAL (prefeitura, fundo municipal) cujo nome contém o do município —
-   a mesma regra das Voluntárias ("o que não é da prefeitura sai das somas").
-   Consórcio intermunicipal fica de fora: é outro CNPJ, sediado em outro IBGE.
+   em Juranda, 6 das 26 linhas de 2026 são da APAE local. Em `convenios_estadual`
+   entra só ente MUNICIPAL (prefeitura, fundo municipal) cujo nome contém o do
+   município — a mesma regra das Voluntárias ("o que não é da prefeitura sai das
+   somas"). ⭐ Desde 23/09/2026 o resto NÃO é mais descartado (regra do dono: nada
+   é descartado): vai para `convenios_estadual_outros`, que nenhum total lê, e a
+   tela de Convênios mostra num bloco próprio. Consórcio intermunicipal sediado em
+   outro IBGE continua fora — não é do município.
 
 4. ⚠️ **TRÊS COLUNAS DE REPASSE E NENHUM DICIONÁRIO.** `total_repasses` é o valor
    do Estado no convênio e `total_repassado` o que já saiu — conferido centavo a
@@ -250,15 +253,14 @@ def _log_ingest(cur, conn, status: str, n: int, nota: str | None = None) -> None
 
 
 def coletar(client: httpx.Client, alvos: list[dict]) -> tuple[dict, list[str], dict]:
-    """Lê todos os anos e devolve ({nr: registro}, falhas, fora_da_regra).
+    """Lê todos os anos e devolve ({nr: registro}, falhas, {nr: registro de outros}).
 
-    `fora_da_regra` conta, por município, as linhas com o IBGE dele que NÃO são
-    ente municipal (APAE, associação) — vai para o log, para ninguém achar que
-    sumiram."""
+    Os "outros" são as linhas com o IBGE do município que NÃO são ente municipal
+    (APAE, associação, câmara): vão para `convenios_estadual_outros` (armadilha 3)."""
     por_cod = {a["cod"]: a for a in alvos if a["cod"]}
     achados: dict[str, dict] = {}
     falhas: list[str] = []
-    fora: dict[str, set] = {}
+    outros: dict[str, dict] = {}
     for ano in range(ANO_INICIAL, date.today().year + 1):
         try:
             r = client.get(url_do_ano(ano), headers=UA, timeout=TIMEOUT)
@@ -280,15 +282,56 @@ def coletar(client: httpx.Client, alvos: list[dict]) -> tuple[dict, list[str], d
             alvo = por_cod.get(cod)
             if not alvo:
                 continue
-            if not e_ente_municipal(x.get("tomador"), alvo["nome"]):
-                fora.setdefault(alvo["nome"], set()).add(x.get("convenio_empreendimento_cod"))
-                continue
             reg = registro(x, alvo["id"], entidades)
             # Anos em ordem crescente: o arquivo mais recente vence (armadilha 5).
+            if not e_ente_municipal(x.get("tomador"), alvo["nome"]):
+                outros[reg["nr"]] = reg
+                continue
             achados[reg["nr"]] = reg
             n += 1
         log.info("  %s: %d linha(s) no arquivo, %d do(s) município(s)", ano, len(linhas), n)
-    return achados, falhas, {k: len(v) for k, v in fora.items()}
+    return achados, falhas, outros
+
+
+_SQL_OUTROS = """
+INSERT INTO convenios_estadual_outros (
+    municipio_id, fonte, chave, convenente_nome, orgao_concedente, objeto, situacao,
+    valor_concedente, valor_contrapartida, valor_total, valor_repassado,
+    dt_assinatura, dt_vigencia_inicial, dt_vigencia_final, raw_data, atualizado_em)
+VALUES (
+    %(mid)s, %(fonte)s, %(nr)s, %(convenente)s, %(orgao)s, %(objeto)s, %(situacao)s,
+    %(v_conc)s, %(v_contra)s, %(v_total)s, %(v_repassado)s,
+    %(dt_ass)s, %(dt_ini)s, %(dt_fim)s, %(raw)s::jsonb, NOW())
+ON CONFLICT (fonte, chave) DO UPDATE SET
+    municipio_id = EXCLUDED.municipio_id,
+    convenente_nome = EXCLUDED.convenente_nome,
+    orgao_concedente = EXCLUDED.orgao_concedente,
+    objeto = EXCLUDED.objeto, situacao = EXCLUDED.situacao,
+    valor_concedente = EXCLUDED.valor_concedente,
+    valor_contrapartida = EXCLUDED.valor_contrapartida,
+    valor_total = EXCLUDED.valor_total,
+    valor_repassado = EXCLUDED.valor_repassado,
+    dt_assinatura = EXCLUDED.dt_assinatura,
+    dt_vigencia_inicial = EXCLUDED.dt_vigencia_inicial,
+    dt_vigencia_final = EXCLUDED.dt_vigencia_final,
+    raw_data = EXCLUDED.raw_data,
+    atualizado_em = NOW()
+"""
+
+
+def grava_outros(cur, outros: dict, alvos: list[dict], falhou_ano: bool) -> int:
+    """Grava as entidades e apaga as que a fonte deixou de publicar — MAS só com
+    todos os anos lidos: um ano que falhou esconderia linhas que continuam lá."""
+    for reg in outros.values():
+        cur.execute(_SQL_OUTROS, reg)
+    if not falhou_ano:
+        for a in alvos:
+            chaves = [k for k, r in outros.items() if r["mid"] == a["id"]]
+            cur.execute("""
+                DELETE FROM convenios_estadual_outros
+                 WHERE fonte = %s AND municipio_id = %s AND NOT (chave = ANY(%s))
+            """, (FONTE, a["id"], chaves))
+    return len(outros)
 
 
 def ingest(dry: bool = False) -> int:
@@ -304,10 +347,12 @@ def ingest(dry: bool = False) -> int:
                     _log_ingest(cur, conn, "success", 0)
                 return 0
             with httpx.Client(follow_redirects=True) as client:
-                achados, falhas, fora = coletar(client, alvos)
-            for nome, n in fora.items():
-                log.info("  %s: %d convênio(s) de entidade não municipal com o IBGE "
-                         "do município — fora, pela regra das Voluntárias", nome, n)
+                achados, falhas, outros = coletar(client, alvos)
+            for a in alvos:
+                n = sum(1 for r in outros.values() if r["mid"] == a["id"])
+                if n:
+                    log.info("  %s: %d convênio(s) de entidade que não é a prefeitura "
+                             "— em convenios_estadual_outros, fora das contas", a["nome"], n)
             if dry:
                 for reg in sorted(achados.values(), key=lambda x: str(x["dt_ass"])):
                     log.info("    %s %s | %s | %s | repassado %s de %s", reg["nr"],
@@ -316,6 +361,7 @@ def ingest(dry: bool = False) -> int:
                 return 0
             for reg in achados.values():
                 cur.execute(_SQL, reg)
+            grava_outros(cur, outros, alvos, bool(falhas))
             conn.commit()
             status = "partial" if falhas else "success"
             log.info("=== Convênios PR: %d gravado(s), status=%s ===", len(achados), status)

@@ -654,6 +654,10 @@ MIGRATION_FILES = [
     # bancarias e o arquivo carregado por municipio. Tabelas novas, so com FK para
     # `municipios`.
     "add_cgu_convenios.sql",
+    # Convenios estaduais de quem NAO e a prefeitura (APAE, associacao), que os
+    # coletores descartavam (23/09/2026). Tabela nova, so com FK para `municipios`
+    # — fora de `convenios_estadual` para ficar fora das contas por construcao.
+    "add_convenios_estadual_outros.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

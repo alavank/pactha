@@ -107,10 +107,63 @@ def test_coletar_casa_por_ibge_e_nome_e_o_ano_mais_recente_vence():
     c.ANO_INICIAL = 2025
     try:
         with httpx.Client(transport=httpx.MockTransport(responde)) as cl:
-            achados, falhas, fora = c.coletar(cl, [{"id": 1, "nome": "Juranda", "cod": 12959}])
+            achados, falhas, outros = c.coletar(cl, [{"id": 1, "nome": "Juranda", "cod": 12959}])
     finally:
         c.ANO_INICIAL = c_ano
     assert list(achados) == ["PR-10444"]
     assert achados["PR-10444"]["v_repassado"] == Decimal("463748.99")
-    assert fora == {"Juranda": 1}           # a APAE: mesmo IBGE, não é a prefeitura
+    # ⭐ A APAE (mesmo IBGE, não é a prefeitura) NÃO some desde 23/09/2026: vem em
+    # `outros`, que vai para `convenios_estadual_outros` — e NUNCA em `achados`,
+    # que é o que entra em `convenios_estadual` e nas contas.
+    assert list(outros) == ["PR-21904"]
+    assert outros["PR-21904"]["convenente"].startswith("ASSOCIAÇÃO DE PAIS")
+    assert outros["PR-21904"]["mid"] == 1
     assert falhas == []
+
+
+class _Cur:
+    def __init__(self):
+        self.sql = []
+
+    def execute(self, sql, params=None):
+        self.sql.append((" ".join(sql.split()), params))
+
+
+def test_grava_outros_so_apaga_com_todos_os_anos_lidos():
+    """Um ano que falhou esconderia linhas que continuam na fonte: sem ele, só
+    grava; com todos os anos, grava e apaga o que a fonte deixou de publicar."""
+    reg = {"mid": 1, "nr": "PR-21904", "fonte": c.FONTE}
+    alvos = [{"id": 1, "nome": "Juranda", "cod": 12959}]
+    cur = _Cur()
+    c.grava_outros(cur, {"PR-21904": reg}, alvos, falhou_ano=True)
+    assert not any(s.startswith("DELETE") for s, _ in cur.sql)
+    cur = _Cur()
+    c.grava_outros(cur, {"PR-21904": reg}, alvos, falhou_ano=False)
+    apaga = [p for s, p in cur.sql if s.startswith("DELETE")]
+    assert apaga == [(c.FONTE, 1, ["PR-21904"])]
+    assert all("convenios_estadual_outros" in s for s, _ in cur.sql)
+
+
+def test_so_a_rota_propria_le_a_tabela_das_entidades():
+    """Fora das contas POR CONSTRUÇÃO: um painel, BI ou RM que passasse a ler
+    `convenios_estadual_outros` somaria a APAE como se fosse da prefeitura."""
+    import pathlib
+    import re
+    raiz = pathlib.Path(__file__).resolve().parents[1]
+    # LEITURA de verdade (`FROM`/`JOIN`), e não o nome do .sql na lista de
+    # migrations de `services/startup.py`.
+    le = re.compile(r"(?i)\b(FROM|JOIN)\s+convenios_estadual_outros\b")
+    leitores = sorted(
+        str(p.relative_to(raiz)).replace("\\", "/")
+        for pasta in ("routers", "services")
+        for p in (raiz / pasta).rglob("*.py")
+        if le.search(p.read_text(encoding="utf-8")))
+    assert leitores == ["routers/convenios.py"]
+
+
+def test_entidade_nunca_vai_para_convenios_estadual():
+    """A tabela que os quinze leitores somam não pode receber a APAE."""
+    import inspect
+    fonte = inspect.getsource(c.grava_outros)
+    assert "INSERT INTO convenios_estadual (" not in fonte
+    assert "convenios_estadual_outros" in c._SQL_OUTROS
