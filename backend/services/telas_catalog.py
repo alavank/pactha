@@ -62,6 +62,8 @@ TELAS_CATALOG = [
     # chave fazem o administrador achar que sao duas permissoes diferentes.
     {"key": "parcerias", "label": "Parcerias (emendas de saúde)"},
     {"key": "faf_planos", "label": "Planos de Ação (Fundo a Fundo)"},
+    # CGU (23/09/2026). MESMO TEXTO de `frontend/src/lib/telas.ts`.
+    {"key": "cgu_convenios", "label": "Defesa Civil e outros repasses (CGU)"},
     {"key": "acordofes", "label": "Acordo FES (dívida saúde MG)"},
     {"key": "fns", "label": "Fundo Nacional de Saúde"},
     # A 4ª tela da pasta SAÚDE do menu (#243). Ficou fora deste catálogo no
@@ -102,6 +104,8 @@ TELAS_TODAS = [
     "dashboard", "ai", "parlamentares", "consolidado", "gestao", "agendamentos", "rm",
     "documentos", "convenios", "emendas", "cauc", "sismob",
     "obrasgov", "parcerias", "faf_planos",
+    # CGU (23/09/2026): Defesa Civil e outros repasses que o TransfereGov não tem.
+    "cgu_convenios",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
     "acordofes", "fns", "investsus", "simec", "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",

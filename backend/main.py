@@ -17,7 +17,7 @@ from routers import (
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
-    uso, mcp_tokens, consolidado, tce_pr,
+    uso, mcp_tokens, consolidado, tce_pr, cgu_convenios,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -194,6 +194,9 @@ app.include_router(conteudo_rs.router)
 # /api/pr/tce: o que o municipio do PR declarou ao TCE (SIM-AM), pelo PIT —
 # dado coletado por `ingestion/tce_pr.py`, nao curadoria.
 app.include_router(tce_pr.router)
+# /api/cgu-convenios: o dinheiro federal fora do TransfereGov (Defesa Civil),
+# pela planilha da CGU — `ingestion/cgu_convenios.py`.
+app.include_router(cgu_convenios.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)

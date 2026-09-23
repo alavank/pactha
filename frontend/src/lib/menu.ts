@@ -181,6 +181,12 @@ export const NAV_ITEMS: NavEntry[] = [
          repasse fundo a fundo, e os 4 planos de Nova Palma são do Ministério
          da Cultura (Lei Aldir Blanc), não do SUS. */
       { href: "/dashboard/faf-planos", label: "Planos de Ação (Fundo a Fundo)" },
+      /* ⭐ CGU (23/09/2026): o dinheiro federal que NÃO passa pelo Transferegov —
+         as transferências legais da Defesa Civil (Nova Palma: R$ 22,9 mi
+         vigentes, um repasse de R$ 14,4 mi ainda sem liberação) e o histórico
+         anterior a 2009. Fica colada nas telas do Transferegov porque é a
+         pergunta que elas não respondem. */
+      { href: "/dashboard/cgu-convenios", label: "Defesa Civil e outros (CGU)" },
       { href: "/dashboard/transferegov-rejeitadas", label: "Rejeitadas" },
       { href: "/dashboard/transferegov-encerradas", label: "Encerradas" },
       { href: "/dashboard/transferegov-cnpj", label: "CNPJ" },

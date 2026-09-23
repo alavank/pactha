@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 27 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 28 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 27 sources has its own collector file with source-specific gotchas documented
+Each of the 28 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -265,6 +265,23 @@ acts with strong evidence. Full list of traps in the file header; the ones that 
   (`dou_cobertura`) does not advance and the run is `partial`.
 - Acts already evaluated live in `dou_atos` (even those citing nobody) so the 2-day review
   window does not refetch them: second run measured at 11 s against 158 s for the first.
+
+## CGU convênios — the spreadsheet, not the API (`ingestion/cgu_convenios.py`, 23/09/2026)
+
+What it adds over TransfereGov: the Defesa Civil *transferências legais* (Lei 12.340)
+and the pre-2009 SIAFI history. The traps (full list in the file header):
+- **There is NO convênio↔emenda link** — not in the API's `ConvenioDTO`, not in the 27
+  spreadsheet columns. The source report said otherwise; don't look for it here.
+- **No token needed**: the open spreadsheet has every field the API has. The file is NOT
+  daily (on 22/09 the newest was 11/09): the date comes from the download page, and a
+  missing date answers **403**, not 404 — never read that 403 as a block.
+- **No IBGE, a SIAFI município code** ("8765" = Nova Palma), taken from the rows where the
+  PREFEITURA's CNPJ is the convenente — origin, not name.
+- **"TIPO ENTE = Municipal" is WHERE, not WHO**: under Santa Maria's code sit UFSM, private
+  foundations and natural persons. `e_municipal` uses tipo + CNPJ; natural persons never
+  enter; non-prefeitura rows stay, flagged `municipal = false`, out of totals.
+- **The OB list has no natural key** (850 repeated (convênio, OB) pairs): replaced whole.
+- Whole spreadsheet in memory would pass 1 GB: two passes over the zip instead.
 
 ## Authenticated sources
 

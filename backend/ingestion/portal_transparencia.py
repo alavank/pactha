@@ -49,9 +49,11 @@ sao `codigoEmenda`, `numeroEmenda`, `nomeAutor`, `tipoEmenda`, `ano`,
 `codigoFuncao`, `codigoSubfuncao` — nenhum territorial. Varrer o Brasil seria
 caro e desnecessario: o territorio vem do dump, por CNPJ.
 
-⚠️ E `/convenios` continua REDUNDANTE (auditoria de 29/08/2026): e o SICONV com
-menos colunas que o dump do TransfereGov que ja coletamos, e o `ConvenioDTO` nao
-tem campo de emenda (conferido no Swagger em 06/09). Nao usar como fonte.
+⚠️ `/convenios` NAO tem campo de emenda (`ConvenioDTO`, conferido no Swagger em
+06/09 e de novo em 22/09/2026) — nao procure o vinculo convenio<->emenda la. Mas
+"redundante" (auditoria de 29/08) estava ERRADO: ela traz o que o TransfereGov nao
+tem (as transferencias legais da Defesa Civil e o historico anterior a 2009). Quem
+coleta e `ingestion/cgu_convenios.py`, pela PLANILHA aberta — sem token.
 
 CONTRATO DA API, conferido no `/v3/api-docs` (167 KB) em 06/09/2026:
     cabecalho `chave-api-dados: <chave>`  (securityScheme apiKey, confirmado)

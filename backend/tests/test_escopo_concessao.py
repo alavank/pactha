@@ -432,5 +432,8 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     # 22/09/2026: 101 -> 102. `tce_pr.ver` — a primeira tela do Parana: o que o
     # municipio declarou ao TCE-PR (convenios, obras, contratos e a despesa por
     # fonte de recurso). UMA chave: a tela so LE.
-    assert len(permissoes.CATALOGO) == 102
+    #
+    # 23/09/2026: 102 -> 103. `cgu_convenios.ver` — os repasses federais que o
+    # TransfereGov nao tem (Defesa Civil), pela planilha da CGU. So LE.
+    assert len(permissoes.CATALOGO) == 103
     assert not any("propri" in c for c in permissoes.CATALOGO)

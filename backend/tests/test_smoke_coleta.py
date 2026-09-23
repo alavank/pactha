@@ -38,6 +38,7 @@ COLETORES = {
     "ingestion.tce_rs_portal": None,
     "ingestion.tce_pr": "ingest",
     "ingestion.dou_federal": "ingest",
+    "ingestion.cgu_convenios": "ingest",
     "ingestion.convenios_pr": "ingest",
     "ingestion.regularidade_pr": "ingest",
     "ingestion.emendas_estaduais": None,

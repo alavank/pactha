@@ -80,7 +80,9 @@ SIMEC/PAR, SICONFI/Tesouro (contas entregues + CAPAG), Portal da Transparencia/C
 CNPJ do beneficiario — e por isso alcanca as ~45% que nao viraram proposta e eram
 invisiveis —, e a execucao empenhado/liquidado/pago vem da API com `chave-api-dados`),
 DOU/Imprensa Nacional (os atos do Diario Oficial da Uniao que citam o municipio pelo IBGE,
-CNPJ ou "Municipio de X/UF" — o gatilho da captacao, CONTINUAR §1.33).
+CNPJ ou "Municipio de X/UF" — o gatilho da captacao, CONTINUAR §1.33), convenios da
+CGU pela planilha aberta do Portal da Transparencia (o dinheiro federal fora do
+TransfereGov: Defesa Civil e o historico anterior a 2009 — CONTINUAR §1.34).
 **Estaduais:** SIGCON-MG (portal logado, credencial por municipio no Cofre) + dump
 `dados.mg.gov.br`, CAGEC-MG, Acordo FES (SES-MG), GConv-ES, Transf. Voluntarias GO,
 COFIN/SES-GO, TCM-GO, TCE-RS/LicitaCon, Consulta Popular/COREDEs (RS), TCE-PR/PIT,

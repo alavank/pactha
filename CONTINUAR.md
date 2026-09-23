@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **27 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **28 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -26,6 +26,30 @@
 - `C:\projetos\PACTA` → clone do repo do Matheus (`MattMatiins/PACTA`), usado só para colaboração com ele. **NUNCA** pushe cruzado entre os dois.
 
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
+
+---
+
+## 1.34. CGU — o dinheiro federal fora do TransfereGov (23/09/2026)
+
+Segunda fonte do relatório do dono: "Portal da Transparência — API de convênios",
+prioridade 1. Coletor `ingestion/cgu_convenios.py`, tela FEDERAIS › "Defesa Civil e
+outros (CGU)" (`/dashboard/cgu-convenios`, permissão `cgu_convenios.ver`).
+
+- **O cartão prometia o vínculo convênio↔emenda "desde nov/2024", e ele não existe** —
+  nem no `ConvenioDTO` da API (conferido no `/v3/api-docs` de 22/09) nem nas 27 colunas
+  da planilha. A auditoria de 06/09 (cabeçalho de `portal_transparencia.py`) estava
+  certa nesse ponto.
+- **Mas a fonte não é redundante**, e isso a auditoria de 29/08 errou: cruzando pelo
+  CNPJ da prefeitura com o `siconv_convenio.zip`, a CGU tem o que o TransfereGov não tem
+  — as **transferências legais da Defesa Civil** (Nova Palma: 8 vigentes, R$ 22,9 mi, R$
+  20,8 mi ainda a liberar; um de R$ 14,4 mi sem nada liberado) e o histórico anterior a
+  2009. O Obras.gov tinha as OBRAS dessas ações; faltava o repasse.
+- **Planilha, e não API com token**: mesmos campos, vale nos sete tenants, sem o CPF de
+  ninguém. Decisão do dono (23/09): tela nova em FEDERAIS, abrindo pelos vigentes fora do
+  TransfereGov; o resto recolhido; o que não é a prefeitura, marcado e fora das contas.
+- **Conferido contra Postgres de verdade** (143/143 migrations num banco zerado): 4
+  municípios de 3 estados em 18 s, 1.215 instrumentos e 2.475 OBs; 2ª rodada 0 s (mesmo
+  arquivo); regravação forçada com as mesmas contagens; rotas pela API local.
 
 ---
 

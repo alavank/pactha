@@ -144,6 +144,9 @@ WITH marca AS (
            -- bloco já disparou nos que estão no ar); nos outros concede
            -- `add_tela_tce_pr.sql`.
            ('tce_pr'),
+           -- CGU (23/09/2026), idem: banco NOVO aqui, os que estão no ar por
+           -- `add_tela_cgu_convenios.sql`.
+           ('cgu_convenios'),
            -- As quatro abas de Configuracoes que eram governadas pelo PAPEL
            -- `admin` e viraram telas de verdade.
            ('telemetria'), ('frescor'), ('usuarios'), ('parametros'),

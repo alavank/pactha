@@ -521,6 +521,12 @@ O desenho atual (13/09/2026, "coleta noturna"):
   downloads pesados na mesma madrugada). Existe **nos 5 workers**; desde 17/08, quando
   trust e montesiao não a tinham e ficaram meses com `siconv_federal` = 0, a aba CNPJ do
   TransfereGov abrindo vazia.
+- **`cgu-convenios` (23/09/2026), escada de 5 min de 07:00 (freitas) a 07:30 UTC
+  (juranda):** baixa a planilha de convênios da CGU (67 MB) e o `siconv_convenio.zip`
+  (18 MB), ~20 s por tenant; como a CGU publica poucas vezes por mês, a rodada que acha
+  o MESMO arquivo em todos os municípios não baixa nada. Kill 900 s, timeout da task
+  1020 s. Criação: `scripts/criar_task_cgu_convenios.sh`, **depois** do deploy do PR que
+  trouxe o coletor — até isso rodar, a task NÃO existe em nenhum worker.
 - **`dou-federal` (22/09/2026) também é escada ENTRE TENANTS:** os sete buscam no mesmo
   `in.gov.br` do mesmo IP. 10 min de passo, de 08:00 (freitas) a 09:00 UTC (juranda), na
   ordem da tabela de uuids; orçamento interno de 8 min (`DOU_BUDGET_S=480`), kill em 600 s,

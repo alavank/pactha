@@ -536,6 +536,9 @@ MIGRATION_FILES = [
     # desenho do consolidado. Mesma dependencia (so a FK de
     # `add_permissoes_por_acao.sql`); nao toca as tabelas de `add_tce_pr.sql`.
     "add_tela_tce_pr.sql",
+    # CGU/Defesa Civil (23/09/2026): tela e acao a quem tem `usuarios.conceder`,
+    # pelo mesmo desenho. Nao toca as tabelas de `add_cgu_convenios.sql`.
+    "add_tela_cgu_convenios.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.
@@ -647,6 +650,10 @@ MIGRATION_FILES = [
     # que dia a busca dele foi feita inteira. Tabelas novas, so com FK para
     # `municipios` (e a citacao para `dou_atos`, criada no mesmo arquivo).
     "add_dou_federal.sql",
+    # CGU (23/09/2026): os convenios do Executivo federal pela planilha, as ordens
+    # bancarias e o arquivo carregado por municipio. Tabelas novas, so com FK para
+    # `municipios`.
+    "add_cgu_convenios.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",
