@@ -2200,13 +2200,20 @@ anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do rotei
 2. **Aviso antes de vencer**: `services/sessao_govbr.py` (puro; também dono da régua `sessao_esta_viva`
    / `SESSAO_VIVA_MIN`, que a rota e o vigia importam): hora do login = `[SESSION] capturado em …` da
    `observacao` da linha `govbr`; a hora só muda com **login novo** (`comparar_sessao_sso`, em
-   `services/sessao_govbr.py`): só cookies **httpOnly** do próprio gov.br contam, e
-   `Session_Gov_Br_Prod` decide sozinho quando os dois lados o têm (medido em 23/09: os httpOnly de
-   `sso.acesso.gov.br` são `Session_Gov_Br_Prod` e `INGRESSCOOKIE`, estáveis na sessão; a família F5
-   `TS*` não é httpOnly e muda a cada página; IdP e SP rotacionam a cada SAML). Vale nos **dois**
-   caminhos: promoção de candidata (copia a observação só com login novo; loga os NOMES que mudaram)
-   e captura **direta** (sessão não medida viva: mesma sessão troca o jar e preserva a hora —
-   `observacao_preservando_login` anexa "recapturado em"). ⚠️ Sem isso, com o Chrome
+   `services/sessao_govbr.py`). ⚠️ **Medido no jar real de produção (23/09, `cookies_meta`):** o
+   login de 23/09 11:27 **não trouxe `Session_Gov_Br_Prod`**; do gov.br vieram só `Govbrid` e
+   `GovbrUid_*`, **persistentes até 2027** (o `Govbrid` vence em 15/06/2027 — não foi reemitido no
+   login: é identificador do aparelho). Comparar esses dava "mesma sessão" para sempre (a 1ª versão
+   da regra, deployada e corrigida no mesmo dia). Identidade = cookies **httpOnly sem validade**
+   (cookie de sessão): o `JSESSIONID` do IdP (`idp.transferegov…`) e, se vier, o
+   `Session_Gov_Br_Prod`; `INGRESSCOOKIE` (balanceador) e `TS*` (F5, não httpOnly) ficam de fora.
+   Compara o que os dois lados têm: algum diferente = login novo; nada em comum = login novo (o
+   comportamento antigo). Vale nos **dois** caminhos: promoção de candidata (copia a observação só
+   com login novo; loga os NOMES que mudaram) e captura **direta** (mesma sessão troca o jar e
+   preserva a hora — `observacao_preservando_login` anexa "recapturado em").
+   ⚠️ Visto no mesmo `cookies_meta`: o jar leva cookies de **qualquer** `*.gov.br` que o dono
+   visitou (`sougov.sigepe`, `finep`, `drive.ciesp.mg`) — a extensão coleta o domínio `gov.br`
+   inteiro. Sobre-coleta pré-existente; ver a tarefa separada. ⚠️ Sem isso, com o Chrome
    aberto a extensão recaptura a cada navegação/alarme, cada captura vira candidata e é promovida, e
    a hora do login andaria para a frente a cada ciclo — o aviso nunca sairia (achado da revisão).
    `VIDA_SSO_H=24`, `AVISO_VENCIMENTO_H=21`, **sem teto superior**: sessão que dure 30h continua
