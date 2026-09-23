@@ -845,6 +845,11 @@ def test_mesma_sessao_sso__so_httpOnly_e_o_cookie_de_sessao_decide():
     assert gr.mesma_sessao_sso([ING_1], [ING_2]) is False
     assert gr.mesma_sessao_sso([SSO_A], [ING_1]) is False, "nada em comum: nao se sabe -> login novo"
     assert gr.comparar_sessao_sso([SSO_A], [SSO_B]) == (False, ["Session_Gov_Br_Prod"])
+    # login NOVO (traz o cookie de sessao) contra jar em uso SEM ele: o INGRESSCOOKIE
+    # (afinidade do balanceador) nao pode decidir "mesma sessao"
+    assert gr.comparar_sessao_sso([SSO_B, ING_1], [ING_1]) == (False, ["Session_Gov_Br_Prod"])
+    # o contrario (captura sem o cookie de sessao — SP zumbi) desempata pelo que ha em comum
+    assert gr.mesma_sessao_sso([ING_1], [SSO_A, ING_1]) is True
     # aceita o formato pydantic do POST (atributos) — e o que o endpoint compara
     obj = sc.CookieFull(name="Session_Gov_Br_Prod", value="AAA", domain=".sso.acesso.gov.br", httpOnly=True)
     assert gr.mesma_sessao_sso([obj], [SSO_A]) is True

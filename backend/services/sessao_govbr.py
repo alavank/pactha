@@ -125,6 +125,12 @@ def comparar_sessao_sso(candidata, em_uso) -> tuple[bool, list]:
     sb = {v for (d, n), v in b.items() if n == COOKIE_SESSAO_SSO}
     if sa and sb:
         return (bool(sa & sb), [] if sa & sb else [COOKIE_SESSAO_SSO])
+    if sa and not sb:
+        # A captura TRAZ o cookie de sessao do gov.br e o jar em uso nao: e login
+        # novo. (O `INGRESSCOOKIE` e afinidade de balanceador — nao prova que e a
+        # mesma sessao.) O contrario — captura SEM o cookie, o SP zumbi — segue
+        # para o desempate abaixo e preserva a hora.
+        return False, [COOKIE_SESSAO_SSO]
     comuns = set(a) & set(b)
     if not comuns:
         return False, []
