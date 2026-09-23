@@ -77,6 +77,15 @@ jobs:
           RESUMO_DRY_RUN: ${{ inputs.dry_run || '0' }}
         run: python scripts/resumo_coleta.py
 
+      # So no DRY RUN (conferencia manual): a linha do tempo da sessao gov.br por
+      # tenant — o que o audit_log registrou (captura, candidata, promocao) e a
+      # idade/`exp` da sessao em uso. Somente leitura; nunca imprime cookie/token.
+      - name: Diagnostico da sessao gov.br (dry run)
+        if: inputs.dry_run == '1'
+        env:
+          PACTHA_RESUMO_TENANTS: ${{ secrets.PACTHA_RESUMO_TENANTS }}
+        run: python scripts/diag_sessao_govbr.py
+
       # ⭐ QUEM AVISA QUE O AVISADOR NAO RODOU.
       #
       # O defeito do `permissions: {}` mostrou o buraco: o job morria ANTES do
