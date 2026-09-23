@@ -71,6 +71,10 @@ jobs:
       - name: Enviar resumo
         env:
           PACTHA_RESUMO_TENANTS: ${{ secrets.PACTHA_RESUMO_TENANTS }}
+          # So LEITURA no Coolify: completa os tenants do deploy que o secret nao
+          # lista (o Juranda, 22/09/2026). Nada disso e impresso.
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
           RESUMO_TELEGRAM_TOKEN: ${{ secrets.RESUMO_TELEGRAM_TOKEN }}
           RESUMO_TELEGRAM_CHAT_ID: ${{ secrets.RESUMO_TELEGRAM_CHAT_ID }}
           RESUMO_JANELA_HORAS: ${{ inputs.janela_horas || '24' }}
@@ -84,6 +88,8 @@ jobs:
         if: inputs.dry_run == '1'
         env:
           PACTHA_RESUMO_TENANTS: ${{ secrets.PACTHA_RESUMO_TENANTS }}
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
         run: python scripts/diag_sessao_govbr.py
 
       # ⭐ QUEM AVISA QUE O AVISADOR NAO RODOU.

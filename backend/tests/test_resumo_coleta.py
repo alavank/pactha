@@ -224,6 +224,40 @@ def test_dry_run_imprime_no_log_os_itens_que_o_telegram_cortou(monkeypatch, caps
     assert all(f"fonte{i}" in completa for i in range(80)), "o log do dry run tambem cortou"
 
 
+def test_tenant_do_deploy_fora_do_secret_e_completado_pelo_Coolify(monkeypatch, capsys):
+    """O Juranda entrou no deploy em 22/09/2026 e ficou fora do secret. No CI o
+    relatorio le o token de controle dele no Coolify (so leitura) — e NUNCA o imprime."""
+    respostas = {
+        "/applications/API_J/envs": [{"key": "CONTROL_TOKEN_BOOTSTRAP", "real_value": "SEGREDO-CTRL"},
+                                     {"key": "INSTANCE_SLUG", "value": "juranda-pr"}],
+        "/applications/API_J": {"fqdn": "http://interno:8000,https://pactha-juranda-pr-api.sslip.io"},
+    }
+    monkeypatch.setenv("COOLIFY_URL", "http://coolify")
+    monkeypatch.setenv("COOLIFY_TOKEN", "SEGREDO-COOLIFY")
+    monkeypatch.setattr(rc, "_coolify", lambda caminho: respostas[caminho])
+    extra = rc.tenants_do_coolify(["juranda"], trios={"juranda": ("API_J", "WRK_J")})
+    assert extra == [{"slug": "juranda-pr", "api_url": "https://pactha-juranda-pr-api.sslip.io",
+                      "control_token": "SEGREDO-CTRL", "via": "coolify"}]
+    assert "SEGREDO" not in capsys.readouterr().out
+    assert rc.tenants_do_coolify(["nao-esta-no-ci"], trios={}) == []
+
+
+def test_sem_as_envs_do_Coolify_nao_chama_a_rede(monkeypatch):
+    monkeypatch.delenv("COOLIFY_URL", raising=False)
+    monkeypatch.delenv("COOLIFY_TOKEN", raising=False)
+    assert rc._coolify("/applications/x/envs") is None
+    assert rc.tenants_do_coolify(["juranda"], trios={"juranda": ("A", "W")}) == []
+
+
+def test_tenants_completos_so_busca_no_Coolify_o_que_falta(monkeypatch):
+    monkeypatch.setattr(rc, "_tenants", lambda: [{"slug": "freitas"}])
+    monkeypatch.setattr(rc, "tenants_do_ci", lambda *a: ["freitas", "juranda"])
+    pedidos = []
+    monkeypatch.setattr(rc, "tenants_do_coolify", lambda nomes: pedidos.append(nomes) or [{"slug": "juranda-pr"}])
+    assert [t["slug"] for t in rc.tenants_completos()] == ["freitas", "juranda-pr"]
+    assert pedidos == [["juranda"]]
+
+
 def test_envio_nao_manda_parse_mode(monkeypatch):
     """Se voltar `parse_mode`, o `_` de transferegov_opendata mata o relatorio."""
     import json as _json

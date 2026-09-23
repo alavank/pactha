@@ -420,9 +420,75 @@ def enviar(texto: str) -> bool:
         return False
 
 
+def trios_do_ci(caminho: str = CAMINHO_CI) -> dict:
+    """nome -> (uuid da api, uuid do worker), do mesmo build-backend.yml."""
+    try:
+        with open(caminho, encoding="utf-8") as fh:
+            return {m.group(1): (m.group(2), m.group(3))
+                    for m in (_TRIO_CI.match(ln) for ln in fh) if m}
+    except OSError:
+        return {}
+
+
+def _coolify(caminho: str):
+    base = (os.getenv("COOLIFY_URL") or "").strip().rstrip("/")
+    token = (os.getenv("COOLIFY_TOKEN") or "").strip()
+    if not base or not token:
+        return None
+    req = urllib.request.Request(f"{base}/api/v1{caminho}", headers={
+        "Authorization": f"Bearer {token}", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        return json.loads(r.read().decode("utf-8") or "null")
+
+
+def tenants_do_coolify(nomes: list, trios: dict | None = None) -> list:
+    """Os tenants que o deploy atualiza e o secret nao lista, montados pelo Coolify.
+
+    ⭐ POR QUE (23/09/2026): o Juranda entrou no deploy em 22/09 e ficou fora do
+    secret `PACTHA_RESUMO_TENANTS` — secret nao acompanha merge, e montar a
+    entrada pede o CONTROL_TOKEN_BOOTSTRAP dele, que so o Coolify tem. O mesmo
+    caminho que o `agenda_noturna.py` ja usa (envs `real_value` + fqdn), so
+    leitura, e NADA daqui e impresso: os tokens so vivem na memoria do processo.
+    Sem COOLIFY_URL/COOLIFY_TOKEN (rodando fora do CI) devolve [] — o aviso de
+    "fora do secret" continua valendo."""
+    trios = trios if trios is not None else trios_do_ci()
+    out = []
+    for nome in nomes:
+        par = trios.get(nome)
+        if not par:
+            continue
+        try:
+            envs = _coolify(f"/applications/{par[0]}/envs")
+            if envs is None:
+                return []
+            val = {e.get("key"): (e.get("real_value") or e.get("value")) for e in envs}
+            app = _coolify(f"/applications/{par[0]}") or {}
+            base = next((u for u in (app.get("fqdn") or "").split(",") if u.startswith("https")), "")
+            if not val.get("CONTROL_TOKEN_BOOTSTRAP") or not base:
+                print(f"[resumo] {nome}: sem CONTROL_TOKEN_BOOTSTRAP ou fqdn no Coolify")
+                continue
+            out.append({"slug": val.get("INSTANCE_SLUG") or nome, "api_url": base.rstrip("/"),
+                        "control_token": val["CONTROL_TOKEN_BOOTSTRAP"], "via": "coolify"})
+        except Exception as e:  # noqa: BLE001 — relatorio, nunca derruba
+            print(f"[resumo] {nome}: leitura no Coolify falhou ({type(e).__name__})")
+    return out
+
+
+def tenants_completos() -> list:
+    """O secret + o que o deploy tem e o secret nao (via Coolify, no CI)."""
+    tenants = _tenants()
+    faltam = tenants_ausentes([str(t.get("slug") or "") for t in tenants], tenants_do_ci())
+    if faltam:
+        extra = tenants_do_coolify(faltam)
+        if extra:
+            print(f"[resumo] fora do secret, lidos do Coolify: {', '.join(t['slug'] for t in extra)}")
+            tenants = tenants + extra
+    return tenants
+
+
 def main() -> int:
     janela = int(os.getenv("RESUMO_JANELA_HORAS", "24") or "24")
-    tenants = _tenants()
+    tenants = tenants_completos()
     resultados = [coletar(t, janela) for t in tenants]
     ausentes = tenants_ausentes([str(t.get("slug") or "") for t in tenants],
                                 tenants_do_ci())

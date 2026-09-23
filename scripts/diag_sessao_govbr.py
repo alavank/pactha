@@ -84,14 +84,44 @@ def linhas_do_tenant(tenant: dict, limite: int) -> list:
     return out
 
 
+# As tasks que MANTEM a sessao viva no worker. Tenant novo nasce sem task nenhuma
+# (INFRA §5): sem estas, a captura chega e morre em 20-30 min sem ninguem ver.
+TASKS_SESSAO = ("govbr-renew", "private-keepalive", "watchdog")
+
+
+def linhas_das_tasks(nome_ci: str, trios: dict) -> list:
+    import resumo_coleta as rc
+    par = trios.get(nome_ci)
+    if not par:
+        return [f"tasks: {nome_ci} nao esta no build-backend.yml"]
+    try:
+        tasks = rc._coolify(f"/applications/{par[1]}/scheduled-tasks")
+    except Exception as e:  # noqa: BLE001
+        return [f"tasks: leitura no Coolify falhou ({type(e).__name__})"]
+    if tasks is None:
+        return ["tasks: sem COOLIFY_URL/COOLIFY_TOKEN (fora do CI)"]
+    por_nome = {t.get("name"): t for t in tasks}
+    out = []
+    for n in TASKS_SESSAO:
+        t = por_nome.get(n)
+        out.append(f"task {n:<18} " + (f"{'ligada' if t.get('enabled', True) else 'DESLIGADA'} "
+                                        f"freq={t.get('frequency')}" if t else "AUSENTE"))
+    return out
+
+
 def main() -> int:
-    bruto = (os.getenv("PACTHA_RESUMO_TENANTS") or "").strip()
-    if not bruto:
-        raise SystemExit("PACTHA_RESUMO_TENANTS ausente")
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import resumo_coleta as rc
     limite = max(1, min(int(os.getenv("DIAG_AUDIT_LIMIT", "80") or "80"), 200))
+    trios = rc.trios_do_ci()
     print("[diag] sessao gov.br — linha do tempo por tenant (horarios em UTC, como a API devolve)")
-    for t in json.loads(bruto):
+    for t in rc.tenants_completos():
         print("\n".join(linhas_do_tenant(t, limite)))
+        slug = str(t.get("slug") or "")
+        nome_ci = next((n for n in trios if slug == n or slug.startswith(f"{n}-")), slug)
+        print("\n".join(linhas_das_tasks(nome_ci, trios)))
     return 0
 
 
