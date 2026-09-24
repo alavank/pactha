@@ -46,16 +46,35 @@ Pedidos da Laiza (Nova Serrana/MG, cliente da Freitas) e do dono:
     voluntária desembolsada, indicação paga na planilha da SEGOV; SIGCON/PAC nunca).
   - **Não conta duas vezes:** instrumento vence a indicação por CHAVE (carteira×voluntária
     e carteira×TE já em `detalhe_core`; indicação estadual×convênio SIGCON pelo nº da
-    indicação; seleção PAC×voluntária pelo "Número da Proposta Novo PAC"). A carteira CGU
-    que sobra pode ser o mesmo dinheiro do FNS/PAC (sem nº da emenda nos dois) → seção
-    "EMENDAS FEDERAIS SEM INSTRUMENTO IDENTIFICADO", FORA do total. PAC não selecionado,
-    TE IMPEDIDO e cancelado/rejeitado (`_fed_status` 'dead') → outra seção fora do total.
+    indicação — ⚠️ só o convênio que CONTA no total e tem valor > 0 vence: o 002567/2026
+    de Araújos, SEAPA, R$ 0,00, Cadastramento, apagava a indicação; seleção PAC×voluntária
+    pelo "Número da Proposta Novo PAC"). **FNS: UMA linha por (município, nº da proposta)**
+    com a PARTE do autor = soma dos `vlIndObjeto` dele em `parlamentares[]` (`vlProposta`
+    só de reserva, nunca acima dele): a 36000679587202500 (R$ 450 mil) com o mesmo autor
+    duas vezes saía R$ 900 mil e "RECURSOS PAGOS". A regra mora em
+    `nome_parlamentar.propostas_saude_por_autor`, então o CABEÇALHO da tela e o BI também
+    passaram a dar a parte do autor (dois autores: cada um com o seu `vlIndObjeto`, não os
+    dois com a proposta inteira). O RM segue com um item por proposta e o `vlProposta`.
+    A carteira CGU que sobra pode ser o mesmo dinheiro do FNS/PAC, não casado pelo nº da
+    emenda nesta base (o PAC não traz o nº; o FNS traz `coEmendaPolitica`/`nuAnoExercicio`,
+    formato nunca medido) → seção "EMENDAS FEDERAIS SEM INSTRUMENTO IDENTIFICADO", FORA do
+    total. PAC não selecionado, TE IMPEDIDO, convênio SIGCON em Cadastramento
+    (`_em_cadastramento`), FNS rejeitada/bloqueada/ARQUIVADA (`_fns_classifica`, a regra
+    do RM para o FNS — `_fed_status` não conhece "arquivad") e cancelado/rejeitado
+    (`_fed_status` 'dead') → "PROPOSTAS NÃO SELECIONADAS, EM CADASTRAMENTO, CANCELADAS OU
+    IMPEDIDAS", fora do total (as chaves de `export_pdf._NOTA_FORA` têm de ser os
+    `GRUPOS_FORA`: teste).
   - **Áreas:** FNS = SAÚDE; TE pela função orçamentária das finalidades (27 Desporto só de
-    investimento = INFRAESTRUTURA, a quadra do modelo); o resto pelo nome do ministério/
-    secretaria. Duas áreas ou nenhuma = OUTROS. Ordem: soma, maior primeiro; OUTROS por último.
+    investimento = INFRAESTRUTURA, a quadra do modelo); indicação estadual pela UO e só
+    sem ela pelo tipo ("SES" + "Obras" = SAÚDE, não OUTROS); o resto pelo nome do
+    ministério/secretaria. Duas áreas ou nenhuma = OUTROS. Ordem: soma, maior primeiro;
+    OUTROS por último.
   - **Ministério da TE** vem de `detalhe->'programa'` (API oficial): ⚠️ NÃO é sempre Fazenda
     — 2020-22 Economia, 2023-25 Fazenda, 2026 MGI (captura de 14/09/2026). Sem árvore, o de
-    outro plano do mesmo programa; sem nenhum, "—". PAC e carteira pelo órgão SIAFI.
+    outro plano do mesmo programa; sem nenhum, "—". PAC e carteira pelo órgão SIAFI;
+    voluntária ("36211 - FUNASA") pelo órgão SUPERIOR (`cod[:2]+'000'`, FNDE -> Educação),
+    o órgão cru quando o código não está em `ORGAOS_SIAFI`. MAC e PAP são siglas em
+    `texto_rm._SIGLAS` ("Incremento MAC" no PDF e no RM).
   - **Situação por extenso** (`execucao_te.frase_execucao_te`): "Pagamento realizado em
     dd/mm/aaaa." etc. O relatório de gestão da TE entra como a fonte diz ("Relatório de
     gestão final: Disponibilizado em 30/12/2025; nenhuma análise registrada.") — a API

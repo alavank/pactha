@@ -20,19 +20,29 @@ Quem desenha é `routers/export_pdf.py::export_parlamentares_pdf`.
        - carteira CGU x TE: o código de 12 dígitos (idem);
        - emenda ESTADUAL x convênio SIGCON: o nº da indicação que o convênio
          carrega (`raw_data.nr_indicacao`/`indicacoes`) — descontado AQUI, e só
-         quando o convênio está no mesmo bloco (senão a indicação some junto);
+         quando o convênio está no mesmo bloco (senão a indicação some junto)
+         E FICA NO TOTAL COM VALOR (`_convenio_vence`): convênio em
+         Cadastramento com R$ 0,00 (Araújos, 002567/2026, SEAPA) ou rescindido/
+         cancelado não apaga a indicação que carrega;
        - seleção do Novo PAC x voluntária: o "Número da Proposta Novo PAC" que a
-         voluntária carrega (`_pac_da_voluntaria`, a regra do RM) — idem.
-  2. SEM CHAVE, FORA DO TOTAL. O que sobra da carteira CGU depois do desconto
-     pode ser o mesmo dinheiro de uma proposta do FNS ou de uma seleção do PAC —
-     e NENHUM dos dois traz o número da emenda (a regra de
-     `services/emendas_unificadas.py`: casar por nome apagaria emenda legítima).
+         voluntária carrega (`_pac_da_voluntaria`, a regra do RM) — idem;
+       - FNS: UMA linha por (município, nº da proposta), com a PARTE do autor
+         (soma dos `vlIndObjeto` dele) — em `detalhe_core` e
+         `nome_parlamentar.propostas_saude_por_autor`.
+  2. SEM CHAVE CASADA, FORA DO TOTAL. O que sobra da carteira CGU depois do
+     desconto pode ser o mesmo dinheiro de uma proposta do FNS ou de uma seleção
+     do PAC, e não foi casado pelo número da emenda nesta base: o PAC não traz o
+     número; o FNS traz (`coEmendaPolitica` + `nuAnoExercicio`), mas o formato
+     dele contra o `codigo_emenda` de 12 dígitos nunca foi medido, e casar por
+     nome apagaria emenda legítima (a regra de `services/emendas_unificadas.py`).
      Então essas linhas saem numa seção própria, "EMENDAS FEDERAIS SEM
      INSTRUMENTO IDENTIFICADO", FORA do total geral, e o PDF diz isso.
   3. O QUE NÃO É RECURSO, FORA DO TOTAL. Seleção do PAC não selecionada, plano
-     da TE IMPEDIDO e instrumento cancelado/rejeitado/anulado (`_fed_status` ==
-     'dead', a regra do RM) aparecem, mas em "PROPOSTAS NÃO SELECIONADAS,
-     CANCELADAS OU IMPEDIDAS", fora da soma. Nada some do relatório.
+     da TE IMPEDIDO, convênio SIGCON em Cadastramento (`_em_cadastramento`, que
+     o RM nem imprime), proposta do FNS rejeitada/bloqueada/arquivada
+     (`_fns_classifica`, a regra do RM para o FNS) e instrumento cancelado/
+     rejeitado/anulado (`_fed_status` == 'dead', a regra do RM) aparecem, mas em
+     `GRUPO_NAO_RECURSO`, fora da soma. Nada some do relatório.
 
 ⭐ ÁREAS — regra EXPLÍCITA e conservadora (`area_por_funcoes`/`area_por_orgao`):
   - FNS é SAÚDE, sempre (é o Fundo Nacional de SAÚDE).
@@ -64,7 +74,8 @@ import unicodedata
 from typing import Optional
 
 from services.execucao_te import frase_execucao_te
-from services.rm_builder import _fed_status, _fmt_brl, _mesma_proposta
+from services.rm_builder import (
+    _em_cadastramento, _fed_status, _fmt_brl, _fns_classifica, _mesma_proposta)
 from services.texto_rm import frase, nome_proprio
 
 # As faixas do modelo, na ordem de desempate. OUTROS é sempre a última.
@@ -74,7 +85,7 @@ AREAS: tuple[str, ...] = (
 )
 OUTROS = "OUTROS"
 
-GRUPO_NAO_RECURSO = "PROPOSTAS NÃO SELECIONADAS, CANCELADAS OU IMPEDIDAS"
+GRUPO_NAO_RECURSO = "PROPOSTAS NÃO SELECIONADAS, EM CADASTRAMENTO, CANCELADAS OU IMPEDIDAS"
 GRUPO_SEM_INSTRUMENTO = "EMENDAS FEDERAIS SEM INSTRUMENTO IDENTIFICADO"
 GRUPOS_FORA: tuple[str, ...] = (GRUPO_NAO_RECURSO, GRUPO_SEM_INSTRUMENTO)
 
@@ -248,6 +259,30 @@ def ministerio_siafi(codigo) -> Optional[str]:
     return f"Ministério {prep} {nome}" if prep else nome
 
 
+def ministerio_do_orgao(orgao) -> str:
+    """O MINISTÉRIO DE ORIGEM de um órgão gravado como "CÓDIGO - NOME" — o
+    formato das voluntárias ("36000 - MINISTERIO DA SAUDE", "36211 - FUNASA",
+    `ingestion/transferegov_opendata._orgao`). Antes o PDF imprimia o rótulo
+    cru: "36000 - Ministerio da Saude" na coluna do ministério.
+
+    Código de 5 dígitos: o órgão SUPERIOR do SIAFI é o código com os três
+    últimos zerados (36211 FUNASA -> 36000 Saúde; 26298 FNDE, autarquia -> 26000
+    Educação), e o nome sai de `ministerio_siafi`. Código que o mapa
+    (`routers/emendas_federais.ORGAOS_SIAFI`) não conhece, ou órgão sem código:
+    o órgão como veio (`nome_proprio`) — nada de "Órgão SIAFI 99000" inventado
+    por cima de um nome que a fonte deu. Vazio -> "—"."""
+    txt = str(orgao or "").strip()
+    if not txt:
+        return SEM_DADO
+    m = re.match(r"(\d{5})\b", txt)
+    if m:
+        from routers.emendas_federais import ORGAOS_SIAFI
+        superior = m.group(1)[:2] + "000"
+        if superior in ORGAOS_SIAFI:
+            return ministerio_siafi(superior)
+    return nome_proprio(txt)
+
+
 def orgao_do_programa(programa_codigo) -> Optional[str]:
     """Os 5 primeiros dígitos do código de programa de 13 = órgão SIAFI — a regra
     de `ingestion/portal_transparencia.orgao_do_programa`, importada."""
@@ -315,6 +350,30 @@ def _morto(situacao) -> bool:
     return bool(situacao) and _fed_status(str(situacao)) == "dead"
 
 
+def _fns_morta(situacao) -> bool:
+    """Proposta do FNS que não é recurso: a regra do RM PARA O FNS
+    (`rm_builder._fns_classifica` -> "Rejeitada", que o RM trata como morta em
+    `_fns_retem`). ⚠️ NÃO `_morto`: `_fed_status` não conhece "arquivad" nem
+    "bloquead", e uma proposta ARQUIVADA/BLOQUEADA entrava no total geral."""
+    return bool(situacao) and _fns_classifica(str(situacao), "") == "Rejeitada"
+
+
+def _convenio_fora(situacao) -> bool:
+    """Convênio SIGCON fora do total: morto (a regra do RM) ou em CADASTRAMENTO
+    (`rm_builder._em_cadastramento`, a palavra inteira — o RM nem o imprime:
+    cadastro sem análise, sem celebração, sem dinheiro)."""
+    return _morto(situacao) or _em_cadastramento(situacao)
+
+
+def _convenio_vence(c: dict) -> bool:
+    """O convênio SIGCON pode tomar o lugar da indicação estadual que carrega?
+    Só quando ELE conta no total (nem morto nem em cadastramento) e tem valor.
+    Senão a indicação fica: o caso real é Araújos, convênio 002567/2026 da SEAPA,
+    R$ 0,00, "Cadastramento" — ele apagava do total a indicação que era o único
+    registro do dinheiro."""
+    return not _convenio_fora(c.get("situacao")) and _f(c.get("valor_total")) > 0
+
+
 def _linha(fonte: str, x: dict, **kw) -> dict:
     base = {
         "fonte": fonte,
@@ -378,7 +437,10 @@ def _objeto_fns(objeto) -> str:
 def linha_fns(x: dict) -> dict:
     tipo = str(x.get("tipo_proposta") or "").strip()
     recurso = frase(tipo) if tipo else frase(_objeto_fns(x.get("objeto")))
+    # `valor_total` é a PARTE do autor na proposta; o pagamento é da PROPOSTA
+    # inteira (`valor_proposta`) — "pago em parte" divide pelo total dela.
     valor = _f(x.get("valor_total"))
+    total_proposta = _num(x.get("valor_proposta")) or valor
     vp, vpg = _num(x.get("vl_pago")), _num(x.get("vl_pagar"))
     dt = str(x.get("data_pagamento") or "").strip()
     pago = bool(vp and vp > 0 and not (vpg and vpg > 0))
@@ -386,7 +448,9 @@ def linha_fns(x: dict) -> dict:
         # A regra do RM (`rm_builder`, ramo FNS): repasse feito e nada a pagar.
         sit = f"Pagamento realizado em {dt}." if dt else "Pagamento realizado (data não coletada)."
     elif vp and vp > 0:
-        sit = f"Pago em parte: {_fmt_brl(vp)} de {_fmt_brl(valor)}"
+        sit = f"Pago em parte: {_fmt_brl(vp)} de {_fmt_brl(total_proposta)}"
+        if abs(total_proposta - valor) > 0.01:
+            sit += " da proposta"
         sit += f"; último pagamento em {dt}." if dt else "."
     elif x.get("situacao"):
         sit = _ponto(frase(x["situacao"]))
@@ -400,7 +464,7 @@ def linha_fns(x: dict) -> dict:
         valor=valor,
         referencias=[f"Proposta: {x['numero']}"] if x.get("numero") else [],
         situacao=sit, area="SAÚDE", pago=pago,
-        fora=GRUPO_NAO_RECURSO if _morto(x.get("situacao")) else None,
+        fora=GRUPO_NAO_RECURSO if _fns_morta(x.get("situacao")) else None,
     )
 
 
@@ -430,7 +494,8 @@ def linha_voluntaria(x: dict) -> dict:
     return _linha(
         "voluntaria", x, ano=_ano_do_numero(x.get("numero_proposta")),
         recurso=frase(x.get("objeto") or "") or "(objeto não informado)",
-        ministerio=nome_proprio(orgao) if orgao else SEM_DADO,
+        # "36000 - MINISTERIO DA SAUDE" -> "Ministério da Saúde" (órgão superior).
+        ministerio=ministerio_do_orgao(orgao),
         valor=_f(x.get("valor_global")), referencias=refs, situacao=sit,
         area=area_por_orgao(orgao, x.get("objeto")), pago=pago,
         fora=GRUPO_NAO_RECURSO if _morto(x.get("situacao")) else None,
@@ -452,7 +517,8 @@ def linha_sigcon(x: dict, indicacoes_casadas=()) -> dict:
         valor=_f(x.get("valor_total")), referencias=refs, situacao=sit,
         area=area_por_orgao(orgao, x.get("objeto")),
         pago=False,   # o pagamento do SIGCON não é lido aqui: nunca "pago"
-        fora=GRUPO_NAO_RECURSO if _morto(x.get("situacao")) else None,
+        # Morto ou em CADASTRAMENTO: fora do total, como o RM (que nem o imprime).
+        fora=GRUPO_NAO_RECURSO if _convenio_fora(x.get("situacao")) else None,
     )
 
 
@@ -481,11 +547,17 @@ def linha_estadual(x: dict) -> dict:
         else:
             sit += f" Sem pagamento na {fonte}."
     uo = str(x.get("uo_sigla") or "").strip()
+    # ÁREA PELA UO; o TIPO só quando a UO não dá área. Juntar os dois num texto
+    # só fazia "SES" + "Obras" casar SAÚDE e INFRAESTRUTURA -> OUTROS: a obra da
+    # saúde (e da educação, SEE) sumia da faixa dela.
+    area = area_por_orgao(uo, tipo)
+    if area == OUTROS:
+        area = area_por_orgao(tipo, tipo)
     return _linha(
         "emenda", x, ano=_ano(x.get("ano")), recurso=recurso,
         ministerio=uo or SEM_DADO, valor=valor,
         referencias=[f"Indicação: {x['nr_indicacao']}"] if x.get("nr_indicacao") else [],
-        situacao=sit, area=area_por_orgao(f"{uo} {tipo}", tipo), pago=pago,
+        situacao=sit, area=area, pago=pago,
         fora=GRUPO_NAO_RECURSO if _morto(x.get("status_indicacao")) else None,
     )
 
@@ -542,10 +614,13 @@ def linhas_do_detalhe(det: dict) -> list[dict]:
     sigcon = det.get("sigcon") or []
     voluntarias = det.get("voluntarias") or []
 
-    # Regra 1: indicação estadual executada por convênio SIGCON DESTE bloco.
+    # Regra 1: indicação estadual executada por convênio SIGCON DESTE bloco — e
+    # só o convênio que conta no total com valor vence (`_convenio_vence`).
     inds_por_conv: dict[int, list[str]] = {}
     conv_de: dict[tuple, int] = {}
     for i, c in enumerate(sigcon):
+        if not _convenio_vence(c):
+            continue
         for ind in c.get("indicacoes") or []:
             conv_de.setdefault((c.get("municipio_id"), str(ind).strip()), i)
     linhas: list[dict] = []

@@ -162,6 +162,32 @@ def test_fora_do_total_nao_entra_no_total_geral(dubles):
     assert t.index("TOTAL GERAL – BOM DESPACHO") < t.index("FORA DO TOTAL")
     # Com linha fora do total, o título não afirma "pagos".
     assert "RECURSOS PARA BOM DESPACHO" in t
+    # Achado 4 da revisão do 248361f: a nota dizia que o FNS "não traz" o nº da
+    # emenda — traz (`coEmendaPolitica`/`nuAnoExercicio`). O verdadeiro é que
+    # nada foi casado por ele nesta base.
+    assert "não trazem esse número" not in t
+    assert "não foram casadas pelo número da emenda nesta base" in t
+
+
+def test_toda_secao_fora_do_total_tem_a_sua_nota():
+    """As chaves de `_NOTA_FORA` são os `GRUPOS_FORA` reescritos à mão: uma que
+    diverge (o grupo ganhou "EM CADASTRAMENTO" no nome) apaga a nota calada."""
+    from services.relatorio_parlamentares import GRUPOS_FORA
+    assert set(export_pdf._NOTA_FORA) == set(GRUPOS_FORA)
+
+
+def test_convenio_em_cadastramento_sai_fora_do_total_com_a_nota(dubles):
+    conv = {"id": 11, "municipio_id": 7, "municipio_nome": "Bom Despacho",
+            "numero": "002567/2026", "objeto": "AQUISICAO DE TRATOR",
+            "situacao": "Cadastramento", "valor_total": 0.0, "orgao": "SEAPA",
+            "ano": 2026, "indicacoes": [], "fonte": "sigcon"}
+    dubles["detalhes"]["NIKOLAS FERREIRA"]["sigcon"] = [conv]
+    _pdf, texto = _gera()
+    t = " ".join(texto)
+    assert "TOTAL GERAL – BOM DESPACHO 850.000,00" in t        # o mesmo de antes
+    assert ("FORA DO TOTAL – PROPOSTAS NÃO SELECIONADAS, EM CADASTRAMENTO, "
+            "CANCELADAS OU IMPEDIDAS") in t
+    assert "convênios estaduais ainda em cadastramento" in t
 
 
 def test_tabela_longa_repete_o_cabecalho_e_a_cidade_em_toda_folha(dubles):

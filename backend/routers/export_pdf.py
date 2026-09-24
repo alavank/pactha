@@ -833,16 +833,26 @@ _MS_TOT = ParagraphStyle("m_tot", fontName="Helvetica-Bold", fontSize=10, leadin
 _MS_NOTA = ParagraphStyle("m_nota", fontName="Helvetica", fontSize=7.5, leading=9.5,
                           textColor=colors.HexColor("#334155"), spaceBefore=4)
 
+# ⚠️ As chaves são os `GRUPOS_FORA` de `services/relatorio_parlamentares.py`,
+# ESCRITOS de novo aqui (o import de lá é local, dentro das funções): chave que
+# diverge apaga a nota em silêncio — `test_parlamentares_pdf_modelo` confere.
 _NOTA_FORA = {
+    # ⚠️ Sem dizer que o FNS "não traz o número da emenda": traz
+    # (`coEmendaPolitica`/`nuAnoExercicio` em `parlamentares[]`). O que é verdade
+    # é que nada aqui foi casado por ele — o formato nunca foi medido.
     "EMENDAS FEDERAIS SEM INSTRUMENTO IDENTIFICADO": (
         "<b>Fora do total — emendas federais sem instrumento identificado:</b> "
-        "indicações da carteira da CGU cujo instrumento não se casa pelo número da "
-        "emenda (as propostas de saúde do FNS e as seleções do Novo PAC não trazem "
-        "esse número). Podem ser o mesmo dinheiro de uma linha acima; por isso não "
-        "entram no total geral."),
-    "PROPOSTAS NÃO SELECIONADAS, CANCELADAS OU IMPEDIDAS": (
-        "<b>Fora do total — propostas não selecionadas, canceladas ou impedidas:</b> "
-        "aparecem para conferência, mas não são recurso do município."),
+        "indicações da carteira da CGU que não foram casadas pelo número da emenda "
+        "nesta base com um instrumento (transferência especial ou convênio). Podem "
+        "ser o mesmo dinheiro de uma linha acima — uma proposta de saúde do FNS ou "
+        "uma seleção do Novo PAC; por isso não entram no total geral."),
+    "PROPOSTAS NÃO SELECIONADAS, EM CADASTRAMENTO, CANCELADAS OU IMPEDIDAS": (
+        "<b>Fora do total — propostas não selecionadas, em cadastramento, canceladas "
+        "ou impedidas:</b> seleções do Novo PAC não selecionadas, convênios estaduais "
+        "ainda em cadastramento, planos impedidos e instrumentos ou propostas "
+        "encerrados sem recurso (rejeitados, cancelados, rescindidos, arquivados, "
+        "bloqueados e afins). Aparecem para conferência, mas não são recurso do "
+        "município."),
 }
 _NOTA_COMO_LER = (
     "<b>Como ler.</b> Cada parlamentar começa numa folha. A <b>situação atual</b> diz "

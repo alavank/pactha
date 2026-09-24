@@ -49,6 +49,16 @@ def test_programa_em_caixa_alta_preserva_sigla_e_codigo():
         "SNEAELIS (Emenda Parlamentar Individual - RP6 - Convenio)"
 
 
+def test_bloco_da_saude_no_tipo_da_proposta_do_fns_fica_sigla():
+    """O `coTipoProposta` do FNS vem em caixa alta ("INCREMENTO MAC"); o modelo
+    da planilha do cliente escreve "Incremento MAC" (24/09/2026)."""
+    assert frase("INCREMENTO MAC") == "Incremento MAC"
+    assert frase("INCREMENTO PAP") == "Incremento PAP"
+    assert frase("CUSTEIO PAP") == "Custeio PAP"
+    # Garantia 3 continua: minúscula não é promovida.
+    assert frase("incremento mac") == "Incremento mac"
+
+
 # --------------------------------------------------------------------------
 # As tres garantias
 # --------------------------------------------------------------------------

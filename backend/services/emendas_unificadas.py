@@ -19,10 +19,12 @@ valor indicado da mesma emenda é contar o mesmo dinheiro duas vezes. O que NÃO
 casa vira linha própria — perder a emenda Pix porque a carteira não a viu seria
 o erro oposto, e o mais caro dos dois (é o que o gestor procura).
 
-⚠️ PAC e FNS FICAM FORA DESTA LISTA, de propósito. Nenhum dos dois traz código de
+⚠️ PAC e FNS FICAM FORA DESTA LISTA, de propósito. O PAC não traz código de
 emenda — só o NOME do parlamentar —, e casar por nome apagaria emenda legítima
-(a regra já escrita em `routers/parlamentares.py`, bloco 7). Eles continuam na
-aba Parlamentares, que é a soma por autor.
+(a regra já escrita em `routers/parlamentares.py`, bloco 7). O FNS traz
+(`coEmendaPolitica` + `nuAnoExercicio` em `linhaPropostas[].parlamentares[]`),
+mas o formato dele contra o código de 12 dígitos nunca foi medido — até ser,
+não se casa. Os dois continuam na aba Parlamentares, que é a soma por autor.
 """
 from __future__ import annotations
 

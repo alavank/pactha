@@ -488,8 +488,11 @@ async def aggregate_parlamentares(
     #
     # O RM ja le esse aninhamento (services/rm_builder.py, laco do FNS:
     # `ind.get("parlamentares")` -> noApelidoPolitico/noParlamentar/nome). Aqui a
-    # MESMA precedencia e o MESMO valor (o da PROPOSTA individual, `vlProposta`),
-    # para a tela, o Painel (que reusa esta funcao) e o RM nunca divergirem.
+    # MESMA precedencia, para a tela, o Painel (que reusa esta funcao) e o RM
+    # nunca divergirem. O VALOR e a PARTE DO AUTOR na proposta (soma dos
+    # `vlIndObjeto` dele, `vlProposta` de reserva) e o mesmo autor duas vezes na
+    # proposta conta UMA — a mesma regra do detalhe (24/09/2026), senao o
+    # cabecalho diria R$ 900 mil de uma proposta de R$ 450 mil.
     #
     # ⚠️ O FALLBACK PARA O FUNDO MUNICIPAL CONTINUA — mas so quando a proposta
     # REALMENTE nao tem autor: assim nenhum valor se perde, e o que tem autor
@@ -1097,7 +1100,18 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     # o comentario do RP9 acima existe para impedir. Sem autor real, a proposta
     # cai no Fundo Municipal (mesmo fallback do agregado, p/ o valor nao se
     # perder), e o drill-down do proprio Fundo segue funcionando.
+    #
+    # ⚠️⚠️ UMA LINHA POR (municipio, nº da proposta) — 24/09/2026, revisao do PDF.
+    # A proposta 36000679587202500 (R$ 450.000, paga) tinha o mesmo autor DUAS
+    # vezes em `parlamentares[]` e saia em duas linhas de R$ 450.000: TOTAL R$
+    # 900.000 e "RECURSOS PAGOS". O valor e a PARTE do autor
+    # (`propostas_saude_por_autor`: soma dos `vlIndObjeto` dele); a proposta que
+    # reaparece com o MESMO autor (outra linha do FNS) nao soma de novo, e a que
+    # reaparece com OUTRO autor que tambem casou a busca soma a parte dele — sem
+    # passar do `vlProposta`.
     fns_list: list = []
+    fns_por_chave: dict = {}      # (municipio_id, numero) -> item de fns_list
+    autores_da_chave: dict = {}   # (municipio_id, numero) -> {autor normalizado}
     try:
         alvo = _norm(nome_param)
         # No fim (r[9], r[10]) o TIPO e o RECURSO da proposta ("INCREMENTO MAC"),
@@ -1131,20 +1145,39 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
                     if alvo and alvo not in label_key and label_key not in alvo:
                         continue
                     proponente = label
-                fns_list.append({
+                chave = (r[1], p["numero"]) if p["numero"] else None
+                ja = fns_por_chave.get(chave) if chave else None
+                if ja is not None:
+                    vistos = autores_da_chave[chave]
+                    if _norm(proponente) in vistos:
+                        continue          # a mesma proposta e o mesmo autor: já contada
+                    vistos.add(_norm(proponente))
+                    soma = ja["valor_total"] + _money(p["valor"])
+                    teto = _money(p.get("valor_proposta"))
+                    ja["valor_total"] = min(soma, teto) if teto > 0 else soma
+                    ja["proponente"] = f"{ja['proponente']}, {proponente}"
+                    continue
+                item = {
                     "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
                     "numero": p["numero"], "objeto": r[3], "situacao": p["situacao"],
+                    # A PARTE do autor na proposta (ver o topo deste bloco).
                     "valor_total": _money(p["valor"]), "orgao": r[4], "ano": r[5],
                     "dt_vigencia_inicial": str(r[6]) if r[6] else None,
                     "dt_vigencia_final": str(r[7]) if r[7] else None,
                     "proponente": proponente,
-                    # O pagamento DA PROPOSTA (não da linha), None se não veio.
+                    # O pagamento DA PROPOSTA (não da linha), None se não veio, e
+                    # o valor inteiro dela — "pago em parte: X de <proposta>".
                     "vl_pago": p.get("vl_pago"), "vl_pagar": p.get("vl_pagar"),
                     "data_pagamento": p.get("data_pagamento"),
+                    "valor_proposta": p.get("valor_proposta"),
                     "tipo_proposta": (r[9] or "").strip() or None,
                     "tipo_recurso": (r[10] or "").strip() or None,
                     "fonte": "fns",
-                })
+                }
+                fns_list.append(item)
+                if chave:
+                    fns_por_chave[chave] = item
+                    autores_da_chave[chave] = {_norm(proponente)}
         fns_list.sort(key=lambda x: x["valor_total"], reverse=True)
     except Exception:
         pass
@@ -1167,8 +1200,11 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     # Transferencia Especial (`te.emenda` no formato '<codigo>-<Nome>'). Sem o
     # desconto, a mesma emenda apareceria DUAS VEZES ao expandir e o
     # `valor_total` daqui passaria o do cabecalho — que e onde o gestor confere.
-    # Onde nao ha chave (PAC, FNS) nao se tenta casar por nome, pela mesma razao
-    # de la: casamento por nome de autor apagaria emenda legitima.
+    # Onde nao ha chave casada nao se tenta casar por nome, pela mesma razao de
+    # la: casamento por nome de autor apagaria emenda legitima. O PAC nao traz o
+    # nº da emenda; o FNS traz (`coEmendaPolitica` + `nuAnoExercicio` em
+    # `parlamentares[]`), mas o formato dele contra o `codigo_emenda` de 12
+    # digitos nunca foi medido — por isso ainda nao se casa (CONTINUAR §1.40).
     ef_list: list = []
     try:
         where_ef = " AND ef.municipio_id = ANY(:muns)"

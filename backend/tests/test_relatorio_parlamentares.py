@@ -36,7 +36,9 @@ FNS_MODELO = {
     "numero": "36000679587202500", "objeto": "INCREMENTO MAC - MAC — Proc 25000.1",
     "situacao": "PROPOSTA PAGA", "valor_total": 450000.0, "orgao": "MS - FNS",
     "ano": 2025, "vl_pago": 450000.0, "vl_pagar": 0.0, "data_pagamento": "18/11/2025",
-    "tipo_proposta": "Incremento MAC", "tipo_recurso": "MAC", "fonte": "fns",
+    # O `coTipoProposta` como a fonte grava (caixa alta): o "Incremento MAC" do
+    # modelo tem de sair da padronização, não da fixture.
+    "tipo_proposta": "INCREMENTO MAC", "tipo_recurso": "MAC", "fonte": "fns",
 }
 TE_MODELO = {
     "id": 70446, "municipio_id": 7, "municipio_nome": "Bom Despacho",
@@ -142,6 +144,50 @@ def test_indicacao_sem_convenio_no_bloco_continua_sua():
     assert b["total"] == 1000000.0
 
 
+# Achado 3 da revisão do 248361f — o caso real: Araújos, convênio 002567/2026 da
+# SEAPA, R$ 0,00, "Cadastramento" (o mesmo que o RM já tirava: `_em_cadastramento`).
+CONV_CADASTRO = {"id": 11, "municipio_id": 7, "municipio_nome": "Araújos",
+                 "numero": "002567/2026", "objeto": "AQUISICAO DE TRATOR",
+                 "situacao": "Cadastramento", "valor_total": 0.0, "orgao": "SEAPA",
+                 "ano": 2026, "indicacoes": ["2026/77"], "fonte": "sigcon"}
+IND_SEAPA = {"id": 12, "municipio_id": 7, "municipio_nome": "Araújos", "nr_indicacao": "2026/77",
+             "ano": 2026, "beneficiario": "MUNICIPIO DE ARAUJOS",
+             "tipo_atendimento": "Equipamentos", "valor_indicacao": 300000.0,
+             "status_indicacao": "Aguardando celebração", "uo_sigla": "SEAPA",
+             "valor_pago": None, "fonte": "emenda"}
+
+
+@pytest.mark.parametrize("conv,fora", [
+    (CONV_CADASTRO, True),                                          # o caso real: R$ 0
+    (dict(CONV_CADASTRO, valor_total=300000.0), True),              # cadastramento com valor
+    (dict(CONV_CADASTRO, situacao="RESCINDIDO", valor_total=300000.0), True),
+    (dict(CONV_CADASTRO, situacao="CANCELADO", valor_total=300000.0), True),
+    (dict(CONV_CADASTRO, situacao="EM EXECUCAO", valor_total=0.0), False),  # vivo, sem valor
+])
+def test_convenio_que_nao_conta_com_valor_nao_apaga_a_indicacao(conv, fora):
+    """Só o convênio que fica no total E tem valor toma o lugar da indicação. Os
+    outros apareciam, e a indicação — o único registro do dinheiro — sumia."""
+    b = montar_bloco("Fulano", _det(sigcon=[conv], emendas=[IND_SEAPA]), "ARAÚJOS")
+    no_total = [l for a in b["areas"] for l in a["linhas"]]
+    (ind,) = [l for l in no_total if l["fonte"] == "emenda"]
+    assert ind["valor"] == 300000.0 and b["total"] == 300000.0
+    de_fora = [l for g in b["fora"] for l in g["linhas"]]
+    (c,) = [l for l in no_total + de_fora if l["fonte"] == "sigcon"]
+    assert (c in de_fora) is fora
+    # o convênio que não venceu não carrega a indicação nas referências
+    assert c["referencias"] == ["Convênio: 002567/2026"]
+
+
+def test_convenio_em_cadastramento_fica_fora_do_total_e_o_cadastrado_nao():
+    (l,) = linhas_do_detalhe(_det(sigcon=[dict(CONV_CADASTRO, valor_total=10.0)]))
+    assert l["fora"] == GRUPO_NAO_RECURSO
+    # "CONVÊNIO CADASTRADO" é o celebrado do backfill do CKAN — a palavra
+    # inteira do RM (`_em_cadastramento`), não a substring "cadastr".
+    (l,) = linhas_do_detalhe(_det(sigcon=[dict(CONV_CADASTRO, situacao="CONVENIO CADASTRADO",
+                                               valor_total=10.0)]))
+    assert l["fora"] is None
+
+
 def test_selecao_do_pac_que_virou_a_voluntaria_nao_se_repete():
     vol = {"municipio_id": 7, "municipio_nome": "Bom Despacho", "numero_proposta": "034595/2025",
            "objeto": "CONSTRUCAO DE UBS", "situacao": "Em execução", "valor_global": 900000.0,
@@ -158,8 +204,8 @@ def test_selecao_do_pac_que_virou_a_voluntaria_nao_se_repete():
 
 def test_carteira_cgu_sem_instrumento_fica_fora_do_total():
     """A emenda da carteira que sobrou do desconto de `detalhe_core` pode ser o
-    MESMO dinheiro da proposta do FNS — que não traz o nº da emenda. Fica numa
-    seção própria, e o total geral não muda com ela."""
+    MESMO dinheiro da proposta do FNS — que não foi casada pelo nº da emenda
+    nesta base. Fica numa seção própria, e o total geral não muda com ela."""
     carteira = {"municipio_id": 7, "municipio_nome": "Bom Despacho",
                 "codigo_emenda": "202537080010", "ano": 2025, "orgao_siafi": "36000",
                 "beneficiario_nome": "FUNDO MUNICIPAL DE SAUDE", "valor_total": 450000.0}
@@ -185,6 +231,23 @@ def test_o_que_nao_e_recurso_aparece_mas_fora_do_total(fonte, item):
     b = montar_bloco("Fulano", _det(**{fonte: [dict(item, municipio_id=7)]}), "X")
     assert b["total"] is None and b["areas"] == []
     assert [g["grupo"] for g in b["fora"]] == [GRUPO_NAO_RECURSO]
+
+
+@pytest.mark.parametrize("situacao", [
+    "PROPOSTA ARQUIVADA", "Proposta Bloqueada", "PROPOSTA REJEITADA", "Proposta Cancelada",
+])
+def test_proposta_do_fns_arquivada_ou_bloqueada_fica_fora_do_total(situacao):
+    """A regra do RM para o FNS (`_fns_classifica`), e não `_fed_status`, que não
+    conhece "arquivad" nem "bloquead" — a ARQUIVADA entrava no total geral."""
+    fns = dict(FNS_MODELO, situacao=situacao, vl_pago=0.0, vl_pagar=0.0)
+    b = montar_bloco("Fulano", _det(fns=[fns]), "X")
+    assert b["total"] is None and b["areas"] == []
+    assert [g["grupo"] for g in b["fora"]] == [GRUPO_NAO_RECURSO]
+
+
+def test_proposta_do_fns_em_analise_continua_no_total():
+    fns = dict(FNS_MODELO, situacao="EM ANALISE PELA AREA FINALISTICA", vl_pago=0.0)
+    assert linha_fns(fns)["fora"] is None
 
 
 def test_plano_impedido_diz_por_que_esta_fora():
@@ -267,7 +330,9 @@ def test_area_pelo_orgao(orgao, objeto, area):
 
 
 def test_fns_e_sempre_saude():
-    assert linha_fns(dict(FNS_MODELO, tipo_proposta="CUSTEIO PAP"))["area"] == "SAÚDE"
+    l = linha_fns(dict(FNS_MODELO, tipo_proposta="CUSTEIO PAP"))
+    assert l["area"] == "SAÚDE"
+    assert l["recurso"] == "Custeio PAP"       # sigla do bloco, não "Custeio pap"
 
 
 # ---------------------------------------------------------------------------
@@ -287,6 +352,16 @@ def test_situacao_do_fns(campos, frase):
     l = linha_fns(dict(FNS_MODELO, **campos))
     assert l["situacao"] == frase
     assert l["pago"] is frase.startswith("Pagamento realizado")
+
+
+def test_fns_parte_do_autor_paga_em_parte_divide_pela_proposta():
+    """A linha tem a PARTE do autor (R$ 250 mil de uma proposta de R$ 450 mil);
+    o pagamento é da PROPOSTA — "R$ 200 mil de R$ 250 mil" seria falso."""
+    l = linha_fns(dict(FNS_MODELO, valor_total=250000.0, valor_proposta=450000.0,
+                       vl_pago=200000.0, vl_pagar=250000.0))
+    assert l["valor"] == 250000.0 and l["pago"] is False
+    assert l["situacao"] == ("Pago em parte: R$ 200.000,00 de R$ 450.000,00 da proposta; "
+                             "último pagamento em 18/11/2025.")
 
 
 VOL = {"municipio_id": 7, "municipio_nome": "Bom Despacho", "numero_proposta": "034595/2025",
@@ -315,6 +390,23 @@ def test_situacao_da_voluntaria(campos, fim, pago):
     assert l["ano"] == 2025 and l["area"] == "AGRICULTURA"
 
 
+@pytest.mark.parametrize("orgao,ministerio", [
+    # O formato da voluntária: "CÓDIGO - NOME" (`transferegov_opendata._orgao`).
+    ("36000 - MINISTERIO DA SAUDE", "Ministério da Saúde"),
+    ("36211 - FUNASA", "Ministério da Saúde"),                  # órgão superior 36000
+    ("26298 - FUNDO NACIONAL DE DESENVOLVIMENTO DA EDUCACAO",   # FNDE, autarquia
+     "Ministério da Educação"),
+    ("56000 - MINISTERIO DAS CIDADES", "Ministério das Cidades"),
+    # Código que o mapa não conhece: o órgão como veio, nada inventado.
+    ("99000 - ORGAO QUE O MAPA NAO CONHECE", "99000 - Orgao Que o Mapa Nao Conhece"),
+    # Sem código: como antes.
+    ("MINISTERIO DA AGRICULTURA E PECUARIA", "Ministerio da Agricultura e Pecuaria"),
+    ("", "—"),
+])
+def test_ministerio_de_origem_da_voluntaria_sem_o_codigo(orgao, ministerio):
+    assert linha_voluntaria(dict(VOL, orgao=orgao))["ministerio"] == ministerio
+
+
 @pytest.mark.parametrize("pago,empenhado,fim,e_pago", [
     (500000.0, 500000.0, "Pago: R$ 500.000,00 (planilha da SEGOV de 12/05/2026).", True),
     (100000.0, 500000.0,
@@ -329,6 +421,18 @@ def test_situacao_da_indicacao_estadual(pago, empenhado, fim, e_pago):
     assert l["situacao"] == ("Convênio celebrado. " + fim).strip()
     assert l["pago"] is e_pago
     assert l["area"] == "INFRAESTRUTURA"     # SEINFRA
+
+
+@pytest.mark.parametrize("uo,tipo,area", [
+    ("SES", "Obras", "SAÚDE"),            # a obra da saúde é SAÚDE, não OUTROS
+    ("SEE", "Obras", "EDUCAÇÃO"),
+    ("SEINFRA", "Obras", "INFRAESTRUTURA"),
+    ("SEGOV", "Obras", "INFRAESTRUTURA"),  # a UO não dá área: vale o tipo
+    ("", "Obras", "INFRAESTRUTURA"),
+    ("SEGOV", "Custeio", OUTROS),
+])
+def test_area_da_indicacao_estadual_pela_uo_antes_do_tipo(uo, tipo, area):
+    assert linha_estadual(dict(IND, uo_sigla=uo, tipo_atendimento=tipo))["area"] == area
 
 
 def test_pac_ministerio_pelo_codigo_do_programa():

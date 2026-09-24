@@ -69,6 +69,10 @@ _SIGLAS = frozenset({
     "FNS", "FNDE", "MEC", "SUS", "PAC", "PNAE", "PNATE", "FUNDEB", "CAUC",
     "CAGEC", "SISMOB", "INVESTSUS", "TCE", "TCU", "CGU", "AGU", "IBGE",
     "INSS", "DNIT", "FUNASA", "INCRA", "IBAMA", "ANVISA", "ANEEL", "CODEVASF",
+    # Blocos de financiamento da Saude, no TIPO da proposta do FNS ("INCREMENTO
+    # MAC", "INCREMENTO PAP", "CUSTEIO PAP" — `coTipoProposta`). Sem elas o RECURSO
+    # saia "Incremento mac" no PDF de Parlamentares e no RM (24/09/2026).
+    "MAC", "PAP",
     # AMBIGUA, incluida de proposito: "PAR" (SIMEC/PAR, tabela
     # simec_par_liberacoes) tambem e a palavra "par". Em objeto de convenio
     # "SIMEC/PAR" e muito mais frequente que "par de" — mas a colisao existe.

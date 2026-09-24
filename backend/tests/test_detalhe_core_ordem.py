@@ -18,6 +18,8 @@ pagos em 22/06/2026 e o resto em minuta — "Pago em parte".
 import asyncio
 import re
 
+import pytest
+
 from ingestion.transferegov_te import pagamentos_da_arvore
 import routers.parlamentares as P
 from tests.test_te_arvore import PLANO_91573, _arvore
@@ -130,6 +132,11 @@ def _valores():
             "v.ops_obs_aberto": {"valor_desembolsado": 100000.0,
                                  "valor_a_desembolsar": 250000.0,
                                  "data_ultimo_desembolso": "10/03/2026", "obs": []},
+            # A RASPAGEM com números DIFERENTES do dump (achado 8 da revisão do
+            # 248361f): sem ela, trocar `ops_obs_aberto` e `ops_obs` de lugar no
+            # SELECT passava — `ops_obs_preferido(None, dump)` devolve o dump.
+            "v.ops_obs": {"valor_desembolsado": 350000.0, "valor_a_desembolsar": 0.0,
+                          "data_ultimo_desembolso": "01/02/2026", "obs": []},
             "v.detalhe": {"Número da Proposta Novo PAC - Seleção": "56000004633/2025"},
         },
         "emendas": {
@@ -188,6 +195,43 @@ def test_as_colunas_novas_da_te_caem_no_lugar():
     assert pa["relatorio_gestao"] == "Nenhum relatório de gestão registrado."
 
 
+def test_o_relatorio_de_gestao_cai_no_lugar():
+    """Achado 9 da revisão do 248361f: com a lista nova VAZIA e a contagem antiga
+    ZERO, trocar r[17] e r[18] dava a mesma frase ("Nenhum relatório...") e
+    passava. Com o relatório real do plano 67457 (captura de 14/09/2026: Final,
+    Disponibilizado, 30/12/2025, sem análise) e a lista antiga NÃO vazia, só a
+    ordem certa dá a frase."""
+    vals = _valores()
+    vals["te"]["~relatorios_gestao_novos"] = [
+        {"tipo": "Final", "situacao": "Disponibilizado", "data": "2025-12-30", "analises": 0}]
+    vals["te"]["~jsonb_array_length(te.detalhe->'relatorios_gestao')"] = 2
+    (pa,) = _detalhe(vals)["plano_acao"]
+    assert pa["relatorio_gestao"] == ("Relatório de gestão final: Disponibilizado em "
+                                      "30/12/2025; nenhuma análise registrada.")
+    assert pa["relatorios_gestao"][0]["situacao"] == "Disponibilizado"
+
+
+def test_a_contagem_da_lista_antiga_cai_no_lugar():
+    """A lista nova vazia e a ANTIGA com 2 itens: há relatório (em formato que
+    não se lê), então nada de "Nenhum relatório de gestão registrado". Ler a
+    contagem da coluna errada (a lista nova, vazia = 0) afirmaria a ausência."""
+    vals = _valores()
+    vals["te"]["~jsonb_array_length(te.detalhe->'relatorios_gestao')"] = 2
+    (pa,) = _detalhe(vals)["plano_acao"]
+    assert pa["execucao_estado"] == "pago_parte"      # já recebeu dinheiro
+    assert pa["relatorio_gestao"] == ""
+
+
+def test_o_desembolso_do_dump_vence_a_raspagem():
+    """`ops_obs_aberto` (dump) e `ops_obs` (raspagem) com números DIFERENTES:
+    valem os do dump (`ops_obs_preferido`, a regra do RM). A troca das duas
+    colunas no SELECT reprova aqui."""
+    (v,) = _detalhe()["voluntarias"]
+    assert (v["valor_desembolsado"], v["valor_a_desembolsar"], v["dt_ultimo_desembolso"]) == (
+        100000.0, 250000.0, "10/03/2026")
+    assert v["desembolso_consultado"] is True
+
+
 def test_as_colunas_novas_das_outras_fontes_caem_no_lugar():
     det = _detalhe()
     (v,) = det["voluntarias"]
@@ -222,6 +266,7 @@ def test_voluntaria_com_bloco_vazio_nao_conta_como_consultada():
     for bloco in ({}, {"obs": []}):
         vals = _valores()
         vals["vol"]["v.ops_obs_aberto"] = bloco
+        vals["vol"]["v.ops_obs"] = None       # e nenhuma raspagem por trás
         (v,) = _detalhe(vals)["voluntarias"]
         assert v["desembolso_consultado"] is False and v["valor_desembolsado"] is None
 
@@ -233,3 +278,83 @@ def test_indicacao_nula_nao_vira_zero():
     vals["emendas"]["e.valor_empenhado"] = None
     (e,) = _detalhe(vals)["emendas"]
     assert e["valor_pago"] is None and e["valor_empenhado"] is None
+
+
+# ---------------------------------------------------------------------------
+# FNS: UMA linha por (município, proposta), com a PARTE do autor
+# ---------------------------------------------------------------------------
+# Achado 1 da revisão do 248361f: a proposta 36000679587202500 (R$ 450.000,
+# paga) com o mesmo autor duas vezes virava duas linhas de R$ 450.000 — TOTAL
+# R$ 900.000 e "RECURSOS PAGOS" no PDF.
+def _parl(nome, emenda, parte=None):
+    p = {"noApelidoPolitico": nome, "coEmendaPolitica": emenda, "nuAnoExercicio": 2025}
+    if parte is not None:
+        p["vlIndObjeto"] = parte
+    return p
+
+
+def _fns_450(parlamentares):
+    return [{"nuProposta": "36000679587202500", "vlProposta": 450000.0,
+             "vlPago": 450000.0, "vlPagar": 0.0, "data_pagamento": "18/11/2025",
+             "parlamentares": parlamentares}]
+
+
+def _com_fns(parlamentares):
+    vals = _valores()
+    vals["fns"]["c.raw_data->'linhaPropostas'"] = _fns_450(parlamentares)
+    return vals
+
+
+def test_fns_mesmo_autor_duas_vezes_e_uma_linha_de_450_mil():
+    from services.relatorio_parlamentares import montar_bloco
+    det = _detalhe(_com_fns([_parl("LUIS TIBÉ", "37080010", 250000.0),
+                             _parl("LUIS TIBÉ", "37080011", 200000.0)]))
+    (f,) = det["fns"]
+    assert f["numero"] == "36000679587202500"
+    assert f["valor_total"] == 450000.0 and f["valor_proposta"] == 450000.0
+    b = montar_bloco("Luis Tibé", {"fns": det["fns"]}, "ARAÚJOS")
+    assert b["total"] == 450000.0
+    assert [len(a["linhas"]) for a in b["areas"]] == [1]
+    # Pago de verdade (R$ 450 mil de R$ 450 mil): aqui "PAGOS" é fato.
+    assert b["titulo"].startswith("RECURSOS PAGOS ARAÚJOS")
+
+
+def test_fns_dois_autores_cada_bloco_com_a_sua_parte():
+    vals = _com_fns([_parl("LUIS TIBÉ", "37080010", 250000.0),
+                     _parl("NIKOLAS FERREIRA", "40200001", 200000.0)])
+    (f,) = _detalhe(vals)["fns"]
+    assert f["valor_total"] == 250000.0 and f["proponente"] == "LUIS TIBÉ"
+    det = asyncio.run(P.detalhe_core(_DbNaOrdemDoSelect(vals), "NIKOLAS FERREIRA", [2], None))
+    (f,) = det["fns"]
+    assert f["valor_total"] == 200000.0 and f["proponente"] == "NIKOLAS FERREIRA"
+
+
+class _DbFnsEmDuasLinhas(_DbNaOrdemDoSelect):
+    """A MESMA proposta em duas linhas do FNS (o coletor grava por tipo/recurso)."""
+
+    async def execute(self, sql, params=None):
+        res = await super().execute(sql, params)
+        exprs, tabela = _select(sql)
+        if self._consulta(exprs, tabela) == "fns":
+            return _Res(res.fetchall() * 2)
+        return res
+
+
+def test_fns_a_mesma_proposta_em_duas_linhas_nao_soma_duas_vezes():
+    db = _DbFnsEmDuasLinhas(_valores())
+    det = asyncio.run(P.detalhe_core(db, "LUIS TIBE", [2], None))
+    (f,) = det["fns"]
+    assert f["valor_total"] == 450000.0
+
+
+@pytest.mark.parametrize("parte_a,parte_b,esperado", [
+    (250000.0, 200000.0, 450000.0),     # as duas partes que casaram a busca
+    (None, None, 450000.0),             # sem vlIndObjeto: 450+450, teto na proposta
+])
+def test_fns_dois_autores_que_casam_a_busca_somam_ate_a_proposta(parte_a, parte_b, esperado):
+    vals = _com_fns([_parl("LUIS TIBÉ", "37080010", parte_a),
+                     _parl("LUIS SOUZA", "40200001", parte_b)])
+    det = asyncio.run(P.detalhe_core(_DbNaOrdemDoSelect(vals), "LUIS", [2], None))
+    (f,) = det["fns"]
+    assert f["valor_total"] == esperado
+    assert f["proponente"] == "LUIS TIBÉ, LUIS SOUZA"
