@@ -179,7 +179,10 @@ async function enviarParaTodos(payload, lista) {
         headers: { "Content-Type": "application/json", ...auth },
         body: corpo,
       });
-      if (r.status === 401) return { nome: amb.nome, ok: false, detalhe: "token inválido" };
+      if (r.status === 401) {
+        const motivo = await _motivoDoServidor(r);
+        return { nome: amb.nome, ok: false, detalhe: "token inválido" + (motivo ? ` (${motivo})` : "") };
+      }
       if (!r.ok) return { nome: amb.nome, ok: false, detalhe: `HTTP ${r.status}` };
       const d = await r.json().catch(() => ({}));
       // "candidata": o servidor está com a sessão VIVA e não a trocou às cegas;
@@ -229,6 +232,56 @@ function pareceLogin(url) {
   return u.includes("sso.acesso.gov.br") || u.includes("/idp/") || u.includes("acesso.gov.br/login");
 }
 
+/* ⛔ O "SAIR DO ACESSO LIVRE" DA PÁGINA — a extensão NUNCA navega para cá.
+   Medido em 24/09/2026: no modo visitante a porta 1 NÃO redireciona para o login
+   (responde 200 com "Transferegov - Consultar Proposta - Acesso Livre"). O botão
+   "Sair do Acesso Livre" é este endereço, e ele NÃO é só "sair do visitante": a
+   página roda `fazLogout` em mandatárias, acompanhamento, habilitação e
+   `sso.acesso.gov.br/logout` antes de cair em idp.transferegov…/idp/ — é o LOGOUT de
+   tudo, inclusive da sessão gov.br que os 7 servidores usam quando é a mesma deste
+   Chrome. A extensão sai do visitante apagando só o `JSESSIONID` do discricionarias
+   (`_apagaSessaoDeVisitante`, background.js). A constante fica para os testes
+   provarem que nada navega até aqui. */
+const LLO_URL = "https://discricionarias.transferegov.sistema.gov.br/voluntarias?LLO=true";
+
+/** O TÍTULO da aba diz "Acesso Livre"? (o roteiro lê `tab.title`, permissão "tabs").
+ *  É só o GATILHO para perguntar à sonda — nunca decide sozinho (ver abaixo).
+ *  `\s` cobre o espaço não separável (U+00A0). */
+function tituloEhAcessoLivre(titulo) {
+  return /acesso\s+livre/i.test(String(titulo || ""));
+}
+
+/** A página de "Acesso livre" do portal gov.br — o link-ARMADILHA da tela de login
+ *  do idp (medido em 24/09/2026: `<a href='https://www.gov.br/transferegov/pt-br/
+ *  sistemas/acesso-livre'>`, mesma aba). Ela ainda NÃO faz a pessoa visitante (só
+ *  lista os links de visitante), mas é o caminho para lá. */
+function ehPaginaDoAcessoLivre(url) {
+  // host *.gov.br e caminho /transferegov/…acesso-livre (sem depender de `URL`)
+  return /^https?:\/\/([a-z0-9-]+\.)*gov\.br\/transferegov\/[^?#]*acesso-livre/i.test(String(url || ""));
+}
+
+/** O HTML é a página de VISITANTE? UM marcador só, PRECISO, medido em 24/09/2026:
+ *  o `<span class="exit">` (dentro de `<div id="info">`) cujo texto começa por
+ *  "Sair do Acesso Livre" — só quem é visitante pode "sair do Acesso Livre".
+ *
+ *  ⚠️ O TÍTULO NÃO DECIDE. O título de visitante tem "- Acesso Livre", mas a página
+ *  LOGADA nunca foi medida, e o keepalive antigo do servidor, calibrado contra
+ *  sessão real em 07/2026, anotou: "'Acesso Livre' aparece no header MESMO logado"
+ *  (`backend/ingestion/govbr_keepalive.py`). Página logada tomada por visitante =
+ *  a captura boa barrada para sempre e o roteiro mandando uma aba LOGADA para o LLO.
+ *  ⚠️ A FRASE SOLTA TAMBÉM NÃO CONTA (a 2.4.4 barrava com ela em qualquer lugar do
+ *  HTML cru): comentário, `<script>`, `<style>` e `<template>` saem antes de
+ *  procurar, e o `&nbsp;` vira espaço. */
+function corpoEhAcessoLivre(html) {
+  const t = String(html || "")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(script|style|template)\b[\s\S]*?<\/\1\s*>/gi, " ")
+    .replace(/&nbsp;|&#160;|&#x0*a0;/gi, " ");
+  if (/<span\b[^>]*\bclass\s*=\s*["'](?:[^"']*\s)?exit(?:\s[^"']*)?["'][^>]*>\s*Sair\s+do\s+Acesso\s+Livre/i.test(t)) return true;
+  // O mesmo botão pelo LINK medido: href do LLO (sair do visitante) E o texto, juntos.
+  return /<a\b[^>]*\bhref\s*=\s*["'][^"']*[?&]LLO=true[^"']*["'][^>]*>(?:\s|<[^>]*>)*Sair\s+do\s+Acesso\s+Livre/i.test(t);
+}
+
 /** O CORPO é a página de "HTTP Post Binding" do SAML (ou a tela de login)?
  *
  * ⚠️ A URL SOZINHA NÃO BASTA. O TransfereGov deslogado nem sempre redireciona:
@@ -250,8 +303,9 @@ function corpoEhLogin(texto) {
      tem o modo "Acesso Livre": a página abre, e tem um botão "Sair do Acesso
      Livre" — o "Sair" que servia de prova de login. Tratado como logado, o jar de
      VISITANTE sairia para os servidores e, pela mesma régua no servidor, seria
-     promovido por cima da sessão boa. */
-  if (/sair do acesso livre/i.test(t)) return true;
+     promovido por cima da sessão boa. Pelos marcadores precisos de
+     `corpoEhAcessoLivre` (2.4.5), não pela frase solta no HTML cru. */
+  if (corpoEhAcessoLivre(t)) return true;
   if (/<title>\s*HTTP Post Binding/i.test(t)) return true;
   const formIdp = /<form[^>]*action=["'][^"']*(\/idp\/|idp\.transferegov|sso\.acesso)[^"']*["']/i.test(t);
   const inputSaml = /<input[^>]*name=["']SAMLRequest["']/i.test(t);
@@ -270,9 +324,19 @@ function corpoEhLogin(texto) {
  * justamente a recaptura.
  */
 function vereditoLogin(url, corpo) {
-  if (pareceLogin(url) || corpoEhLogin(corpo)) return false;
-  if (/\bsair\b/i.test(String(corpo || ""))) return true;
-  return null;
+  return estadoLogin(url, corpo).valor;
+}
+
+/** O veredito com o MOTIVO: `{ valor, motivo }`, motivo 'logado' | 'visitante' |
+ *  'login' | 'nao_sei'. O motivo existe porque as duas recusas pedem ações
+ *  diferentes: deslogado → fazer o login; visitante → SAIR do Acesso Livre antes
+ *  (nesse modo o TransfereGov nunca pede login, e "faça o login" não diz onde). */
+function estadoLogin(url, corpo) {
+  if (pareceLogin(url)) return { valor: false, motivo: "login" };
+  if (corpoEhAcessoLivre(corpo)) return { valor: false, motivo: "visitante" };
+  if (corpoEhLogin(corpo)) return { valor: false, motivo: "login" };
+  if (/\bsair\b/i.test(String(corpo || ""))) return { valor: true, motivo: "logado" };
+  return { valor: null, motivo: "nao_sei" };
 }
 
 let _sondaCache = { em: 0, valor: null };
@@ -289,16 +353,33 @@ let _sondaCache = { em: 0, valor: null };
  * guardar o `false` descartaria a captura BOA que chega 2s depois da página de
  * auto-envio do SAML, no meio de um login.
  */
-async function chromeEstaLogado() {
+async function chromeEstadoLogin() {
   const agora = Date.now();
-  if (_sondaCache.valor === true && agora - _sondaCache.em < 5000) return true;
-  let valor = null;
+  if (_sondaCache.valor === true && agora - _sondaCache.em < 5000) return { valor: true, motivo: "logado" };
+  let estado = { valor: null, motivo: "nao_sei" };
   try {
     const r = await fetch(PORTAS_GOVBR[0].url, { method: "GET", credentials: "include", cache: "no-store" });
-    if (r.ok) valor = vereditoLogin(r.url, await r.text());
-  } catch (_) { valor = null; }
-  _sondaCache = { em: agora, valor };
-  return valor;
+    if (r.ok) estado = estadoLogin(r.url, await r.text());
+  } catch (_) { estado = { valor: null, motivo: "nao_sei" }; }
+  _sondaCache = { em: agora, valor: estado.valor };
+  return estado;
+}
+
+/** Só o valor (true | false | null) — os chamadores antigos continuam valendo. */
+async function chromeEstaLogado() {
+  return (await chromeEstadoLogin()).valor;
+}
+
+/** O MOTIVO que o servidor deu para recusar (`{"detail": "..."}` do FastAPI), ou "".
+ *  Sem ele o popup só dizia "HTTP 401" — e o Juranda ficou assim (23–24/09/2026)
+ *  sem dizer se o token era errado, revogado ou expirado. */
+async function _motivoDoServidor(r) {
+  try {
+    const d = await r.json();
+    return d && typeof d.detail === "string" ? d.detail.slice(0, 120) : "";
+  } catch (_) {
+    return "";
+  }
 }
 
 /**
@@ -320,7 +401,13 @@ async function consultarSaude(lista) {
     try {
       const r = await fetch(`${amb.api}/session-capture/saude`, { headers: auth, cache: "no-store" });
       // 404 = servidor ainda sem esta rota (deploy antigo): não é "caiu".
-      if (!r.ok) return { nome: amb.nome, ok: false, detalhe: `HTTP ${r.status}` };
+      // O motivo do servidor vai junto ("HTTP 401 — Token inválido ou revogado"):
+      // é ele que diz se o caso é colar outro token ou esperar o deploy.
+      if (!r.ok) {
+        const motivo = await _motivoDoServidor(r);
+        return { nome: amb.nome, ok: false, status: r.status,
+          detalhe: `HTTP ${r.status}` + (motivo ? ` — ${motivo}` : "") };
+      }
       const d = await r.json().catch(() => ({}));
       return {
         nome: amb.nome, ok: true,

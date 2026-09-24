@@ -175,12 +175,61 @@ async function getAllCookiesForDomain(host) {
 }
 
 /* A captura FINAL do roteiro que desiste sem enviar deixa o motivo para o popup —
-   senão ele mostrava "enviando…" por 10 min sobre uma captura que nunca saiu. */
-async function _fimDoRoteiroSemEnvio(reason, motivo) {
+   senão ele mostrava "enviando…" por 10 min sobre uma captura que nunca saiu.
+   `extra` marca o TIPO da recusa (`{ visitante: true }`): o popup dá o passo a
+   passo certo para cada uma. */
+async function _fimDoRoteiroSemEnvio(reason, motivo, extra) {
   if (!/^captura_completa/.test(String(reason || ""))) return;
   const { pactha_roteiro_fim: fim } = await chrome.storage.local.get(["pactha_roteiro_fim"]);
   await chrome.storage.local.set({ pactha_roteiro_fim: {
-    ...(fim || { quando: new Date().toISOString() }), barrado: motivo } });
+    ...(fim || { quando: new Date().toISOString() }), barrado: motivo, ...(extra || {}) } });
+}
+
+/* ⭐ ACESSO LIVRE (VISITANTE) — medido em 24/09/2026 no Chrome do dono. Nesse modo o
+   TransfereGov NUNCA pede login: a porta 1 responde 200 com a página de visitante.
+   O porteiro barrava a captura (certo), mas em silêncio — e o modo automático, que
+   existe para levar aos servidores o login NOVO do dono (hipótese forte: login novo
+   encerra a sessão anterior), ficava parado sem ninguém saber.
+   A captura AUTOMÁTICA não navega nada (não é ação da pessoa): grava
+   `pactha_visitante` e acende o "!" para o popup avisar. Quem sai do Acesso Livre é
+   a «Captura completa» (ver `_saiDoLivre`). */
+const VISITANTE_VALE_MS = 6 * 60 * 60 * 1000;   // o aviso some sozinho sem visitante novo
+const BARRADO_VISITANTE = "o TransfereGov deste Chrome está no Acesso Livre (visitante) — "
+  + "visitante não conecta os servidores";
+const TITULO_VISITANTE = "PACTHA — este Chrome está no ACESSO LIVRE (visitante) do TransfereGov: "
+  + "nada vai para os servidores. Clique e use «Captura completa».";
+
+function _pintaSeloVisitante() {
+  try {
+    if (!chrome.action || !chrome.action.setBadgeText) return;
+    chrome.action.setBadgeText({ text: "!" });
+    if (chrome.action.setBadgeBackgroundColor) chrome.action.setBadgeBackgroundColor({ color: "#c53030" });
+    if (chrome.action.setTitle) chrome.action.setTitle({ title: TITULO_VISITANTE });
+  } catch (_) { /* selo é aviso, nunca derruba a captura */ }
+}
+
+async function _marcaVisitante() {
+  await chrome.storage.local.set({ pactha_visitante: { quando: new Date().toISOString() } });
+  _pintaSeloVisitante();
+}
+
+/* Chrome logado de novo (ou captura que chegou a um servidor): o aviso de visitante
+   é passado. Só remove se existir — `remove` à toa acordaria o popup à toa. */
+async function _limpaVisitante() {
+  const { pactha_visitante: v } = await chrome.storage.local.get(["pactha_visitante"]);
+  if (!v) return;
+  await chrome.storage.local.remove("pactha_visitante");
+  // O selo e o título eram do visitante: redesenha pelo estado dos servidores.
+  try { await atualizarSaude({ forcar: true }); } catch (_) { /* selo é aviso */ }
+}
+
+async function _visitanteRecente() {
+  try {
+    const { pactha_visitante: v } = await chrome.storage.local.get(["pactha_visitante"]);
+    return !!(v && v.quando && Date.now() - Date.parse(v.quando) < VISITANTE_VALE_MS);
+  } catch (_) {
+    return false;
+  }
 }
 
 async function capture(host, reason, opts) {
@@ -220,18 +269,32 @@ async function capture(host, reason, opts) {
     return;
   }
   /* ⭐ O PORTEIRO DO LOGIN: jar `govbr` só sai com o Chrome LOGADO (ver
-     `chromeEstaLogado` em ambientes.js). `null` = a sonda não soube dizer, e aí
-     a captura SEGUE — o servidor tem a guarda dele.
+     `chromeEstadoLogin` em ambientes.js). `null` = a sonda não soube dizer, e aí
+     a captura SEGUE — o servidor tem a guarda dele. O MOTIVO separa visitante
+     (Acesso Livre) de deslogado: as duas recusas pedem ações diferentes.
      ⚠️ ANTES de marcar o debounce: durante um login, a página de auto-envio do
      SAML dispara esta função ainda deslogada — se ela marcasse o debounce, a
      captura BOA, dois segundos depois, seria descartada por 30s. */
+  let sonda = null;                       // o que a sonda disse (só `govbr` passa por ela)
   if (target.key === "govbr") {
-    const logado = await chromeEstaLogado();
-    if (logado === false) {
-      console.log(`[PACTHA] Chrome sem login gov.br — nada enviado [${reason}@${host}]`);
-      await _fimDoRoteiroSemEnvio(reason, "o Chrome não está logado no TransfereGov");
+    const estado = await chromeEstadoLogin();
+    sonda = estado.motivo;
+    if (estado.valor === false) {
+      if (estado.motivo === "visitante") {
+        console.log(`[PACTHA] Chrome no Acesso Livre (visitante) — nada enviado [${reason}@${host}]`);
+        await _marcaVisitante();
+        await _fimDoRoteiroSemEnvio(reason, BARRADO_VISITANTE, { visitante: true });
+      } else {
+        console.log(`[PACTHA] Chrome sem login gov.br — nada enviado [${reason}@${host}]`);
+        // Deslogado é prova de que NÃO é mais visitante (a sonda de visitante nunca
+        // diz "login"): o aviso de Acesso Livre é passado — senão o «!» e o popup
+        // insistiam em "Acesso Livre" por até 6h depois de o roteiro sair dele.
+        await _limpaVisitante();
+        await _fimDoRoteiroSemEnvio(reason, "o Chrome não está logado no TransfereGov");
+      }
       return;
     }
+    if (estado.valor === true) await _limpaVisitante();
   }
   lastCaptureAt.set(dKey, now);
 
@@ -295,8 +358,16 @@ async function capture(host, reason, opts) {
         // ⚠️ Os que falharam vao NOMEADOS para o popup. Guardar so a
         // contagem faria "4 de 5" virar um numero sem acao possivel.
         falhas: ruins.map((r) => `${r.nome}: ${r.detalhe}`),
+        /* QUAL sistema e o que a sonda disse: o popup só troca a recusa do roteiro
+           por "enviada" com uma captura `govbr` provada LOGADA. A captura do FNS/SIMEC
+           do keepalive de 12 min (sem porteiro nenhum) passava por sucesso do
+           TransfereGov (revisão de 24/09/2026). */
+        automation_key: target.key,
+        sonda,
       },
     });
+    // ⚠️ O aviso de visitante NÃO se apaga aqui: uma captura do FNS/SIMEC também
+    // "chega a um servidor". Quem apaga é a sonda dizendo logado ou deslogado (acima).
     // O servidor mede a sessão nova no próximo keepalive (até ~10 min); o selo
     // é reconferido já e de novo no próximo alarme.
     atualizarSaude({ forcar: true });
@@ -354,6 +425,58 @@ const ROTEIRO_TENTATIVAS = 10;        // ~20s na mesma URL = assentada
 const ROTEIRO_MAX_MS = 60 * 60 * 1000; // teto absoluto: aba abandonada no login não prende o alarme
 const _avancando = new Set();         // passo já em avanço neste service worker
 
+/* ⭐ SAIR DO ACESSO LIVRE (2.4.5). Com o Chrome no modo visitante, a porta 1 abre a
+   página de visitante e NUNCA a tela de login: o roteiro abria as 4 portas, a
+   captura final era barrada e ninguém sabia o que fazer (24/09/2026). Agora, porta
+   assentada no TransfereGov com a aba no Acesso Livre → a extensão APAGA o
+   `JSESSIONID` do discricionarias (a sessão de visitante) e reabre a porta 1, que
+   sem visitante cai no SAML e na tela de login COM contexto — e o roteiro segue como
+   sempre. MEDIDO em 24/09/2026 num navegador isolado: visitante → apagar esse cookie
+   → porta 1 → "Login do Transferegov".
+   ⛔ NUNCA o "Sair do Acesso Livre" (`/voluntarias?LLO=true`): medido pela revisão
+   de 24/09/2026, ele é o LOGOUT de todos os módulos (mandatárias, acompanhamento,
+   habilitação) E do gov.br (`sso.acesso.gov.br/logout`) — derrubaria a sessão que os
+   7 servidores usam, se fosse a mesma deste Chrome.
+   Quem clica «Entrar com gov.br» e faz o login é a PESSOA; a extensão não toca na
+   tela de login.
+   ⚠️ Mais de `ROTEIRO_LIVRE_MAX` saídas = a pessoa está voltando ao visitante (o
+   link «Acesso livre» da tela de login é a armadilha): encerra com o motivo, em vez
+   de rodar em círculo. */
+const ROTEIRO_LIVRE_MAX = 3;
+const HOST_VISITANTE = "discricionarias.transferegov.sistema.gov.br";
+const FASE_SAINDO_DO_LIVRE = "o Chrome estava no Acesso Livre (visitante): a sessão de visitante "
+  + "foi apagada — na tela de login, clique em «Entrar com gov.br», NÃO em «Acesso livre»";
+const FASE_VOLTOU_DA_ARMADILHA = "você clicou em «Acesso livre» (visitante não conecta os "
+  + "servidores): voltando à tela de login — clique em «Entrar com gov.br»";
+/* ⚠️ MEDIDO no Chrome do dono (24/09/2026, ~11h): o visitante pode voltar MESMO com
+   «Entrar com gov.br» — o servidor de login do TransfereGov devolveu "Acesso Livre"
+   depois do login gov.br (conta nível ouro), e apagar a sessão de visitante do
+   discricionarias não bastou. Aí o problema é a conta gov.br logada neste Chrome (sem
+   perfil no TransfereGov) ou a sessão de visitante presa no servidor de login — e só
+   sair de TUDO resolve. A extensão não faz isso sozinha (o «Sair do Acesso Livre»
+   desloga o gov.br, e com ele a sessão dos servidores quando é a mesma): diz à pessoa. */
+const BARRADO_VOLTOU_AO_LIVRE = `o TransfereGov voltou ao Acesso Livre (visitante) depois de `
+  + `${ROTEIRO_LIVRE_MAX} saídas. Se você clicou «Acesso livre» na tela de login, clique em `
+  + "«Captura completa» de novo e use «Entrar com gov.br», NÃO «Acesso livre». Se você já "
+  + "entrou com gov.br e mesmo assim voltou como visitante, a conta gov.br deste Chrome não "
+  + "abre o TransfereGov com perfil: com os servidores sem sessão (selo «!»), clique em «Sair do "
+  + "Acesso Livre» na página (desloga o gov.br deste Chrome) e entre com a conta gov.br cadastrada "
+  + "no TransfereGov";
+
+const _semFragmento = (u) => String(u || "").split("#")[0];
+
+/* ⚠️ O MOMENTO do roteiro, não só o passo. Sair do Acesso Livre VOLTA o passo para
+   0, então "mesmo passo" deixou de bastar: um sinal velho da porta 1 (antes da
+   saída) passaria por "mesmo passo" depois da volta e pularia o login dela. As
+   saídas só crescem, e cada transição muda um destes campos. */
+function _chavePasso(rot) {
+  return `${rot.tabId}:${rot.passo}:${rot.saidasDoLivre || 0}`;
+}
+
+function _mesmoMomento(a, b) {
+  return !!a && !!b && _chavePasso(a) === _chavePasso(b);
+}
+
 async function _gravaRoteiro(rot, fase) {
   await chrome.storage.local.set({ pactha_roteiro: { ...rot, fase, faseEm: Date.now() } });
 }
@@ -366,6 +489,9 @@ async function _encerraRoteiro(motivo) {
 
 function iniciarCapturaCompleta() {
   chrome.tabs.create({ url: "about:blank" }, async (tab) => {
+    // O fim do roteiro ANTERIOR não vale para este (o popup o mostraria de novo se
+    // este terminasse sem deixar o seu, p.ex. com a aba fechada).
+    await chrome.storage.local.remove("pactha_roteiro_fim");
     await chrome.storage.local.set({ pactha_roteiro: {
       tabId: tab.id, passo: 0, em: Date.now(), inicio: Date.now(),
       fase: "abrindo a porta 1", faseEm: Date.now() } });
@@ -377,12 +503,12 @@ function iniciarCapturaCompleta() {
 /* O passo `rot.passo` terminou na `url`: vai para a próxima porta ou, na última,
    captura. Guardado contra dois avanços do mesmo passo (evento + alarme). */
 async function _concluiPasso(rot, url) {
-  const chave = `${rot.tabId}:${rot.passo}`;
+  const chave = _chavePasso(rot);
   if (_avancando.has(chave)) return;
   _avancando.add(chave);
   try {
     const { pactha_roteiro: atual } = await chrome.storage.local.get(["pactha_roteiro"]);
-    if (!atual || atual.passo !== rot.passo || atual.tabId !== rot.tabId) return;
+    if (!_mesmoMomento(atual, rot)) return;
     const proximo = rot.passo + 1;
     if (proximo < PORTAS_GOVBR.length) {
       await _gravaRoteiro({ ...atual, passo: proximo, em: Date.now() }, `abrindo a porta ${proximo + 1}`);
@@ -410,41 +536,107 @@ async function _concluiPasso(rot, url) {
   }
 }
 
-/* Decide sobre a aba do roteiro, venha o sinal do evento de navegação ou do alarme. */
-async function avancarRoteiro(details) {
-  const { pactha_roteiro: rot } = await chrome.storage.local.get(["pactha_roteiro"]);
-  if (!rot || details.tabId !== rot.tabId) return;
-  if (Date.now() - rot.em > ROTEIRO_TTL_MS || Date.now() - (rot.inicio || rot.em) > ROTEIRO_MAX_MS) {
-    await _encerraRoteiro("venceu sem avançar — clique de novo");
-    await chrome.storage.local.set({ pactha_roteiro_fim: { quando: new Date().toISOString(), venceu: true } });
-    return;
+/* Apaga a sessão de VISITANTE: o(s) `JSESSIONID` do discricionarias, e nada mais.
+   Mandatárias, idp e gov.br ficam como estão (se o idp estiver logado, a porta 1
+   até entra sozinha). Devolve quantos cookies apagou. */
+async function _apagaSessaoDeVisitante() {
+  const lista = await new Promise((res) => {
+    try { chrome.cookies.getAll({ domain: HOST_VISITANTE, name: "JSESSIONID" }, (cs) => res(cs || [])); }
+    catch (_) { res([]); }
+  });
+  let n = 0;
+  for (const c of lista) {
+    const dominio = String(c.domain || HOST_VISITANTE).replace(/^\./, "");
+    const url = `https://${dominio}${c.path || "/"}`;
+    const ok = await new Promise((res) => {
+      try { chrome.cookies.remove({ url, name: c.name, storeId: c.storeId }, (r) => res(!!r)); }
+      catch (_) { res(false); }
+    });
+    if (ok) n++;
   }
-  if (pareceLogin(details.url)) {
-    // Esperando a PESSOA logar (reCAPTCHA, 2FA, telefone). O prazo de 20 min conta
-    // do ÚLTIMO carregamento da tela de login, não do clique — senão um login
-    // demorado fazia o roteiro morrer calado no meio, sem abrir as portas 2–4.
-    if (!String(rot.fase || "").startsWith("passando pelo login")) {
-      await _gravaRoteiro({ ...rot, em: Date.now() },
-        `passando pelo login gov.br (porta ${rot.passo + 1}) — se pedir login, faça`);
-    } else {
-      await chrome.storage.local.set({ pactha_roteiro: { ...rot, em: Date.now() } });
+  return n;
+}
+
+/* A porta assentou no Acesso Livre: apaga a sessão de visitante e reabre a porta 1
+   (uma vez por página — evento e alarme chegam juntos, e a guarda do MOMENTO decide). */
+async function _saiDoLivre(rot, url) {
+  const chave = _chavePasso(rot);
+  if (_avancando.has(chave)) return;
+  _avancando.add(chave);
+  try {
+    const { pactha_roteiro: atual } = await chrome.storage.local.get(["pactha_roteiro"]);
+    if (!_mesmoMomento(atual, rot)) return;
+    const saidas = (atual.saidasDoLivre || 0) + 1;
+    if (saidas > ROTEIRO_LIVRE_MAX) {
+      await _encerraRoteiro(`voltou ao Acesso Livre ${saidas} vezes`);
+      await chrome.storage.local.set({ pactha_roteiro_fim: {
+        quando: new Date().toISOString(), barrado: BARRADO_VOLTOU_AO_LIVRE, visitante: true } });
+      await _marcaVisitante();
+      return;
     }
-    return;
+    const apagados = await _apagaSessaoDeVisitante();
+    console.log(`[PACTHA] roteiro: sessão de visitante apagada (${apagados} cookie[s]) — reabrindo a porta 1`);
+    await _gravaRoteiro({ ...atual, passo: 0, saidasDoLivre: saidas, em: Date.now() }, FASE_SAINDO_DO_LIVRE);
+    try {
+      await chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[0].url });
+    } catch (e) {
+      // Não navegou: devolve o estado; o próximo sinal na mesma página refaz a saída.
+      await chrome.storage.local.set({ pactha_roteiro: atual });
+      console.warn("[PACTHA] roteiro: a aba não voltou à porta 1 (" + (e && e.message || e) + ") — tento de novo");
+    }
+  } finally {
+    _avancando.delete(chave);
   }
-  let host = "";
-  try { host = new URL(details.url).hostname; } catch (_) { return; }
-  // Só conta página do TransfereGov — e o `idp.` dele é o SAML EM TRÂNSITO
-  // (form auto-post): avançar ali abortaria o login daquela porta no meio.
-  if (!host.endsWith("transferegov.sistema.gov.br") || host.startsWith("idp.")) return;
-  /* ⚠️ SÓ AVANÇA SE A PÁGINA ASSENTOU. O SAML encadeia navegações; trocar a URL
-     da aba no meio da cadeia mata a sessão da porta que estava nascendo. Espera
-     e confere que a aba continua NA MESMA URL. `status` "complete" confirma na
-     hora; na mesma URL por ~20s também vale (ver o cabeçalho deste bloco). */
-  const semFragmento = (u) => String(u || "").split("#")[0];
+}
+
+/* A pessoa clicou no link «Acesso livre» da tela de login (a ARMADILHA, medida em
+   24/09/2026: vai para www.gov.br/transferegov/…/acesso-livre, na mesma aba). Antes,
+   o roteiro ficava parado ali — host fora do TransfereGov — até o prazo de 20 min, e
+   terminava em "tempo esgotado". Agora conta uma saída (o mesmo teto do visitante) e
+   volta à porta 1: a pessoa ainda não virou visitante, então cai na tela de login. */
+async function _voltaDaArmadilha(rot) {
+  const chave = _chavePasso(rot);
+  if (_avancando.has(chave)) return;
+  _avancando.add(chave);
+  try {
+    const { pactha_roteiro: atual } = await chrome.storage.local.get(["pactha_roteiro"]);
+    if (!_mesmoMomento(atual, rot)) return;
+    /* ⚠️ A ABA AINDA ESTÁ NA ARMADILHA? O onCompleted atrasado da página do portal
+       (pesada) chega depois de o alarme já ter voltado à porta 1 — e, com o momento
+       novo, contaria uma SEGUNDA saída pelo mesmo clique (revisão de 24/09/2026). */
+    let aba = null;
+    try { aba = await chrome.tabs.get(rot.tabId); } catch (_) { aba = null; }
+    if (!aba || aba.pendingUrl || !ehPaginaDoAcessoLivre(aba.url)) return;
+    const saidas = (atual.saidasDoLivre || 0) + 1;
+    if (saidas > ROTEIRO_LIVRE_MAX) {
+      await _encerraRoteiro(`foi ao «Acesso livre» ${saidas} vezes`);
+      await chrome.storage.local.set({ pactha_roteiro_fim: {
+        quando: new Date().toISOString(), barrado: BARRADO_VOLTOU_AO_LIVRE, visitante: true } });
+      await _marcaVisitante();
+      return;
+    }
+    await _gravaRoteiro({ ...atual, passo: 0, saidasDoLivre: saidas, em: Date.now() }, FASE_VOLTOU_DA_ARMADILHA);
+    try {
+      await chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[0].url });
+    } catch (e) {
+      await chrome.storage.local.set({ pactha_roteiro: atual });
+      console.warn("[PACTHA] roteiro: a aba não voltou da página do Acesso livre ("
+        + (e && e.message || e) + ") — tento de novo");
+    }
+  } finally {
+    _avancando.delete(chave);
+  }
+}
+
+/* ⚠️ SÓ AGE SE A PÁGINA ASSENTOU. O SAML encadeia navegações; trocar a URL da aba
+   no meio da cadeia mata a sessão da porta que estava nascendo. Espera e confere
+   que a aba continua NA MESMA URL. `status` "complete" confirma na hora; na mesma
+   URL por ~20s também vale (ver o cabeçalho deste bloco). `fn` recebe a aba. */
+function _quandoAssentar(rot, url, fn) {
   const conferir = async (tentativa, pendentes = 0) => {
     try {
       const tab = await chrome.tabs.get(rot.tabId);
-      if (!tab || semFragmento(tab.url) !== semFragmento(details.url)) return;  // navegou: o próximo sinal decide
+      if (!tab || _semFragmento(tab.url) !== _semFragmento(url)) return;  // navegou: o próximo sinal decide
       /* ⚠️ NAVEGAÇÃO EM VOO NÃO É PÁGINA ASSENTADA. Enquanto o main frame navega
          (POST do muro ao idp, porta seguinte lenta), `tab.url` ainda é a URL
          anterior e `pendingUrl` diz para onde vai. Contar isso como "20s na mesma
@@ -458,12 +650,78 @@ async function avancarRoteiro(details) {
         setTimeout(() => conferir(tentativa + 1, pendentes), ROTEIRO_PASSO_MS);
         return;
       }
-      await _concluiPasso(rot, details.url);
+      await fn(tab);
     } catch (e) {
       console.warn("[PACTHA] roteiro (avanço): " + (e && e.message || e));
     }
   };
   setTimeout(() => conferir(0), ROTEIRO_ESPERA_MS);
+}
+
+/* Decide sobre a aba do roteiro, venha o sinal do evento de navegação ou do alarme. */
+async function avancarRoteiro(details) {
+  const { pactha_roteiro: rot } = await chrome.storage.local.get(["pactha_roteiro"]);
+  if (!rot || details.tabId !== rot.tabId) return;
+  if (Date.now() - rot.em > ROTEIRO_TTL_MS || Date.now() - (rot.inicio || rot.em) > ROTEIRO_MAX_MS) {
+    await _encerraRoteiro("venceu sem avançar — clique de novo");
+    await chrome.storage.local.set({ pactha_roteiro_fim: { quando: new Date().toISOString(), venceu: true } });
+    return;
+  }
+  let host = "";
+  try { host = new URL(details.url).hostname; } catch (_) { return; }
+  /* A ARMADILHA: o link «Acesso livre» da tela de login leva a www.gov.br — fora do
+     TransfereGov, onde o roteiro antes ficava parado até o prazo. Volta à porta 1. */
+  if (ehPaginaDoAcessoLivre(details.url)) {
+    await _voltaDaArmadilha(rot);
+    return;
+  }
+  const ehTG = host.endsWith("transferegov.sistema.gov.br");
+  const ehIdp = ehTG && host.startsWith("idp.");
+  if (pareceLogin(details.url)) {
+    // Esperando a PESSOA logar (reCAPTCHA, 2FA, telefone). O prazo de 20 min conta
+    // do ÚLTIMO carregamento da tela de login, não do clique — senão um login
+    // demorado fazia o roteiro morrer calado no meio, sem abrir as portas 2–4.
+    // ⚠️ Carregamento, e não o ALARME: o alarme de 30s reconfere a mesma tela, e
+    // renovar o prazo nele fazia os 20 min nunca vencerem (só o teto de 60 min).
+    const renova = details.origem === "alarme" ? {} : { em: Date.now() };
+    // A volta da armadilha e a saída do visitante já dizem o que fazer na tela de
+    // login, e dizem POR QUE a pessoa está nela: não troca pelo texto genérico.
+    const faseQueServe = String(rot.fase || "").startsWith("passando pelo login")
+      || rot.fase === FASE_VOLTOU_DA_ARMADILHA || rot.fase === FASE_SAINDO_DO_LIVRE;
+    if (!faseQueServe) {
+      await _gravaRoteiro({ ...rot, ...renova },
+        `passando pelo login gov.br (porta ${rot.passo + 1}) — se pedir login, clique em `
+        + "«Entrar com gov.br» (NÃO em «Acesso livre») e faça o login");
+    } else if (renova.em) {
+      await chrome.storage.local.set({ pactha_roteiro: { ...rot, ...renova } });
+    }
+    return;
+  }
+  // Só conta página do TransfereGov — e o `idp.` dele é o SAML EM TRÂNSITO
+  // (form auto-post): avançar ali abortaria o login daquela porta no meio.
+  if (!ehTG || ehIdp) return;
+  _quandoAssentar(rot, details.url, async (tab) => {
+    /* ⚠️ ABA NO ACESSO LIVRE: não avança — sai dele. DUAS provas independentes: o
+       TÍTULO da aba (o gatilho) e a SONDA da porta 1 achando o span.exit "Sair do
+       Acesso Livre" (o marcador). Apagar a sessão de uma aba LOGADA seria pior que
+       não fazer nada, e o título sozinho não é prova (a página logada não foi
+       medida, e o servidor já viu "Acesso Livre" no cabeçalho de sessão logada).
+       Sonda sem resposta: nem sai nem avança — o alarme de 30s pergunta de novo. */
+    if (tituloEhAcessoLivre(tab.title)) {
+      const estado = await chromeEstadoLogin();
+      if (estado.motivo === "visitante") {
+        await _saiDoLivre(rot, details.url);
+        return;
+      }
+      /* Só a sonda LOGADA deixa avançar uma aba com título de visitante (o pior caso não
+         medido: página logada com "Acesso Livre" no título). Sonda "deslogado" com a aba
+         ainda mostrando visitante é a página DEIXADA — a sessão de visitante já foi
+         apagada e a porta 1 ainda não apareceu na aba (evento atrasado, alarme na
+         janela): avançar ali pularia o login da porta 1. Sem resposta: idem, espera. */
+      if (estado.motivo !== "logado") return;
+    }
+    await _concluiPasso(rot, details.url);
+  });
 }
 
 /* O alarme do roteiro: evento de navegação perdido não trava mais. Aba fechada
@@ -475,7 +733,7 @@ async function tickRoteiro() {
   try { tab = await chrome.tabs.get(rot.tabId); } catch (_) { tab = null; }
   if (!tab) { await _encerraRoteiro("a aba do roteiro foi fechada"); return; }
   if (tab.pendingUrl) return;     // navegando: `tab.url` ainda é a da porta anterior
-  await avancarRoteiro({ tabId: rot.tabId, url: tab.url, frameId: 0 });
+  await avancarRoteiro({ tabId: rot.tabId, url: tab.url, frameId: 0, origem: "alarme" });
 }
 
 chrome.webNavigation.onCompleted.addListener((details) => {
@@ -584,6 +842,10 @@ async function atualizarSaude(opts) {
     const itens = await consultarSaude(await lerAmbientes());
     await new Promise((r) => chrome.storage.local.set(
       { pactha_saude: { quando: new Date().toISOString(), itens } }, r));
+    // Chrome no ACESSO LIVRE (visto nas últimas horas): o "!" é dele, com o título
+    // dizendo o que fazer. Mesmo com os servidores vivos: é este Chrome que não
+    // consegue levar o próximo login até eles.
+    if (await _visitanteRecente()) { _pintaSeloVisitante(); return; }
     // Sem NENHUMA resposta (offline, deploy no meio) não se sabe nada: o selo fica
     // como estava — apagar o "!" aqui seria afirmar que a sessão voltou.
     if (!itens.some((i) => i.ok)) return;

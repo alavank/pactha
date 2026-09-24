@@ -93,12 +93,60 @@ depois disso e da próxima consulta da extensão (até 12 min) — recapturar a
 mesma sessão sem o Sair **não** apaga o aviso, de propósito.
 
 **O porteiro (2.4.0):** toda captura `govbr` — navegação, cookie trocado, alarme
-e o botão manual — passa por `chromeEstaLogado()` (`ambientes.js`), que sonda a
+e o botão manual — passa por `chromeEstadoLogin()` (`ambientes.js`), que sonda a
 porta 1 e olha o **corpo** da resposta. Deslogado, o TransfereGov pode responder
 HTTP 200 *na mesma URL* com o formulário SAML de auto-envio; olhar só a URL dizia
 "logado". Chrome deslogado ⇒ nada é enviado. Se a sonda não souber dizer (rede,
 layout novo), a captura **segue**: o servidor tem a guarda dele, e travar por
 dúvida impediria a recaptura.
+
+**Acesso Livre — visitante (2.4.5):** no modo visitante do TransfereGov a porta 1
+**não pede login** (responde 200 com a página "… - Acesso Livre"; fatos medidos no
+`CONTINUAR.md`, seção "A sessão gov.br parava de ser derrubada por NÓS", parágrafo
+"Medido em 24/09/2026"). Visitante não conecta os servidores, e o porteiro
+(`chromeEstadoLogin`) o distingue de *deslogado* por UM marcador preciso: o
+`<span class="exit">` "Sair do Acesso Livre". O título "… - Acesso Livre" só dispara
+a pergunta — não decide, porque a página LOGADA não foi medida e o servidor já viu
+"Acesso Livre" no cabeçalho de sessão logada. A frase solta no HTML (script,
+comentário, texto oculto) também não conta: página logada tomada por visitante
+barraria a captura boa para sempre.
+- **Captura completa:** porta assentada com o título da aba no Acesso Livre E a sonda
+  da porta 1 achando o span de visitante → a extensão **apaga só o `JSESSIONID` do
+  discricionarias** (a sessão de visitante) e reabre a porta 1, que cai na tela de
+  login COM contexto (medido em 24/09/2026 num navegador isolado). Título de visitante
+  com a sonda dizendo deslogado ou sem resposta: espera o próximo sinal (é a página
+  deixada, ainda na aba). **Na tela de login, clique em «Entrar com gov.br» — nunca
+  em «Acesso livre»**: esse link leva a `www.gov.br/transferegov/…/acesso-livre`, e o
+  roteiro volta à porta 1 contando uma saída. Mais de 3 saídas encerram o roteiro com
+  esse motivo no popup.
+- ⚠️ **Medido no Chrome do dono (24/09/2026, ~11h):** apagar a sessão de visitante NÃO
+  bastou — o servidor de login devolveu "Acesso Livre" de novo, inclusive depois de
+  «Entrar com gov.br» com a conta gov.br logada (nível ouro). Aí a causa é a conta gov.br
+  do Chrome (sem perfil no TransfereGov) ou a sessão de visitante presa no servidor de
+  login, e só sair de tudo resolve. Depois de 3 saídas o roteiro para e o popup diz isso:
+  com os servidores sem sessão, «Sair do Acesso Livre» na página e entrar com a conta
+  cadastrada.
+- ⛔ **Nunca o "Sair do Acesso Livre" da página** (`/voluntarias?LLO=true`): ele roda
+  o logout de mandatárias, acompanhamento, habilitação **e do gov.br**
+  (`sso.acesso.gov.br/logout`) — derruba a sessão que os servidores usam quando ela é
+  a mesma deste Chrome. Nenhum caminho da extensão navega para lá, e a faixa manda
+  evitá-lo.
+- O prazo de 20 min do roteiro conta do último CARREGAMENTO de página; o alarme de 30s
+  só reconfere (antes ele renovava o prazo, e só o teto de 60 min valia).
+- O popup só troca a recusa do roteiro por "Captura enviada" com uma captura do
+  TransfereGov (`automation_key` `govbr`) cuja sonda disse **logado** — a do FNS/SIMEC
+  (keepalive de 12 min) também chega aos servidores e não prova nada da sessão gov.br.
+- **Modo automático:** não navega nada; acende o **"!"** e o popup avisa
+  (`pactha_visitante`: some em 6h sem visitante novo, ou com a sonda do TransfereGov
+  dizendo logado ou deslogado — captura de outro sistema não apaga).
+- **Faixa na página** (`aviso_pagina.js`, content script): no Acesso Livre (pelo
+  mesmo span "Sair do Acesso Livre"; com o roteiro em curso ela diz "aguarde, a
+  Captura completa está saindo dele") e, com o roteiro em curso, na tela de login do
+  TransfereGov. Fechável; não clica, não preenche e não envia nada.
+- Ambiente com **HTTP 401** no popup: mostra o motivo do servidor ("Token inválido ou
+  revogado", "Service token expirado") e a ação — gerar outro token em
+  Configurações › Service Tokens no PACTHA daquele cliente e colar em «Configurar
+  token PACTHA».
 
 ### 1. Auto-captura em cada navegação
 Quando você abre qualquer URL em `*.transferegov.sistema.gov.br` ou nos portais
