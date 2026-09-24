@@ -109,6 +109,9 @@ class _Conn:
     def commit(self):
         pass
 
+    def rollback(self):
+        pass
+
 
 @pytest.fixture
 def sem_fila(monkeypatch):
@@ -141,6 +144,9 @@ def test_grava_marca_e_nao_toca_no_rodizio_da_api(sem_fila, monkeypatch):
     cur = _Cur(["202332980002", "201328590001"])      # o 2º é de 2013: a CGU não publica
     rel = pt.execucao_planilha(cur, _Conn(), _cliente(_zip([_linha("202332980002")])))
     assert rel["achou"] == 1 and rel["codigos"] == 2 and rel["gravadas"] == 1
+    # O zip sintético não tem os arquivos de favorecido/convênio: isso vira NOTA
+    # e não desfaz a execução já gravada (PR 2, 24/09/2026).
+    assert "favorecidos/convênios da CGU" in (rel["nota"] or "")
     ins = [p for s, p in cur.sql if s.startswith("INSERT INTO emendas_federais_cgu")]
     assert [p["codigo_emenda"] for p in ins] == ["202332980002"]
     # A fatia antiga só sai se foi a PLANILHA que a gravou.

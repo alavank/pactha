@@ -665,6 +665,9 @@ MIGRATION_FILES = [
     # Saldo das contas do Fundo Municipal de Saúde pelo arquivo anual do Portal
     # FNS (24/09/2026). Tabela nova, só com FK para `municipios`.
     "add_fns_saldo_conta.sql",
+    # Emendas federais: o recebido POR MUNICÍPIO e o convênio gerado, pelos outros
+    # dois arquivos do zip da CGU (24/09/2026). Tabelas novas, FK para `municipios`.
+    "add_emendas_federais_vinculos.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

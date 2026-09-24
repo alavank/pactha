@@ -58,6 +58,10 @@ interface Linha {
   execucao_consultada?: boolean;
   execucao: Record<string, number | null> | null;
   instrumentos: Instrumento[];
+  /** Pago a quem está NESTE município (planilha de favorecidos da CGU) — a fatia
+   *  que o agregado nacional não separa. `null` = ninguém daqui aparece. */
+  recebido_municipio?: number | null;
+  convenios_n?: number;
 }
 
 interface Resp {
@@ -71,6 +75,7 @@ interface Resp {
     emendas: number; valor_prefeitura: number; fora_prefeitura_n: number;
     fora_prefeitura_valor: number; parado_n: number; com_pagamento_n: number;
     nao_consultadas_n: number; impositivas_n: number; por_origem: Record<string, number>;
+    recebido_municipio?: number;
   };
   items: Linha[];
   anos: number[];
@@ -133,6 +138,14 @@ function LinhaEmenda({ e, onAbrir }: { e: Linha; onAbrir: () => void }) {
           {e.tipo && <span>{ROTULO_TIPO[e.tipo] || e.tipo}</span>}
           {e.orgao && <span>{e.orgao}</span>}
           {e.codigo_emenda && <span>nº {e.codigo_emenda}</span>}
+          {/* ⭐ O que chegou AQUI desta emenda — número do município, não da
+              emenda inteira. */}
+          {!!e.recebido_municipio && (
+            <span style={{ color: "var(--bi-ok-ink)" }}>
+              recebido no município {brl(e.recebido_municipio)}
+            </span>
+          )}
+          {!!e.convenios_n && <span>{e.convenios_n} convênio(s) gerado(s) aqui</span>}
           {e.objeto && <span className="truncate">{e.objeto}</span>}
         </span>
       }
@@ -265,7 +278,7 @@ export default function AbaFederais({ municipioId, onAbrir }: {
         !d?.aviso && <Vazio>Sem emendas federais coletadas para este município.</Vazio>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className={`grid grid-cols-2 gap-3 ${t?.recebido_municipio ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
             <Numero icon={Landmark} rotulo="Emendas" valor={t?.emendas ?? 0}
                     sub={Object.entries(t?.por_origem || {})
                       .map(([o, n]) => `${n} ${SELO_ORIGEM[o] || o}`).join(" · ")} />
@@ -280,6 +293,13 @@ export default function AbaFederais({ municipioId, onAbrir }: {
                     sub={t?.nao_consultadas_n
                       ? `${t.nao_consultadas_n} da carteira ainda não consultada(s)`
                       : "inclui o resto a pagar quitado"} />
+            {/* ⭐ SOMA DINHEIRO, e pode: é o pago a quem está NESTE município
+                (favorecidos da CGU), não o agregado nacional da emenda. */}
+            {!!t?.recebido_municipio && (
+              <Numero icon={Banknote} rotulo="Recebido no município" tom="ok"
+                      valor={brl(t.recebido_municipio)}
+                      sub="pago pela União a quem está aqui — planilha da CGU" />
+            )}
             <Numero icon={AlertTriangle} rotulo="Precisa de cobrança" valor={acao.length}
                     tom={acao.length ? "critico" : "neutro"}
                     onClick={acao.length ? () => setVista("acao") : undefined}

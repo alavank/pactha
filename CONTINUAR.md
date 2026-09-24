@@ -102,9 +102,15 @@ a vir dela **nos sete**.
   ter execução em 57 das 59 emendas. Monte Sião (CNPJ da prefeitura 22.646.525/0001-31):
   31 códigos na carteira, 23 com execução publicada. ⚠️ O PR #549 dizia "23 de 24" —
   era a carteira de POUSO ALEGRE (18.675.983/0001-21), CNPJ que usei por engano no teste.
-- **Falta (PR 2):** os outros dois arquivos do mesmo zip — `_Convenios.csv` (emenda →
-  número do convênio, o vínculo que a API não tem) e `_PorFavorecido.csv` (quem recebeu,
-  mês a mês, com CNPJ).
+- **PR 2 (24/09/2026):** os outros dois arquivos do mesmo zip, filtrados pelo município
+  do cliente (nome IGUAL + UF) — `_PorFavorecido.csv` vira `emendas_federais_favorecidos`
+  (quanto DESTA emenda foi pago a quem está NESTE município, mês a mês: o número que o
+  agregado nacional não separa, e que SOMA — uma vez por código) e `_Convenios.csv` vira
+  `emendas_federais_convenios` (o convênio que a emenda gerou aqui). Nova Palma: R$ 3,34 mi
+  recebidos em 13 emendas; na emenda 201511170002, as duas parcelas de R$ 219.375 somam
+  exatamente o valor do convênio 823363 que a outra planilha liga a ela. Tela: cartão
+  "Recebido no município", "recebido no município" em cada emenda, e no detalhe a lista
+  mês a mês (aba Pagamentos) e os convênios gerados (aba Projeto e instrumentos).
 
 ---
 
