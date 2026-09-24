@@ -191,11 +191,12 @@ async function _fimDoRoteiroSemEnvio(reason, motivo, extra) {
    existe para levar aos servidores o login NOVO do dono (hipótese forte: login novo
    encerra a sessão anterior), ficava parado sem ninguém saber.
    A captura AUTOMÁTICA não navega nada (não é ação da pessoa): grava
-   `pactha_visitante` e acende o "!" para o popup avisar. Quem sai do Acesso Livre é
-   a «Captura completa» (ver `_saiDoLivre`). */
+   `pactha_visitante` e acende o "!" para o popup avisar. (Visitante no discricionárias
+   COM login real não é barrado: ver `chromeEstadoLogin`, 24/09/2026 ~16h.) */
 const VISITANTE_VALE_MS = 6 * 60 * 60 * 1000;   // o aviso some sozinho sem visitante novo
-const BARRADO_VISITANTE = "o TransfereGov deste Chrome está no Acesso Livre (visitante) — "
-  + "visitante não conecta os servidores";
+const BARRADO_VISITANTE = "o TransfereGov deste Chrome está no Acesso Livre (visitante) e SEM "
+  + "login gov.br (a área privada do mandatárias não abriu) — visitante sem login não conecta "
+  + "os servidores";
 const TITULO_VISITANTE = "PACTHA — este Chrome está no ACESSO LIVRE (visitante) do TransfereGov: "
   + "nada vai para os servidores. Clique e use «Captura completa».";
 
@@ -425,27 +426,20 @@ const ROTEIRO_TENTATIVAS = 10;        // ~20s na mesma URL = assentada
 const ROTEIRO_MAX_MS = 60 * 60 * 1000; // teto absoluto: aba abandonada no login não prende o alarme
 const _avancando = new Set();         // passo já em avanço neste service worker
 
-/* ⭐ SAIR DO ACESSO LIVRE (2.4.5). Com o Chrome no modo visitante, a porta 1 abre a
-   página de visitante e NUNCA a tela de login: o roteiro abria as 4 portas, a
-   captura final era barrada e ninguém sabia o que fazer (24/09/2026). Agora, porta
-   assentada no TransfereGov com a aba no Acesso Livre → a extensão APAGA o
-   `JSESSIONID` do discricionarias (a sessão de visitante) e reabre a porta 1, que
-   sem visitante cai no SAML e na tela de login COM contexto — e o roteiro segue como
-   sempre. MEDIDO em 24/09/2026 num navegador isolado: visitante → apagar esse cookie
-   → porta 1 → "Login do Transferegov".
-   ⛔ NUNCA o "Sair do Acesso Livre" (`/voluntarias?LLO=true`): medido pela revisão
-   de 24/09/2026, ele é o LOGOUT de todos os módulos (mandatárias, acompanhamento,
-   habilitação) E do gov.br (`sso.acesso.gov.br/logout`) — derrubaria a sessão que os
-   7 servidores usam, se fosse a mesma deste Chrome.
-   Quem clica «Entrar com gov.br» e faz o login é a PESSOA; a extensão não toca na
-   tela de login.
-   ⚠️ Mais de `ROTEIRO_LIVRE_MAX` saídas = a pessoa está voltando ao visitante (o
-   link «Acesso livre» da tela de login é a armadilha): encerra com o motivo, em vez
-   de rodar em círculo. */
+/* ⭐ VISITANTE NA PORTA 1 NÃO PARA O ROTEIRO (24/09/2026 ~16h, medido no Chrome do
+   dono). A conta dele não tem perfil no módulo Discricionárias: com o login gov.br
+   valendo, a porta 1 é sempre "Acesso Livre" — e a área privada do mandatárias (porta
+   2) abre. A 2.4.5 tentava SAIR do visitante (apagando a sessão do discricionárias) e,
+   com essa conta, rodava em círculo até desistir: nenhuma captura saía. Agora o
+   roteiro segue pelas 4 portas como sempre; a PORTA 2 é que exige o login gov.br de
+   verdade (sem login, ela cai na tela do idp e o roteiro espera a pessoa). No fim, o
+   porteiro (`chromeEstadoLogin`) só manda o jar se houver login real: porta 1 logada,
+   ou visitante na porta 1 com o /private/ do mandatárias abrindo.
+   ⛔ NUNCA o "Sair do Acesso Livre" (`/voluntarias?LLO=true`): é o LOGOUT de todos os
+   módulos E do gov.br (`sso.acesso.gov.br/logout`), medido em 24/09/2026.
+   ⚠️ A armadilha continua: o link «Acesso livre» da tela de login volta à porta 1
+   contando uma saída; mais de `ROTEIRO_LIVRE_MAX` encerra com o motivo. */
 const ROTEIRO_LIVRE_MAX = 3;
-const HOST_VISITANTE = "discricionarias.transferegov.sistema.gov.br";
-const FASE_SAINDO_DO_LIVRE = "o Chrome estava no Acesso Livre (visitante): a sessão de visitante "
-  + "foi apagada — na tela de login, clique em «Entrar com gov.br», NÃO em «Acesso livre»";
 const FASE_VOLTOU_DA_ARMADILHA = "você clicou em «Acesso livre» (visitante não conecta os "
   + "servidores): voltando à tela de login — clique em «Entrar com gov.br»";
 /* ⚠️ MEDIDO no Chrome do dono (24/09/2026, ~11h): o visitante pode voltar MESMO com
@@ -530,59 +524,6 @@ async function _concluiPasso(rot, url) {
       // De novo em 12s: a sessão da ÚLTIMA porta pode terminar de nascer depois
       // do primeiro envio, e o debounce engoliria a captura natural dela.
       setTimeout(() => capture(host, "captura_completa_2", { forcar: true }), 12000);
-    }
-  } finally {
-    _avancando.delete(chave);
-  }
-}
-
-/* Apaga a sessão de VISITANTE: o(s) `JSESSIONID` do discricionarias, e nada mais.
-   Mandatárias, idp e gov.br ficam como estão (se o idp estiver logado, a porta 1
-   até entra sozinha). Devolve quantos cookies apagou. */
-async function _apagaSessaoDeVisitante() {
-  const lista = await new Promise((res) => {
-    try { chrome.cookies.getAll({ domain: HOST_VISITANTE, name: "JSESSIONID" }, (cs) => res(cs || [])); }
-    catch (_) { res([]); }
-  });
-  let n = 0;
-  for (const c of lista) {
-    const dominio = String(c.domain || HOST_VISITANTE).replace(/^\./, "");
-    const url = `https://${dominio}${c.path || "/"}`;
-    const ok = await new Promise((res) => {
-      try { chrome.cookies.remove({ url, name: c.name, storeId: c.storeId }, (r) => res(!!r)); }
-      catch (_) { res(false); }
-    });
-    if (ok) n++;
-  }
-  return n;
-}
-
-/* A porta assentou no Acesso Livre: apaga a sessão de visitante e reabre a porta 1
-   (uma vez por página — evento e alarme chegam juntos, e a guarda do MOMENTO decide). */
-async function _saiDoLivre(rot, url) {
-  const chave = _chavePasso(rot);
-  if (_avancando.has(chave)) return;
-  _avancando.add(chave);
-  try {
-    const { pactha_roteiro: atual } = await chrome.storage.local.get(["pactha_roteiro"]);
-    if (!_mesmoMomento(atual, rot)) return;
-    const saidas = (atual.saidasDoLivre || 0) + 1;
-    if (saidas > ROTEIRO_LIVRE_MAX) {
-      await _encerraRoteiro(`voltou ao Acesso Livre ${saidas} vezes`);
-      await chrome.storage.local.set({ pactha_roteiro_fim: {
-        quando: new Date().toISOString(), barrado: BARRADO_VOLTOU_AO_LIVRE, visitante: true } });
-      await _marcaVisitante();
-      return;
-    }
-    const apagados = await _apagaSessaoDeVisitante();
-    console.log(`[PACTHA] roteiro: sessão de visitante apagada (${apagados} cookie[s]) — reabrindo a porta 1`);
-    await _gravaRoteiro({ ...atual, passo: 0, saidasDoLivre: saidas, em: Date.now() }, FASE_SAINDO_DO_LIVRE);
-    try {
-      await chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[0].url });
-    } catch (e) {
-      // Não navegou: devolve o estado; o próximo sinal na mesma página refaz a saída.
-      await chrome.storage.local.set({ pactha_roteiro: atual });
-      console.warn("[PACTHA] roteiro: a aba não voltou à porta 1 (" + (e && e.message || e) + ") — tento de novo");
     }
   } finally {
     _avancando.delete(chave);
@@ -687,7 +628,7 @@ async function avancarRoteiro(details) {
     // A volta da armadilha e a saída do visitante já dizem o que fazer na tela de
     // login, e dizem POR QUE a pessoa está nela: não troca pelo texto genérico.
     const faseQueServe = String(rot.fase || "").startsWith("passando pelo login")
-      || rot.fase === FASE_VOLTOU_DA_ARMADILHA || rot.fase === FASE_SAINDO_DO_LIVRE;
+      || rot.fase === FASE_VOLTOU_DA_ARMADILHA;
     if (!faseQueServe) {
       await _gravaRoteiro({ ...rot, ...renova },
         `passando pelo login gov.br (porta ${rot.passo + 1}) — se pedir login, clique em `
@@ -700,26 +641,9 @@ async function avancarRoteiro(details) {
   // Só conta página do TransfereGov — e o `idp.` dele é o SAML EM TRÂNSITO
   // (form auto-post): avançar ali abortaria o login daquela porta no meio.
   if (!ehTG || ehIdp) return;
-  _quandoAssentar(rot, details.url, async (tab) => {
-    /* ⚠️ ABA NO ACESSO LIVRE: não avança — sai dele. DUAS provas independentes: o
-       TÍTULO da aba (o gatilho) e a SONDA da porta 1 achando o span.exit "Sair do
-       Acesso Livre" (o marcador). Apagar a sessão de uma aba LOGADA seria pior que
-       não fazer nada, e o título sozinho não é prova (a página logada não foi
-       medida, e o servidor já viu "Acesso Livre" no cabeçalho de sessão logada).
-       Sonda sem resposta: nem sai nem avança — o alarme de 30s pergunta de novo. */
-    if (tituloEhAcessoLivre(tab.title)) {
-      const estado = await chromeEstadoLogin();
-      if (estado.motivo === "visitante") {
-        await _saiDoLivre(rot, details.url);
-        return;
-      }
-      /* Só a sonda LOGADA deixa avançar uma aba com título de visitante (o pior caso não
-         medido: página logada com "Acesso Livre" no título). Sonda "deslogado" com a aba
-         ainda mostrando visitante é a página DEIXADA — a sessão de visitante já foi
-         apagada e a porta 1 ainda não apareceu na aba (evento atrasado, alarme na
-         janela): avançar ali pularia o login da porta 1. Sem resposta: idem, espera. */
-      if (estado.motivo !== "logado") return;
-    }
+  /* Visitante na porta 1 também AVANÇA (ver o cabeçalho deste bloco): a porta 2
+     exige o login real, e o porteiro do fim decide se o jar sai. */
+  _quandoAssentar(rot, details.url, async () => {
     await _concluiPasso(rot, details.url);
   });
 }

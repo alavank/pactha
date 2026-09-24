@@ -390,7 +390,7 @@ async function mostrarRoteiro() {
     // Só uma captura do TRANSFEREGOV com a sonda dizendo LOGADO: a do FNS/SIMEC (o
     // keepalive de 12 min) também "chega a um servidor" e não diz nada da sessão gov.br.
     const saiuDepois = ult && ult.quando && ult.ambientes_ok > 0
-      && ult.automation_key === "govbr" && ult.sonda === "logado"
+      && ult.automation_key === "govbr" && (ult.sonda === "logado" || ult.sonda === "visitante_com_login")
       && Date.parse(ult.quando) >= Date.parse(fim.quando) - 1000;
     if ((fim.barrado || fim.venceu) && saiuDepois) {
       const ruinsDepois = (ult.falhas || []).length;

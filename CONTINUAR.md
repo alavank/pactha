@@ -2512,7 +2512,16 @@ cai em "Login do Transferegov". ⚠️ **No Chrome do dono (24/09 ~11h) isso NÃ
 login devolveu "Acesso Livre" de novo, inclusive depois de «Entrar com gov.br» com a conta gov.br logada
 (nível ouro) — a conta do Chrome sem perfil no TransfereGov, ou a sessão de visitante presa no idp. Só
 sair de tudo (o LLO, feito por mim às ~11h com os servidores já sem sessão) e entrar com a conta
-cadastrada resolve; o roteiro diz isso depois de 3 saídas. A tela do idp tem «Entrar com gov.br» e, logo abaixo, o link
+cadastrada resolve; o roteiro diz isso depois de 3 saídas. ⭐ **CORRIGIDO ~16h (medido):** com o dono
+logado, o `/private/` do mandatárias ABRIU ("ERRO — Proposta não Informada", a área logada) e o
+discricionárias seguiu "Acesso Livre" mesmo com a sessão dele zerada no servidor — **a conta do dono não
+tem perfil no módulo Discricionárias; o login é real.** Esse sempre foi o estado "conectado": até a 2.4.3
+o "Sair do Acesso Livre" contava como "Sair" (logado), e o servidor idem. A trava de visitante (#546,
+2.4.4/2.4.5) é que passou a barrar TODA captura dessa conta — foi ela o "não captura mais". Extensão 2.4.6:
+visitante na porta 1 + `/private/` do mandatárias abrindo = `visitante_com_login` (a captura sai); o
+roteiro não tenta mais sair do visitante (a porta 2 exige o login real). O servidor precisa da MESMA regra
+(`veredito_login` na entrada do discricionárias diz "login" para essa conta, e a promoção de candidata
+recusa). A tela do idp tem «Entrar com gov.br» e, logo abaixo, o link
 «Acesso livre» (`www.gov.br/transferegov/…/acesso-livre`) — a armadilha, que devolve ao visitante. A
 2.4.4 já barrava a captura de visitante (certo), mas calada: o roteiro abria as 4 portas sem nunca ver
 login e terminava "nada enviado", sem dizer o que fazer. **Não medido:** a página LOGADA (título e HTML)
