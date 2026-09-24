@@ -534,8 +534,10 @@ O desenho atual (13/09/2026, "coleta noturna"):
   O portal do Estado é um só, por isso uma hora entre tenants — duas varreduras nunca se
   sobrepõem. Orçamento interno de 50 min (`CONVENIOS_TO_BUDGET_S=3000`), kill em 3300 s,
   timeout da task 3420 s; o que não couber vira `partial` e a rodada não apaga nada.
-  Sem migration (grava em `convenios_estadual` e `convenios_estadual_outros`). A criar
-  nos sete por `scripts/criar_task_convenios_to.sh` (idempotente) depois do deploy.
+  Sem migration (grava em `convenios_estadual` e `convenios_estadual_outros`). **Criada
+  nos sete em 24/09/2026 ~02:35 UTC** por `scripts/criar_task_convenios_to.sh`
+  (idempotente), depois do deploy do #547. Como a criação caiu depois do horário da
+  freitas (01:00) e da trust (02:00), a primeira rodada da trust é em 25/09 02:00 UTC.
 - **`dou-federal` (22/09/2026) também é escada ENTRE TENANTS:** os sete buscam no mesmo
   `in.gov.br` do mesmo IP. 10 min de passo, de 08:00 (freitas) a 09:00 UTC (juranda), na
   ordem da tabela de uuids; orçamento interno de 8 min (`DOU_BUDGET_S=480`), kill em 600 s,
