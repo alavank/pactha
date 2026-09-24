@@ -185,8 +185,11 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     chk(lista.length >= 5, `${lista.length} ambientes (esperado >= 5)`);
     chk(lista.every((a) => /^https:\/\//.test(a.api)), "toda api é https");
     if (TEM_TOKENS) {
-      chk(lista.every((a) => a.token && a.token.startsWith("pactha_st_")),
-        "os cinco saem com service token — se falhar, a chave do mapa não bate com a api");
+      // Só os NOMES dos que ficaram sem token do arquivo (nunca o valor): um tenant
+      // novo cujo token foi colado no popup (Juranda, 23/09/2026) aparece aqui.
+      const semArquivo = lista.filter((a) => !(a.token && a.token.startsWith("pactha_st_"))).map((a) => a.nome);
+      chk(!semArquivo.length, "todos saem com service token do tokens.local.js"
+        + (semArquivo.length ? ` — SEM: ${semArquivo.join(", ")} (token só no popup, ou a chave do mapa não bate com a api)` : ""));
     }
   }
 
