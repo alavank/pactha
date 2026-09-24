@@ -29,6 +29,52 @@
 
 ---
 
+## 1.40. Relatório de vigências — o que a Freitas achou confuso (24/09/2026)
+
+Relato da Márcia (Freitas), com dois casos conferidos no dado aberto do Estado (CKAN `dm_convenio`
+de 22/09, `fl_convenio_alteracao`, e o CSV da SEGOV de 23/09):
+- **Martinho Campos** (SEDESE, quadra): o "Nº" mostrava **9342516** — o **SIAFI**. O número do
+  convênio ("Número Convênio SIGCON" no dicionário do Estado) é **1481002318/2022**; plano
+  002294/2022. Causa: o NOSSO `nr_sigcon` é, na prática, o SIAFI (o scraper grava siafi > plano >
+  proposta) e o bloco estadual de `query_alertas_vigencia` nunca preenchia `nr_convenio`. Agora
+  `routers.convenios.nr_convenio_estadual`: `raw.nr_instrumento` (grade logada) > `raw.sigcon`
+  (dado aberto, gravado pelo backfill numa chave SÓ dele) > `numOriginal` (GConv-ES) > `nr_sigcon`
+  com forma 8-12/aaaa; nunca FNS, nunca o plano. Sem número de convênio, o relatório escreve
+  **"SIAFI 9342516"** (rotulado) e a federal sem instrumento **"Proposta 012345/2024"**; o SIAFI
+  sai numa coluna própria. ⚠️ O rótulo SIAFI só vai em SIAFI de verdade (`nr_siafi`, ou
+  `nr_sigcon` só de dígitos = MG legado): a chave interna de RS/PR/TO/ES (`CAGE-RS-…`, `PR-…`,
+  `TO-…`, `GCONV-ES-…`) e o plano do SIGCON saem como estão — mesma regra no export
+  (`vigencias_export._numero`) e na tela (`VigenciasCarteira.tsx`, `numeroDoAlerta`).
+- **Arapuá** (SEAPA, SIAFI 9485644): o relatório dizia 25/11/2026 (63 dias) e a cliente, 24/11/2027.
+  **Medido: o Estado publica 25/11/2026 e nenhuma alteração** — os 63 dias batem com o dado oficial;
+  a prorrogação não está publicada. MAS havia um defeito nosso: o backfill do CKAN usava
+  `COALESCE(dt_vigencia_atual, ckan)` e nunca atualizava — publicada a prorrogação, a data ficaria
+  velha para todo convênio fora do rodízio do scraper logado. Agora **avança** (`GREATEST`) com o
+  `dm_convenio.dt_vigencia_atual` (a vigência OFICIAL, que o Estado só muda quando o aditivo sai no
+  DOE); SIAFI que aponta para mais de um convênio (6.584 no dump, quase todos até 2016) não escreve
+  nada. ⚠️ Os números da cliente não fecham (449 dias ≠ 24/11/2027 visto de 23/09 = 427): não levar
+  hipótese à cliente como fato.
+- **Prorrogação em andamento** (Martinho: "termo assinado, aguardando o Estado"): nenhuma fonte ABERTA
+  mostra aditivo antes de publicado. A lista "Alterações do Convênio" do SIGCON **logado** já é
+  gravada em `raw_data.alteracoes` pelo scraper; o relatório passa a mostrar a alteração de prazo
+  mais recente (termo aditivo / prorrogação / vigência) **como o portal mostra** — "SIGCON: TERMO
+  ADITIVO — <etapa> (<data>)" — sem classificar pendente/concluída (os rótulos de etapa não foram
+  medidos) e com vazio ≠ "sem alteração" (pode ser convênio que o rodízio ainda não abriu).
+- **"Confuso"**: (1) propostas federais **em análise** entravam como instrumento vencendo — a data
+  delas é a vigência PROPOSTA. Recorte único `fases_voluntaria.INSTRUMENTO_VIGENTE_SQL` (categoria
+  'geral' e não cancelada) usado pela lista, pelo relatório, pelos cards (`voluntarias_por_fase`)
+  **e** pela lista de prestação de contas federal (`query_prestacao_contas`) — os cards de
+  prestação contam pelo mesmo `voluntarias_por_fase`; sem o recorte nas duas listas, card e
+  lista divergem. (2) Federal saía sempre sem valor (`None` fixo): agora
+  `valor_global`. (3) Município sem valor coletado aparecia "R$ 0,00": agora vazio / "sem valor
+  coletado (N)", inclusive no TOTAL. (4) Cabeçalhos cortados (linha 1 sem altura + botão do filtro),
+  rótulos novos ("Próximo vencimento", "Valor total (dos com valor)"), autofiltro no intervalo dos
+  dados (não pega a linha TOTAL). (5) Ordenação do export mandava o que vence HOJE (0 dias) para o fim.
+- **Pendente (medir antes de codar):** rótulos reais de `tipo`/`situacao` em `raw_data.alteracoes`
+  (para um selo "prorrogação em andamento" classificado); o filtro `dt_vigencia_atual >= hoje` tira
+  do relatório o convênio já vencido com aditivo em tramitação; no CKAN `dt_vigencia_inicial` e
+  `dt_vigencia_final` são o FIM ORIGINAL, e o backfill os grava em colunas de outro sentido.
+
 ## 1.39. Saldo das contas do Fundo Municipal de Saúde — Portal FNS (24/09/2026)
 
 Oitava fonte, trazida pelo dono como link (`portalfns.saude.gov.br/downloads/`). A página

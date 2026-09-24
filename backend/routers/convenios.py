@@ -110,6 +110,65 @@ def _proposta_vigencia(raw: dict):
 _cond_fonte = filtro.cond_fonte
 
 
+_RE_NR_CONVENIO = re.compile(r"^\d{8,12}/\d{4}$")
+_RE_NR_ESTADO = re.compile(r"^\d{3,12}/\d{4}$")
+
+
+def nr_convenio_estadual(c) -> Optional[str]:
+    """O NÚMERO DO CONVÊNIO que a prefeitura reconhece (ex.: 1481002318/2022), ou None.
+
+    ⭐ POR QUE (23/09/2026, relato da Freitas): o relatório de vigências mostrava
+    9342516 no "Nº" de Martinho Campos — o SIAFI — e ela disse, com razão, que
+    aquele não é o número do convênio. O NOSSO `nr_sigcon` é, na prática, o SIAFI
+    (o scraper grava siafi > plano > proposta); o número do convênio mora em:
+      1. `raw.nr_instrumento` — a coluna "Nº Instrumento" da grade logada do SIGCON;
+      2. `raw.sigcon` — o "Número Convênio SIGCON" do dado aberto do Estado
+         (backfill do CKAN; nunca o scraper, para os dois não se apagarem);
+      3. GConv-ES: `raw.numOriginal` (o número publicado; o ES não tem os outros);
+      4. o próprio `nr_sigcon` quando TEM a forma de número de convênio
+         (8-12 dígitos/ano) — nunca o plano (6/ano) nem o SIAFI (sem barra).
+    E nunca o FNS: lá o `nr_sigcon` é uma chave sintética nossa."""
+    if "FNS" in (getattr(c, "fonte", None) or "").upper():
+        return None
+    raw = c.raw_data if isinstance(getattr(c, "raw_data", None), dict) else {}
+    for chave, regra in (("nr_instrumento", None), ("sigcon", _RE_NR_ESTADO)):
+        v = str(raw.get(chave) or "").strip()
+        if v and (regra is None or regra.match(v)):
+            return v
+    if (getattr(c, "fonte", None) or "").upper().startswith("GCONV"):
+        v = str(raw.get("numOriginal") or "").strip()
+        if v:
+            return v
+    ns = str(getattr(c, "nr_sigcon", None) or "").strip()
+    return ns if _RE_NR_CONVENIO.match(ns) else None
+
+
+_PRAZO = re.compile(r"aditiv|prorrog|vig[eê]ncia", re.I)
+
+
+def alteracao_de_prazo(raw) -> dict:
+    """A alteração do SIGCON que interessa a quem olha um PRAZO, como o portal a
+    mostra — sem classificar nada (23/09/2026).
+
+    A mais recente de tipo termo aditivo / prorrogação / vigência na lista
+    `raw.alteracoes`; sem nenhuma dessas, a última alteração registrada. É o que
+    responde "este convênio já tem prorrogação em andamento?" (o caso de Martinho
+    Campos: termo assinado, aguardando o Estado). ⚠️ Não diz "concluída" nem
+    "pendente" — os rótulos de etapa do SIGCON não foram medidos — e ausência de
+    dado NÃO é "sem alteração": pode ser convênio que o rodízio ainda não abriu."""
+    raw = raw if isinstance(raw, dict) else {}
+    lista = [a for a in (raw.get("alteracoes") or []) if isinstance(a, dict)]
+    prazo = [a for a in lista if _PRAZO.search(f"{a.get('tipo') or ''} {a.get('titulo') or ''}")]
+    if prazo:
+        a = prazo[-1]          # a lista já vem em ordem de data
+        return {"tipo": a.get("tipo"), "situacao": a.get("situacao"), "data": a.get("data")}
+    if raw.get("ultima_alteracao_tipo") or raw.get("ultima_alteracao_situacao"):
+        return {"tipo": raw.get("ultima_alteracao_tipo"),
+                "situacao": raw.get("ultima_alteracao_situacao"),
+                "data": raw.get("ultima_alteracao_data")}
+    return {}
+
+
 def estadual_to_response(c: ConvenioEstadual) -> ConvenioResponse:
     dias = None
     if c.dt_vigencia_atual:
@@ -704,14 +763,18 @@ async def query_alertas_vigencia(
     q = q.order_by(ConvenioEstadual.dt_vigencia_atual.asc())
     for c in (await db.execute(q)).scalars().all():
         dias_rest = (c.dt_vigencia_atual - date.today()).days
+        alt = alteracao_de_prazo(c.raw_data)
         alertas.append(AlertaVigencia(
-            id=c.id, esfera="estadual", nr_sigcon=c.nr_sigcon,
+            id=c.id, esfera="estadual", nr_convenio=nr_convenio_estadual(c),
+            nr_sigcon=c.nr_sigcon, nr_siafi=c.nr_siafi,
             municipio_id=c.municipio_id,
             municipio_nome=_nomes.get(c.municipio_id),
             objeto=c.objeto, orgao_concedente=c.orgao_concedente,
             dt_fim_vigencia=c.dt_vigencia_atual, dias_restantes=dias_rest,
             valor_total=float(c.valor_total) if c.valor_total else None,
             situacao=c.situacao,
+            alteracao_tipo=alt.get("tipo"), alteracao_situacao=alt.get("situacao"),
+            alteracao_data=alt.get("data"),
         ))
 
     # TransfereGov Voluntarias (dt_fim_vigencia eh string dd/mm/yyyy)
@@ -737,11 +800,18 @@ async def query_alertas_vigencia(
     # ⚠️ So a PREFEITURA vira alerta (15/09/2026). O filtro por IBGE traz o que
     # esta sediado na cidade: o convenio do Estado de Goias vencendo nao e
     # prazo da prefeitura de Goiania. Ver `services/natureza.py`.
+    # ⚠️ SÓ INSTRUMENTO QUE PODE VENCER (23/09/2026): proposta em análise,
+    # rejeitada, cancelada ou encerrada não tem prazo que vença — a data dela é a
+    # vigência PROPOSTA no cadastro. É o MESMO recorte dos cards
+    # (`voluntarias_por_fase`), para o número do card bater com esta lista.
+    # E o VALOR: `valor_global` (repasse + contrapartida), o mesmo sentido do
+    # valor estadual. Antes era None fixo — as federais saíam sempre "sem valor".
+    from services.fases_voluntaria import INSTRUMENTO_VIGENTE_SQL
     vol = await db.execute(text(f"""
         SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
-               municipio_id
+               municipio_id, valor_global
         FROM transferegov_propostas
-        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql}
+        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql} AND {INSTRUMENTO_VIGENTE_SQL}
     """), _vp)
     for row in vol.fetchall():
         dtf = None
@@ -752,13 +822,17 @@ async def query_alertas_vigencia(
                 continue
         if not dtf or not (date.today() <= dtf <= limite):
             continue
+        try:
+            _vg = float(row[7]) if len(row) > 7 and row[7] not in (None, "") else None
+        except (TypeError, ValueError):
+            _vg = None
         alertas.append(AlertaVigencia(
             id=0, esfera="voluntaria", nr_convenio=row[1] or row[0],
             municipio_id=(row[6] if len(row) > 6 else municipio_id),
             municipio_nome=_nomes.get(row[6] if len(row) > 6 else municipio_id),
             nr_sigcon=row[0], objeto=row[2], orgao_concedente=row[3],
             dt_fim_vigencia=dtf, dias_restantes=(dtf - date.today()).days,
-            valor_total=None, situacao=row[4],
+            valor_total=_vg if _vg else None, situacao=row[4],
         ))
 
     alertas.sort(key=lambda x: x.dias_restantes)
@@ -813,7 +887,8 @@ async def query_prestacao_contas(
     for c in (await db.execute(q)).scalars().all():
         dias_rest = (c.dt_vigencia_atual - date.today()).days
         alertas.append(AlertaVigencia(
-            id=c.id, esfera="estadual", nr_sigcon=c.nr_sigcon,
+            id=c.id, esfera="estadual", nr_convenio=nr_convenio_estadual(c),
+            nr_sigcon=c.nr_sigcon, nr_siafi=c.nr_siafi,
             municipio_id=c.municipio_id,
             municipio_nome=_nomes.get(c.municipio_id),
             objeto=c.objeto, orgao_concedente=c.orgao_concedente,
@@ -842,11 +917,15 @@ async def query_prestacao_contas(
     _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
     if _anos:
         _vp["anos_txt"] = [str(a) for a in _anos]
+    # Só INSTRUMENTO (23/09/2026): o card de prestação federal conta pelo mesmo
+    # recorte (`voluntarias_por_fase`); sem ele a lista trazia proposta em análise
+    # e rejeitada, e o número do card não batia com a lista ao lado.
+    from services.fases_voluntaria import INSTRUMENTO_VIGENTE_SQL
     vol = await db.execute(text(f"""
         SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
                municipio_id
         FROM transferegov_propostas
-        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql}
+        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql} AND {INSTRUMENTO_VIGENTE_SQL}
     """), _vp)
     for row in vol.fetchall():
         dtf = None

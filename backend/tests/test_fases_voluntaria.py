@@ -119,20 +119,30 @@ HOJE = date(2026, 9, 19)
 
 
 def test_voluntarias_por_fase_soma_e_separa_os_prazos():
-    db = _Db([("celebrada", "31/12/2026", 1_000.0, None, None),
-              ("celebrada", None, "500.5", None, None),
-              ("analise", None, 45_300_000.0, "22/07/2026 11:11:41", "PROPOSTA_ENVIADA_ANALISE"),
-              ("analise", None, 305_000.0, "15/03/2009 10:00:00", "PROPOSTA_ENVIADA_ANALISE"),
-              ("rejeitada", "01/01/2020", 9_999.0, None, None)])
+    # a última coluna é `INSTRUMENTO_VIGENTE_SQL` (vence?), calculada no banco
+    db = _Db([("celebrada", "31/12/2026", 1_000.0, None, None, True),
+              ("celebrada", None, "500.5", None, None, True),
+              ("celebrada", "30/11/2026", 700.0, None, None, False),   # cancelada/encerrada
+              ("analise", "15/10/2026", 45_300_000.0, "22/07/2026 11:11:41", "PROPOSTA_ENVIADA_ANALISE", False),
+              ("analise", None, 305_000.0, "15/03/2009 10:00:00", "PROPOSTA_ENVIADA_ANALISE", False),
+              ("rejeitada", "01/01/2020", 9_999.0, None, None, False)])
     fases, vig = asyncio.run(F.voluntarias_por_fase(db, [14], [2026], hoje=HOJE))
-    assert fases["celebrada"] == {"n": 2, "valor": 1_500.5}
+    assert fases["celebrada"] == {"n": 3, "valor": 2_200.5}
     assert fases["analise"] == {"n": 1, "valor": 45_300_000.0}
     assert fases["parada"] == {"n": 1, "valor": 305_000.0}
     assert fases["rejeitada"]["n"] == 1
-    # a rejeitada não tem convênio que vença: fora dos alertas
-    assert vig == ["31/12/2026", None, None, None]
+    # só instrumento que pode vencer entra nos prazos dos cards — proposta em
+    # análise, rejeitada ou cancelada não (23/09/2026, relato da Freitas)
+    assert vig == ["31/12/2026", None]
     assert "municipal IS NOT FALSE" in db.sql and db.params["anos_txt"] == ["2026"]
     assert "arvore->'_resumo'->>'situacao_desde'" in db.sql
+    assert F.INSTRUMENTO_VIGENTE_SQL in db.sql, "os cards e a lista têm de usar o MESMO recorte"
+
+
+def test_o_recorte_do_instrumento_que_vence_e_SQL_valido_e_tira_cancelado():
+    pglast = pytest.importorskip("pglast")
+    pglast.parse_sql(f"SELECT 1 FROM transferegov_propostas WHERE {F.INSTRUMENTO_VIGENTE_SQL}")
+    assert "cancelad" in F.INSTRUMENTO_VIGENTE_SQL and "'geral'" in F.INSTRUMENTO_VIGENTE_SQL
 
 
 @pytest.mark.parametrize("fase,desde,hist,esperado", [

@@ -108,6 +108,21 @@ CATEGORIA_SQL = (
     f"WHEN {ENCERRADA_SQL} THEN 'encerradas' "
     "ELSE 'geral' END"
 )
+# ⭐ O INSTRUMENTO QUE PODE "VENCER" — o recorte dos alertas de vigencia (lista,
+# relatorio e os numeros dos cards), num lugar so (23/09/2026).
+#
+# Relato da Freitas: o relatorio de vigencias listava "Proposta/Plano de Trabalho
+# enviado para Analise" como se fosse convenio vencendo. A data dessas linhas e a
+# vigencia PROPOSTA no cadastro, nao o prazo de um instrumento assinado. Fica so
+# a categoria 'geral' (o que nao e analise, rejeicao nem desfecho) e, dentro dela,
+# sai o CANCELADO — "Proposta/Plano de Trabalho Cancelados" nao casa com nenhum
+# padrao acima e caia no ELSE como se estivesse em execucao. `situacao` nula
+# continua entrando (ausencia de informacao nao e desfecho).
+# ⚠️ Os cards (voluntarias_por_fase) e a lista (routers/convenios.py) usam ESTA
+# mesma expressao: se divergissem, o card diria N e a lista que ele abre, menos.
+INSTRUMENTO_VIGENTE_SQL = (
+    f"(({CATEGORIA_SQL}) = 'geral' AND COALESCE(situacao, '') NOT ILIKE '%cancelad%')"
+)
 # A FASE do Painel: a categoria das telas, com Em execução + Encerradas juntas.
 # `situacao` NULA segue o ELSE, como na tela «Em execução» que a mostra.
 FASE_SQL = (
@@ -190,8 +205,9 @@ async def voluntarias_por_fase(db: AsyncSession, ids: list[int],
     """As voluntárias da PREFEITURA em `ids`, por fase, no período.
 
     Devolve `(fases, vigencias)`: `fases[f] = {"n", "valor"}` e `vigencias` =
-    `dt_fim_vigencia` de cada proposta NÃO rejeitada, para os alertas de prazo
-    (proposta rejeitada não tem convênio que vença)."""
+    `dt_fim_vigencia` de cada INSTRUMENTO que pode vencer (`INSTRUMENTO_VIGENTE_SQL`
+    — o mesmo recorte da lista de alertas), para os cards de prazo. Proposta em
+    análise, rejeitada, cancelada ou encerrada não tem convênio que vença."""
     params: dict = {"ids": list(ids)}
     ano_sql = ""
     if anos:
@@ -199,14 +215,15 @@ async def voluntarias_por_fase(db: AsyncSession, ids: list[int],
         params["anos_txt"] = [str(a) for a in anos]
     rows = (await db.execute(text(
         f"SELECT {FASE_SQL} AS fase, dt_fim_vigencia, "
-        f"COALESCE(valor_global, valor_repasse, 0), {RESUMO_SQL} "
+        f"COALESCE(valor_global, valor_repasse, 0), {RESUMO_SQL}, "
+        f"{INSTRUMENTO_VIGENTE_SQL} AS vence "
         # So a PREFEITURA entra na conta (15/09/2026) — ver `services/natureza.py`.
         "FROM transferegov_propostas WHERE municipio_id = ANY(:ids) AND "
         + SQL_SO_PREFEITURA + ano_sql
     ), params)).fetchall()
     fases = fases_vazias()
     vigencias = []
-    for fase, dtf, val, desde, hist in rows:
+    for fase, dtf, val, desde, hist, vence in rows:
         fase = refinar(fase, desde, hist, hoje)
         f = fases[fase]
         f["n"] += 1
@@ -214,6 +231,6 @@ async def voluntarias_por_fase(db: AsyncSession, ids: list[int],
             f["valor"] += float(val or 0)
         except (TypeError, ValueError):
             pass
-        if fase != "rejeitada":
+        if vence and fase != "rejeitada":
             vigencias.append(dtf)
     return fases, vigencias
