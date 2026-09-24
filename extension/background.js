@@ -322,25 +322,92 @@ chrome.webNavigation.onCompleted.addListener(async (details) => {
    uma aba esquecida. */
 const ROTEIRO_TTL_MS = 20 * 60 * 1000;
 
+/* ⚠️ TRAVAVA (23/09/2026, relato do dono: "só fica abrindo e não captura"). O
+   roteiro só andava com DOIS sinais juntos: o evento `onCompleted` da página e a
+   aba em `status: "complete"` em até ~20s. Faltando um — evento perdido (o estado
+   era gravado DEPOIS de a aba começar a carregar, e uma página rápida terminava
+   antes), ou um recurso da página que nunca termina de carregar — ele esperava
+   para sempre, calado. Agora:
+     - o estado é gravado ANTES de a aba navegar (a aba nasce em branco);
+     - um alarme de 30s (`pactha_roteiro_tick`) reconfere a aba enquanto houver
+       roteiro, então evento perdido não trava mais;
+     - URL do TransfereGov parada por ~20s conta como assentada mesmo com a aba
+       ainda "carregando" (o auto-envio do SAML sai da URL em segundos);
+     - o passo e o motivo da espera ficam no storage (`pactha_roteiro.fase`) e
+       o popup mostra "porta N de 4", para ninguém ficar olhando "abrindo". */
+const ROTEIRO_TICK = "pactha_roteiro_tick";
+const ROTEIRO_ESPERA_MS = 3000;       // a página assenta (o SAML encadeia navegações)
+const ROTEIRO_PASSO_MS = 2000;        // reconferência enquanto a aba carrega
+const ROTEIRO_TENTATIVAS = 10;        // ~20s na mesma URL = assentada
+const ROTEIRO_MAX_MS = 60 * 60 * 1000; // teto absoluto: aba abandonada no login não prende o alarme
+const _avancando = new Set();         // passo já em avanço neste service worker
+
+async function _gravaRoteiro(rot, fase) {
+  await chrome.storage.local.set({ pactha_roteiro: { ...rot, fase, faseEm: Date.now() } });
+}
+
+async function _encerraRoteiro(motivo) {
+  await chrome.storage.local.remove("pactha_roteiro");
+  try { chrome.alarms.clear(ROTEIRO_TICK); } catch (_) { /* ignore */ }
+  if (motivo) console.log("[PACTHA] roteiro encerrado: " + motivo);
+}
+
 function iniciarCapturaCompleta() {
-  chrome.tabs.create({ url: PORTAS_GOVBR[0].url }, (tab) => {
-    chrome.storage.local.set({ pactha_roteiro: { tabId: tab.id, passo: 0, em: Date.now() } });
+  chrome.tabs.create({ url: "about:blank" }, async (tab) => {
+    await chrome.storage.local.set({ pactha_roteiro: {
+      tabId: tab.id, passo: 0, em: Date.now(), inicio: Date.now(),
+      fase: "abrindo a porta 1", faseEm: Date.now() } });
+    try { chrome.alarms.create(ROTEIRO_TICK, { periodInMinutes: 0.5 }); } catch (_) { /* ignore */ }
+    chrome.tabs.update(tab.id, { url: PORTAS_GOVBR[0].url });
   });
 }
 
+/* O passo `rot.passo` terminou na `url`: vai para a próxima porta ou, na última,
+   captura. Guardado contra dois avanços do mesmo passo (evento + alarme). */
+async function _concluiPasso(rot, url) {
+  const chave = `${rot.tabId}:${rot.passo}`;
+  if (_avancando.has(chave)) return;
+  _avancando.add(chave);
+  try {
+    const { pactha_roteiro: atual } = await chrome.storage.local.get(["pactha_roteiro"]);
+    if (!atual || atual.passo !== rot.passo || atual.tabId !== rot.tabId) return;
+    const proximo = rot.passo + 1;
+    if (proximo < PORTAS_GOVBR.length) {
+      await _gravaRoteiro({ ...atual, passo: proximo, em: Date.now() }, `abrindo a porta ${proximo + 1}`);
+      chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[proximo].url });
+    } else {
+      let host = "discricionarias.transferegov.sistema.gov.br";
+      try { host = new URL(url).hostname || host; } catch (_) { /* ignore */ }
+      await _encerraRoteiro("4 portas abertas — capturando");
+      await chrome.storage.local.set({ pactha_roteiro_fim: { quando: new Date().toISOString() } });
+      capture(host, "captura_completa", { forcar: true });
+      // De novo em 12s: a sessão da ÚLTIMA porta pode terminar de nascer depois
+      // do primeiro envio, e o debounce engoliria a captura natural dela.
+      setTimeout(() => capture(host, "captura_completa_2", { forcar: true }), 12000);
+    }
+  } finally {
+    _avancando.delete(chave);
+  }
+}
+
+/* Decide sobre a aba do roteiro, venha o sinal do evento de navegação ou do alarme. */
 async function avancarRoteiro(details) {
   const { pactha_roteiro: rot } = await chrome.storage.local.get(["pactha_roteiro"]);
   if (!rot || details.tabId !== rot.tabId) return;
-  if (Date.now() - rot.em > ROTEIRO_TTL_MS) {
-    await chrome.storage.local.remove("pactha_roteiro");
-    console.warn("[PACTHA] roteiro da captura completa venceu (20 min sem avançar) — clique de novo");
+  if (Date.now() - rot.em > ROTEIRO_TTL_MS || Date.now() - (rot.inicio || rot.em) > ROTEIRO_MAX_MS) {
+    await _encerraRoteiro("venceu sem avançar — clique de novo");
+    await chrome.storage.local.set({ pactha_roteiro_fim: { quando: new Date().toISOString(), venceu: true } });
     return;
   }
   if (pareceLogin(details.url)) {
     // Esperando a PESSOA logar (reCAPTCHA, 2FA, telefone). O prazo de 20 min conta
     // do ÚLTIMO carregamento da tela de login, não do clique — senão um login
     // demorado fazia o roteiro morrer calado no meio, sem abrir as portas 2–4.
-    await chrome.storage.local.set({ pactha_roteiro: { ...rot, em: Date.now() } });
+    if (!String(rot.fase || "").startsWith("esperando o login")) {
+      await _gravaRoteiro({ ...rot, em: Date.now() }, `esperando o login (porta ${rot.passo + 1})`);
+    } else {
+      await chrome.storage.local.set({ pactha_roteiro: { ...rot, em: Date.now() } });
+    }
     return;
   }
   let host = "";
@@ -350,44 +417,45 @@ async function avancarRoteiro(details) {
   if (!host.endsWith("transferegov.sistema.gov.br") || host.startsWith("idp.")) return;
   /* ⚠️ SÓ AVANÇA SE A PÁGINA ASSENTOU. O SAML encadeia navegações; trocar a URL
      da aba no meio da cadeia mata a sessão da porta que estava nascendo. Espera
-     3s e confere que a aba continua NA MESMA URL e que ninguém avançou antes. */
+     e confere que a aba continua NA MESMA URL. `status` "complete" confirma na
+     hora; na mesma URL por ~20s também vale (ver o cabeçalho deste bloco). */
   const semFragmento = (u) => String(u || "").split("#")[0];
   const conferir = async (tentativa) => {
     try {
       const tab = await chrome.tabs.get(rot.tabId);
-      if (!tab || semFragmento(tab.url) !== semFragmento(details.url)) return;  // navegou: o próximo evento decide
-      /* ⚠️ `status`, e não só a URL: a página de auto-envio do SAML pode ter A
-         MESMA URL da página final. Enquanto o POST ao idp está pendente a aba
-         fica "loading" — avançar aí mataria a sessão da porta que estava
-         nascendo. Reconfere de 2 em 2s, até ~20s. */
-      if (tab.status !== "complete") {
-        if (tentativa < 10) setTimeout(() => conferir(tentativa + 1), 2000);
+      if (!tab || semFragmento(tab.url) !== semFragmento(details.url)) return;  // navegou: o próximo sinal decide
+      if (tab.status !== "complete" && tentativa < ROTEIRO_TENTATIVAS) {
+        setTimeout(() => conferir(tentativa + 1), ROTEIRO_PASSO_MS);
         return;
       }
-      const { pactha_roteiro: atual } = await chrome.storage.local.get(["pactha_roteiro"]);
-      if (!atual || atual.passo !== rot.passo || atual.tabId !== rot.tabId) return;
-      const proximo = rot.passo + 1;
-      if (proximo < PORTAS_GOVBR.length) {
-        await chrome.storage.local.set({ pactha_roteiro: { ...rot, passo: proximo } });
-        chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[proximo].url });
-      } else {
-        await chrome.storage.local.remove("pactha_roteiro");
-        capture(host, "captura_completa", { forcar: true });
-        // De novo em 12s: a sessão da ÚLTIMA porta pode terminar de nascer depois
-        // do primeiro envio, e o debounce engoliria a captura natural dela.
-        setTimeout(() => capture(host, "captura_completa_2", { forcar: true }), 12000);
-      }
+      await _concluiPasso(rot, details.url);
     } catch (e) {
       console.warn("[PACTHA] roteiro (avanço): " + (e && e.message || e));
     }
   };
-  setTimeout(() => conferir(0), 3000);
+  setTimeout(() => conferir(0), ROTEIRO_ESPERA_MS);
+}
+
+/* O alarme do roteiro: evento de navegação perdido não trava mais. Aba fechada
+   encerra o roteiro (e o alarme) em vez de deixá-lo pendurado. */
+async function tickRoteiro() {
+  const { pactha_roteiro: rot } = await chrome.storage.local.get(["pactha_roteiro"]);
+  if (!rot) { try { chrome.alarms.clear(ROTEIRO_TICK); } catch (_) { /* ignore */ } return; }
+  let tab = null;
+  try { tab = await chrome.tabs.get(rot.tabId); } catch (_) { tab = null; }
+  if (!tab) { await _encerraRoteiro("a aba do roteiro foi fechada"); return; }
+  await avancarRoteiro({ tabId: rot.tabId, url: tab.url, frameId: 0 });
 }
 
 chrome.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
   avancarRoteiro(details).catch((e) => console.warn("[PACTHA] roteiro: " + (e && e.message || e)));
 }, { url: [{ schemes: ["https"] }] });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== ROTEIRO_TICK) return;
+  tickRoteiro().catch((e) => console.warn("[PACTHA] roteiro (alarme): " + (e && e.message || e)));
+});
 
 chrome.runtime.onMessage.addListener((msg, _sender, responder) => {
   if (msg && msg.tipo === "captura_completa") {

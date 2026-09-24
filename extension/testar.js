@@ -263,8 +263,131 @@ const chk = (cond, msg) => {
   console.log("\n11) o roteiro espera o login sem prazo curto: os 20 min recomeçam na tela de login");
   {
     const bg = ler("background.js");
-    chk(/if \(pareceLogin\(details\.url\)\) \{[\s\S]{0,400}pactha_roteiro: \{ \.\.\.rot, em: Date\.now\(\) \}/.test(bg),
+    chk(/if \(pareceLogin\(details\.url\)\) \{[\s\S]{0,900}\{ \.\.\.rot, em: Date\.now\(\) \}/.test(bg),
       "na tela de login o roteiro regrava `em` (login demorado não mata o roteiro no meio)");
+  }
+
+  console.log("\n12) o ROTEIRO da captura completa, rodando de verdade num Chrome falso");
+  {
+    // ⚠️ Travou em produção em 23/09/2026 ("só fica abrindo e não captura"). Estes
+    // cenários rodam o background.js inteiro com abas, eventos e alarme simulados.
+    const montarBg = (cenario) => {
+      const store = { pactha_ambientes: [{ nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true }] };
+      const ouvintes = { nav: [], alarme: [], msg: [] };
+      const abas = new Map();
+      const posts = [];
+      const alarmes = new Set();
+      let proxId = 100;
+      const ecoa = (v, cb) => { if (cb) cb(v); return Promise.resolve(v); };
+      const nada = () => {};
+      const navegar = (aba, url) => {
+        aba.url = url; aba.status = "loading";
+        const plano = cenario(url, aba) || {};
+        setTimeout(() => {
+          if (plano.url) aba.url = plano.url;
+          if (!plano.carregando) aba.status = "complete";
+          if (!plano.semEvento) ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: aba.url, frameId: 0 }));
+        }, 1);
+      };
+      const chromeFalso = {
+        storage: { local: {
+          get: (k, cb) => { const o = {}; (Array.isArray(k) ? k : [k]).forEach((x) => { if (x in store) o[x] = store[x]; }); return ecoa(o, cb); },
+          set: (o, cb) => { Object.assign(store, o); return ecoa(undefined, cb); },
+          remove: (k, cb) => { (Array.isArray(k) ? k : [k]).forEach((x) => delete store[x]); return ecoa(undefined, cb); },
+        }, onChanged: { addListener: nada } },
+        tabs: {
+          create: (o, cb) => { const aba = { id: proxId++, url: o.url, status: "complete" }; abas.set(aba.id, aba); if (cb) cb(aba); },
+          get: (id) => abas.has(id) ? Promise.resolve({ ...abas.get(id) }) : Promise.reject(new Error("No tab with id")),
+          update: (id, o) => { const aba = abas.get(id); if (aba && o.url) navegar(aba, o.url); },
+        },
+        alarms: { create: (n) => alarmes.add(n), clear: (n) => alarmes.delete(n), onAlarm: { addListener: (f) => ouvintes.alarme.push(f) } },
+        webNavigation: { onCompleted: { addListener: (f) => ouvintes.nav.push(f) } },
+        cookies: { onChanged: { addListener: nada },
+          getAll: (q, cb) => cb(q.domain === "idp.transferegov.sistema.gov.br"
+            ? [{ name: "JSESSIONID", value: "i1", domain: "idp.transferegov.sistema.gov.br", path: "/", httpOnly: true }] : []) },
+        runtime: { onInstalled: { addListener: nada }, onStartup: { addListener: nada },
+          onMessage: { addListener: (f) => ouvintes.msg.push(f) } },
+        action: { setBadgeText: nada, setBadgeBackgroundColor: nada, setTitle: nada },
+      };
+      const ctx = {
+        console: { log: nada, warn: nada, error: nada },
+        chrome: chromeFalso, navigator: { userAgent: "teste" }, URL, Date, JSON, Promise, Set, Map,
+        setTimeout: (f) => setTimeout(f, 1),       // o tempo corre depressa aqui
+        fetch: async (url, opt) => {
+          if (opt && opt.method === "POST") { posts.push(JSON.parse(opt.body)); return { ok: true, status: 200, json: async () => ({ id: 1 }) }; }
+          if (String(url).includes("/session-capture/saude")) return { ok: true, status: 200, json: async () => ({}) };
+          return { ok: true, status: 200, url, text: async () => "<a>Sair</a> Consultar Proposta" };
+        },
+      };
+      ctx.self = ctx;
+      ctx.importScripts = (f) => { if (f === "tokens.local.js") throw new Error("ausente"); vm.runInContext(ler(f), ctx); };
+      vm.createContext(ctx);
+      vm.runInContext(ler("background.js"), ctx);
+      const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+      return { ctx, store, abas, posts, alarmes, ouvintes, esperar,
+        clicar: () => ouvintes.msg.forEach((f) => f({ tipo: "captura_completa" }, {}, nada)),
+        tick: async () => { for (const f of ouvintes.alarme) f({ name: "pactha_roteiro_tick" }); await esperar(80); } };
+    };
+    const PORTA = (n) => vm.runInContext(`PORTAS_GOVBR[${n}].url`, montarBg(() => ({})).ctx);
+    // Só as capturas DO ROTEIRO (o modo automático também captura a cada navegação).
+    const govbrPosts = (bg) => bg.posts.filter((p) => p.automation_key === "govbr"
+      && /captura_completa/.test(String(p.url_atual || "")));
+
+    // (a) caminho feliz: passa pelas 4 portas e captura
+    {
+      const bg = montarBg(() => ({}));
+      bg.clicar(); await bg.esperar(400);
+      chk(!bg.store.pactha_roteiro, "(a) roteiro terminou");
+      chk(govbrPosts(bg).length >= 1, "(a) a captura foi enviada ao ambiente");
+      chk(!bg.alarmes.has("pactha_roteiro_tick"), "(a) o alarme do roteiro foi desligado no fim");
+    }
+    // (b) o evento da porta 2 se PERDE: o alarme destrava
+    {
+      const bg = montarBg((url) => url === PORTA(1) ? { semEvento: true } : {});
+      bg.clicar(); await bg.esperar(200);
+      chk(bg.store.pactha_roteiro && bg.store.pactha_roteiro.passo === 1, "(b) parado na porta 2 sem o evento (era o travamento)");
+      chk(bg.alarmes.has("pactha_roteiro_tick"), "(b) o alarme do roteiro está ligado");
+      await bg.tick(); await bg.esperar(300);
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "(b) o alarme fez o roteiro andar até a captura");
+    }
+    // (c) a aba da porta 3 nunca sai de "carregando": ~20s na mesma URL = assentada
+    {
+      const bg = montarBg((url) => url === PORTA(2) ? { carregando: true } : {});
+      bg.clicar(); await bg.esperar(500);
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "(c) recurso que nunca termina de carregar não trava mais");
+    }
+    // (d) cai na tela de login: ESPERA a pessoa, e segue depois do login
+    {
+      let logado = false;
+      const bg = montarBg((url) => (url === PORTA(0) && !logado) ? { url: "https://sso.acesso.gov.br/login?client_id=x" } : {});
+      bg.clicar(); await bg.esperar(200);
+      chk(bg.store.pactha_roteiro && /esperando o login/.test(bg.store.pactha_roteiro.fase), "(d) diz que está esperando o login");
+      chk(govbrPosts(bg).length === 0, "(d) nada enviado antes do login");
+      logado = true;
+      const aba = [...bg.abas.values()][0];
+      aba.url = PORTA(0); aba.status = "complete";
+      bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: PORTA(0), frameId: 0 }));
+      await bg.esperar(400);
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "(d) depois do login o roteiro seguiu sozinho");
+    }
+    // (e) a aba foi fechada no meio: o alarme encerra em vez de ficar pendurado
+    {
+      const bg = montarBg((url) => url === PORTA(1) ? { semEvento: true } : {});
+      bg.clicar(); await bg.esperar(200);
+      bg.abas.clear();
+      await bg.tick();
+      chk(!bg.store.pactha_roteiro && !bg.alarmes.has("pactha_roteiro_tick"), "(e) aba fechada encerra o roteiro e o alarme");
+      chk(govbrPosts(bg).length === 0, "(e) a captura do roteiro não sai");
+    }
+    // (f) o estado existe ANTES de a aba navegar (a corrida que perdia o 1º evento)
+    {
+      const bg = montarBg(() => ({}));
+      let viuEstado = null;
+      const updateOriginal = bg.ctx.chrome.tabs.update;
+      bg.ctx.chrome.tabs.update = (id, o) => { viuEstado = !!bg.store.pactha_roteiro; updateOriginal(id, o); };
+      bg.clicar(); await bg.esperar(50);
+      chk(viuEstado === true, "(f) o roteiro é gravado antes de a aba ir para a porta 1");
+    }
   }
 
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");
