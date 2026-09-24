@@ -529,6 +529,56 @@ def test_candidata_de_VISITANTE_e_recusada__nao_troca_a_sessao_boa(monkeypatch, 
     assert worker.salvos() == [], "o jar de visitante chegou na sessao em uso"
 
 
+# ⭐ VISITANTE COM LOGIN (medido no Chrome do dono em 24/09/2026 ~16h): a conta dele
+# nao tem perfil no modulo Discricionarias — a entrada e SEMPRE "Acesso Livre" — e o
+# /private/ do mandatarias ABRE. E o login real; so o visitante PURO (o /private/ cai
+# no idp) e "login".
+URL_PRIVATE_OK = "https://mandatarias.transferegov.sistema.gov.br/projeto-basico/private/index.jsf"
+URL_IDP = "https://idp.transferegov.sistema.gov.br/idp/"
+ENTRADA_VISITANTE = (URL_OK, VISITANTE)
+
+
+def test_candidata_de_VISITANTE_COM_LOGIN_e_promovida(monkeypatch, worker):
+    _playwright_falso(monkeypatch, _Page("about:blank", "", destinos=[ENTRADA_VISITANTE, URL_PRIVATE_OK]))
+    assert asyncio.run(gr.processa_candidata()) == "promovida"
+    assert worker.salvos(), "a captura com login real (conta sem perfil no Discricionarias) nao foi promovida"
+
+
+def test_candidata_de_VISITANTE_PURO_continua_recusada(monkeypatch, worker):
+    _playwright_falso(monkeypatch, _Page("about:blank", "", destinos=[ENTRADA_VISITANTE, URL_IDP]))
+    assert asyncio.run(gr.processa_candidata()) == "recusada"
+    assert worker.salvos() == []
+
+
+def test_renew_de_VISITANTE_COM_LOGIN_e_reconectado_e_nao_pede_recaptura(monkeypatch, rodada):
+    _playwright_falso(monkeypatch, _Page("about:blank", "", destinos=[ENTRADA_VISITANTE, URL_PRIVATE_OK]
+                                         + [URL_OK] * 20))
+    assert asyncio.run(gr.renew()) == "reconnected"
+    assert rodada.salvos() == [(7, "v1")]
+
+
+def test_renew_de_VISITANTE_PURO_pede_recaptura(monkeypatch, rodada):
+    _playwright_falso(monkeypatch, _Page("about:blank", "", destinos=[ENTRADA_VISITANTE, URL_IDP]))
+    assert asyncio.run(gr.renew()) == "needs_recapture"
+    assert rodada.salvos() == []
+
+
+def test_keepalive_de_VISITANTE_COM_LOGIN_declara_o_login_vivo(monkeypatch, rodada):
+    _playwright_falso(monkeypatch, _Page("about:blank", "", destinos=[ENTRADA_VISITANTE, URL_PRIVATE_OK,
+                                                                      URL_OK, URL_OK]))
+    assert asyncio.run(gr.keepalive()) == "alive"
+    assert rodada.salvos() == [(7, "v1")]
+    assert ("sso", "reconnected") in rodada.registros, \
+        "sem isto a guarda do endpoint ficava desligada para a conta sem perfil no Discricionarias"
+
+
+def test_keepalive_de_VISITANTE_com_o_private_CAIDO_nao_declara_o_login(monkeypatch, rodada):
+    _playwright_falso(monkeypatch, _Page("about:blank", "", destinos=[ENTRADA_VISITANTE, URL_IDP,
+                                                                      URL_OK, URL_OK]))
+    asyncio.run(gr.keepalive())
+    assert ("sso", "reconnected") not in rodada.registros
+
+
 def test_veredito_de_TRES_valores__nao_autenticou_NAO_e_caiu_no_login():
     assert gr.veredito_login(URL_OK, "Bem-vindo Sair") == "logado"
     assert gr.veredito_login(URL_LOGIN, "Identifique-se no gov.br") == "login"

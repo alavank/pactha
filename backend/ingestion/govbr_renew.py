@@ -708,6 +708,10 @@ async def processa_candidata() -> str:
             pass
         url_final = page.url or ""
         veredito = veredito_login(url_final, body, getattr(resp, "status", None))
+        if veredito == "login" and _e_visitante(body) and await _visitante_com_login(page):
+            log.info("candidata: discricionarias em ACESSO LIVRE, mas o /private/ do mandatarias "
+                     "abriu — login gov.br REAL (conta sem perfil no modulo Discricionarias)")
+            veredito = "logado"
         if veredito == "nao_sei":
             # Pagina de erro do portal, corpo vazio, SAML ainda em transito: NAO e
             # prova de jar deslogado. A candidata fica — ate envelhecer: fila presa
@@ -793,6 +797,33 @@ def _eh_tela_de_login(url: str, body: str) -> bool:
             or "acesso restrito" in b or "sair do acesso livre" in b)
 
 
+def _e_visitante(body: str) -> bool:
+    """A pagina de VISITANTE ("Acesso Livre") do discricionarias: o "Sair do Acesso
+    Livre" no texto visivel (innerText)."""
+    return "sair do acesso livre" in (body or "").lower()
+
+
+async def _visitante_com_login(page) -> bool:
+    """Entrada do discricionarias em ACESSO LIVRE: o login gov.br e REAL mesmo assim?
+
+    ⭐ MEDIDO no Chrome do dono (24/09/2026 ~16h): com o login gov.br valendo, o
+    /private/ do mandatarias ABRIU ("ERRO — Proposta nao Informada", a area logada) e
+    o discricionarias continuou "Acesso Livre" mesmo com a sessao dele zerada — a
+    conta NAO TEM PERFIL no modulo Discricionarias. Esse sempre foi o estado da sessao
+    dos servidores (ate 23/09 o "Sair do Acesso Livre" contava como "Sair" em
+    `_is_authenticated`); a regra de visitante de #546 passou a julga-lo "login" e o
+    renew pedia recaptura toda hora, e a candidata era recusada.
+    Visitante PURO (sem login nenhum) nao abre o /private/: cai no idp. Navega no
+    MESMO contexto (os cookies do jar em teste) e nunca levanta."""
+    try:
+        await page.goto(PRIVATE_ENTRY, timeout=45000, wait_until="domcontentloaded")
+        await page.wait_for_timeout(5000)
+        u = (page.url or "").lower()
+        return "/private/" in u and "idp/" not in u and "sso.acesso" not in u
+    except Exception:
+        return False
+
+
 def _is_authenticated(url: str, body: str) -> bool:
     if _eh_tela_de_login(url, body):
         return False
@@ -860,6 +891,10 @@ async def renew() -> str:
         except Exception:
             pass
         veredito = veredito_login(page.url, body, getattr(resp, "status", None))
+        if veredito == "login" and _e_visitante(body) and await _visitante_com_login(page):
+            log.info("entrada do discricionarias em ACESSO LIVRE, mas o /private/ do mandatarias "
+                     "abriu: login gov.br REAL (conta sem perfil no modulo Discricionarias)")
+            veredito = "logado"
         if veredito == "nao_sei":
             # Ver `veredito_login`: pagina de erro/corpo vazio nao e "SSO expirou".
             log.warning(f"pagina irreconhecivel em {(page.url or '')[:60]} (HTTP "
@@ -942,6 +977,7 @@ async def keepalive() -> str:
         page = await ctx.new_page()
         # 1) guest: mantem o SSO/discricionarias quente (barato)
         entry_ok = False
+        entry_visitante = False     # discricionarias em ACESSO LIVRE (ver `_visitante_com_login`)
         try:
             await page.goto(ENTRY, timeout=45000, wait_until="domcontentloaded")
             # 4s bastam com o JSESSIONID quente; com round-trip no SSO o renew()
@@ -954,7 +990,8 @@ async def keepalive() -> str:
                 except Exception:
                     _body = ""
                 entry_ok = _is_authenticated(page.url, _body)
-                if entry_ok:
+                entry_visitante = _e_visitante(_body)
+                if entry_ok or entry_visitante:
                     break
         except Exception as e:
             log.warning(f"keepalive guest: {str(e)[:80]}")
@@ -1011,7 +1048,10 @@ async def keepalive() -> str:
     # intervalo qualquer jar deslogado do Chrome gravava direto por cima da
     # sessao recem-recuperada. ⚠️ So o POSITIVO: a espera daqui e curta para
     # veredito negativo — quem declara o login morto continua sendo o renew().
-    if entry_ok:
+    # ⚠️ Discricionarias em ACESSO LIVRE com o /private/ do mandatarias vivo = login
+    # REAL de uma conta sem perfil no Discricionarias (medido 24/09/2026 ~16h) — e o
+    # estado da sessao do dono. Sem isto o keepalive nunca registrava o login vivo.
+    if entry_ok or (entry_visitante and private_ok):
         _registra_sso("reconnected")
     # ⚠️ `prestacao` sai no log SEPARADO de `execucao`, e nao somado a ele: sao
     # SPs diferentes, e foi exatamente por eles aparecerem como um so que as NEs
