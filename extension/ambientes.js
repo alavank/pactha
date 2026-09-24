@@ -366,8 +366,14 @@ let _sondaCache = { em: 0, valor: null };
 async function sondaMandatarias() {
   try {
     const r = await fetch(PORTAS_GOVBR[1].url, { method: "GET", credentials: "include", cache: "no-store" });
-    if (!r.ok) return null;
-    if (pareceLogin(r.url)) return false;
+    /* ⚠️ O CÓDIGO HTTP NÃO DECIDE (medido no Chrome do dono, 24/09/2026 ~18h40): a área
+       privada LOGADA responde **400** — é a página "ERRO — Proposta não Informada" (o
+       /private/ sem `idProposta`). O `if (!r.ok) return null` da 2.4.6 transformava o
+       login real em "não sei", e a captura saía barrada como "visitante SEM login". O
+       servidor (`_visitante_com_login`) sempre julgou pelo endereço, e lá passava.
+       Só erro do SERVIDOR (5xx) é "não sei"; 401/403 é tela de login. */
+    if (r.status >= 500) return null;
+    if (pareceLogin(r.url) || r.status === 401 || r.status === 403) return false;
     const html = await r.text();
     if (/<title>\s*HTTP Post Binding/i.test(html)) return null;   // sem sessão no SP: não sei
     if (corpoEhLogin(html)) return false;      // inclui a página de visitante (corpoEhAcessoLivre)

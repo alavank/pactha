@@ -118,7 +118,9 @@ barraria a captura boa para sempre.
   Agora o porteiro separa: visitante na porta 1 **com** o `/private/` do mandatárias
   abrindo (`sondaMandatarias`) = login real → a captura sai (`visitante_com_login`);
   visitante **sem** isso (muro SAML ou tela do idp no mandatárias) = visitante PURO →
-  barrado, com o motivo.
+  barrado, com o motivo. ⚠️ A área logada responde **HTTP 400** ("ERRO — Proposta não
+  Informada", o /private/ sem `idProposta`, medido 24/09/2026 ~18h40): o código HTTP não
+  decide — só 5xx é "não sei", 401/403 é login (2.4.8; a 2.4.6 barrava por `!r.ok`).
 - **Captura completa:** visitante na porta 1 NÃO para o roteiro — ele segue as 4 portas;
   a porta 2 é que exige o login gov.br real (sem login, cai na tela do idp e o roteiro
   espera). A 2.4.5 tentava sair do visitante apagando a sessão do discricionarias; com

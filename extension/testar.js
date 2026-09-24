@@ -159,7 +159,10 @@ function montarBg(cenario, inicial, opcoes) {
       // é o que deixa dois sinais passarem juntos pela conferência da página.
       if (opcoes && opcoes.sondaMs) await new Promise((r) => setTimeout(r, opcoes.sondaMs));
       const html = opcoes && opcoes.sonda ? opcoes.sonda(url) : "<a>Sair</a> Consultar Proposta";
-      return { ok: true, status: 200, url, text: async () => html };
+      // `opcoes.status(url)`: o código HTTP de cada URL (a área logada do mandatárias
+      // responde 400 — medido em 24/09/2026).
+      const st = opcoes && opcoes.status ? opcoes.status(url) : 200;
+      return { ok: st < 400, status: st, url, text: async () => html };
     },
   };
   ctx.self = ctx;
@@ -643,7 +646,9 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     // MEDIDO 24/09/2026 ~16h: a conta do dono não tem perfil no Discricionárias — porta 1
     // sempre "Acesso Livre" — e o /private/ do mandatárias ABRE com o login gov.br dela.
     const PORTA2 = vm.runInContext("PORTAS_GOVBR[1].url", ctx);
-    const porUrl = (p2) => async (url) => ({ ok: true, status: 200,
+    const porUrl = (p2) => async (url) => ({
+      ok: url === PORTA2 ? ((p2.status || 200) < 400) : true,
+      status: url === PORTA2 ? (p2.status || 200) : 200,
       url: url === PORTA2 ? (p2.url || url) : url,
       text: async () => (url === PORTA2 ? p2.html : HTML_VISITANTE) });
     const { ctx: c3 } = montar({});
@@ -665,6 +670,14 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     // a sonda da porta 2 em si: true (abriu) | false (login/visitante) | null (não sei)
     const sonda2 = async (p2) => { const { ctx: c } = montar({}); c.fetch = porUrl(p2); return c.sondaMandatarias(); };
     chk((await sonda2({ html: HTML_MANDATARIAS_LOGADA })) === true, "sondaMandatarias: /private/ aberto = true");
+    // MEDIDO no Chrome do dono (24/09/2026 ~18h40): a área LOGADA responde HTTP 400
+    // ("ERRO — Proposta não Informada"); a 2.4.6 descartava por `!r.ok` e barrava o login real.
+    chk((await sonda2({ html: HTML_MANDATARIAS_LOGADA, status: 400 })) === true,
+      "sondaMandatarias: /private/ logado respondendo HTTP 400 (o medido) = true");
+    chk((await sonda2({ html: HTML_MANDATARIAS_LOGADA, status: 502 })) === null,
+      "sondaMandatarias: erro do servidor (5xx) = null (não sei)");
+    chk((await sonda2({ html: "<title>Login</title>", status: 401 })) === false,
+      "sondaMandatarias: 401 = tela de login = false");
     chk((await sonda2({ html: MURO_REAL })) === null, "sondaMandatarias: muro SAML (sem sessão no SP) = null");
     chk((await sonda2({ html: "<title>Login do Transferegov</title>", url: "https://idp.transferegov.sistema.gov.br/idp/" })) === false,
       "sondaMandatarias: caiu na tela do idp = false");
@@ -716,11 +729,12 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     const sondaVisitante = (mand) => (url) => (url === PORTA(1)
       ? (mand() === "logada" ? HTML_MANDATARIAS_LOGADA : MURO_REAL) : HTML_VISITANTE);
 
-    // (a) VISITANTE COM LOGIN (o caso do dono): as 4 portas e a captura SAI
+    // (a) VISITANTE COM LOGIN (o caso do dono): as 4 portas e a captura SAI — com a área
+    //     logada do mandatárias respondendo HTTP 400, como no Chrome dele
     {
       const bg = montarBg((url) => (url === PORTA(0) ? { url: URL_VISITANTE, titulo: TIT_LIVRE } : { titulo: TIT_LOGADA }),
         { pactha_visitante: { quando: new Date().toISOString() } },
-        { sonda: sondaVisitante(() => "logada") });
+        { sonda: sondaVisitante(() => "logada"), status: (url) => (url === PORTA(1) ? 400 : 200) });
       bg.clicar(); await bg.esperar(500);
       const aba = [...bg.abas.values()][0];
       chk(JSON.stringify(aba.visitas) === JSON.stringify([URL_VISITANTE, PORTA(1), PORTA(2), PORTA(3)]),
@@ -963,7 +977,7 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
   console.log("\n17) manifest, popup e textos da 2.4.5");
   {
     const man = JSON.parse(ler("manifest.json"));
-    chk(man.version === "2.4.7", "versão 2.4.7");
+    chk(man.version === "2.4.8", "versão 2.4.8");
     const cs = (man.content_scripts || [])[0] || {};
     chk((cs.js || []).includes("aviso_pagina.js")
       && (cs.matches || []).includes("https://idp.transferegov.sistema.gov.br/*")
