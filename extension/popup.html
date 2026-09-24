@@ -77,9 +77,13 @@
 </head>
 <body>
   <div class="header">
-    <h1>📎 PACTHA - Captura Automática</h1>
+    <h1>📎 PACTHA - Captura Automática <span id="versao" style="font-weight:400;opacity:.85;font-size:12px"></span></h1>
     <div class="sub">Cookies + httpOnly · Keep-alive · Sem clicar</div>
   </div>
+  <!-- A versão CARREGADA no Chrome × a da PASTA, e o serviço de fundo respondendo
+       (24/09/2026: o dono "nunca sei que tá atualizado" — o popup lia os arquivos
+       novos do disco e o serviço de fundo seguia o antigo, sem ninguém ver). -->
+  <div id="aviso-versao" class="status error hidden" style="margin:8px 16px 0"></div>
 
   <div class="body" id="main">
     <!-- Card de status do modo automático -->

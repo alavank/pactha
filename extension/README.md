@@ -201,6 +201,12 @@ PACTHA sempre tem cookies frescos pra rodar scrapers enriquecidos.
 ## O popup mostra status
 
 Abrindo o ícone PACTHA você vê:
+- A **versão carregada** no título (ex.: `v2.4.7`), e um aviso vermelho quando: a pasta
+  tem versão mais nova que a carregada (falta o ↻ em chrome://extensions — o popup lê os
+  arquivos do disco a cada abertura, o serviço de fundo só troca no ↻); o serviço de fundo
+  não responde; ou ele está noutra versão. Se a «Captura completa» não tiver resposta em
+  3 s, o "Abrindo as 4 portas…" vira esse aviso (24/09/2026: o dono via "Abrindo" para
+  sempre com o serviço de fundo parado).
 - ✅ **Modo automático ativo** (verde) ou ⚠️ desligado (âmbar)
 - Domínio atual da aba
 - **Última captura**: `✓ discricionarias.transferegov.sistema.gov.br · 13

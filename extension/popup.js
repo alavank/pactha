@@ -441,7 +441,52 @@ function desenharPortas() {
   });
 }
 
+/* A VERSÃO, À VISTA (24/09/2026, pedido do dono: "tem que mostrar a versão nessa tela
+   se não nunca sei que tá atualizado"). Três perguntas, cada uma com resposta na tela:
+   - qual versão o Chrome CARREGOU (`chrome.runtime.getManifest()`);
+   - qual versão está na PASTA (o manifest.json do disco — o popup lê os arquivos do
+     disco a cada abertura; o serviço de fundo só troca no ↻ de chrome://extensions);
+   - o serviço de fundo RESPONDE? Sem ele, «Captura completa» ficava em "Abrindo as 4
+     portas…" para sempre, calada — foi exatamente o que o dono viu. */
+function pingServicoDeFundo(ms = 2500) {
+  return new Promise((res) => {
+    let feito = false;
+    const fim = (v) => { if (!feito) { feito = true; res(v); } };
+    setTimeout(() => fim(null), ms);
+    try {
+      chrome.runtime.sendMessage({ tipo: "versao" }, (resp) => {
+        const erro = chrome.runtime.lastError;   // ler sempre: senão o Chrome reclama
+        fim(!erro && resp && resp.versao ? resp.versao : null);
+      });
+    } catch (_) { fim(null); }
+  });
+}
+
+async function mostrarVersao() {
+  const carregada = (chrome.runtime.getManifest && chrome.runtime.getManifest().version) || "?";
+  if ($("versao")) $("versao").textContent = `v${carregada}`;
+  let naPasta = null;
+  try { naPasta = (await (await fetch("manifest.json", { cache: "no-store" })).json()).version; } catch (_) { /* ignore */ }
+  const sw = await pingServicoDeFundo();
+  const aviso = $("aviso-versao");
+  if (!aviso) return;
+  const msgs = [];
+  if (naPasta && naPasta !== carregada) {
+    msgs.push(`Há uma versão NOVA na pasta (v${naPasta}), mas o Chrome ainda roda a v${carregada}. `
+      + "Abra chrome://extensions e clique em ↻ (recarregar) no PACTHA.");
+  } else if (!sw) {
+    msgs.push("O serviço de fundo da extensão NÃO RESPONDE — a «Captura completa» não anda assim. "
+      + "Abra chrome://extensions e clique em ↻ (recarregar) no PACTHA; se aparecer «Erros», me mande.");
+  } else if (sw !== carregada) {
+    msgs.push(`O serviço de fundo está na v${sw} e o popup na v${carregada}: clique em ↻ (recarregar) `
+      + "no PACTHA em chrome://extensions.");
+  }
+  aviso.textContent = msgs.join(" ");
+  aviso.classList.toggle("hidden", !msgs.length);
+}
+
 async function init() {
+  mostrarVersao();
   const cfg = await getConfig();
   const tab = await getCurrentTab();
   const host = getDomainFromUrl(tab.url);
@@ -513,9 +558,24 @@ async function init() {
   // milissegundos e o ouvinte do storage abaixo (e o relógio de 2s) o troca pelo
   // andamento real ("porta N de 4: …").
   $("btn-completa").addEventListener("click", () => {
-    chrome.runtime.sendMessage({ tipo: "captura_completa" });
     showStatus("Abrindo as 4 portas na mesma aba. Se pedir login, clique em «Entrar com "
                + "gov.br» e faça o login — o roteiro continua sozinho depois.", "info");
+    /* ⚠️ O CLIQUE PRECISA DE RESPOSTA (24/09/2026): com o serviço de fundo parado ou
+       antigo, a mensagem se perdia e o popup ficava em "Abrindo…" para sempre. */
+    let respondeu = false;
+    try {
+      chrome.runtime.sendMessage({ tipo: "captura_completa" }, (resp) => {
+        const erro = chrome.runtime.lastError;
+        respondeu = !erro && !!(resp && resp.ok);
+      });
+    } catch (_) { /* cai no aviso abaixo */ }
+    setTimeout(() => {
+      if (respondeu) return;
+      showStatus("A extensão NÃO respondeu ao clique — o serviço de fundo está parado ou numa "
+        + "versão antiga. Abra chrome://extensions, clique em ↻ (recarregar) no PACTHA e clique "
+        + "em «Captura completa» de novo.", "error");
+      mostrarVersao();
+    }, 3000);
   });
   mostrarRoteiro();
   // O roteiro anda no service worker: o popup acompanha pelo storage, ao vivo.

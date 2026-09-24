@@ -143,6 +143,7 @@ function montarBg(cenario, inicial, opcoes) {
         if (cb) cb({ url: d.url, name: d.name, storeId: d.storeId });
       } },
     runtime: { onInstalled: { addListener: nada }, onStartup: { addListener: nada },
+      getManifest: () => ({ version: "2.4.7" }),
       onMessage: { addListener: (f) => ouvintes.msg.push(f) } },
     action: { setBadgeText: (o) => { selo.texto = o.text; }, setBadgeBackgroundColor: nada,
       setTitle: (o) => { selo.titulo = o.title; } },
@@ -962,7 +963,7 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
   console.log("\n17) manifest, popup e textos da 2.4.5");
   {
     const man = JSON.parse(ler("manifest.json"));
-    chk(man.version === "2.4.6", "versão 2.4.6");
+    chk(man.version === "2.4.7", "versão 2.4.7");
     const cs = (man.content_scripts || [])[0] || {};
     chk((cs.js || []).includes("aviso_pagina.js")
       && (cs.matches || []).includes("https://idp.transferegov.sistema.gov.br/*")
@@ -1055,6 +1056,49 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     chk(/Nada foi enviado/.test(p.status.msg), "captura antiga no storage (sem automation_key) não conta como prova");
     chk(/estado\.motivo === "visitante"\s*\?\s*`Este Chrome está no ACESSO LIVRE/.test(pj),
       "captura manual: visitante tem mensagem própria");
+  }
+
+  console.log("\n19) a VERSÃO à vista e o serviço de fundo que não responde (24/09/2026)");
+  {
+    // o serviço de fundo responde à pergunta de versão
+    const bg = montarBg(() => ({}));
+    let resp = null;
+    bg.ouvintes.msg.forEach((f) => f({ tipo: "versao" }, {}, (r) => { resp = r; }));
+    chk(resp && resp.versao === "2.4.7", "o serviço de fundo responde {versao} ao popup");
+
+    // o popup: as funções REAIS, tiradas do popup.js
+    const pj = ler("popup.js");
+    const pega = (ini) => { const i = pj.indexOf(ini); return pj.slice(i, pj.indexOf("\n}\n", i) + 3); };
+    const fonte = pega("function pingServicoDeFundo(") + pega("async function mostrarVersao(");
+    const rodar = async ({ carregada, pasta, sw }) => {
+      const aviso = { textContent: "", classes: new Set(["hidden"]) };
+      aviso.classList = { toggle: (c, on) => { if (on) aviso.classes.add(c); else aviso.classes.delete(c); } };
+      const els = { versao: { textContent: "" }, "aviso-versao": aviso };
+      const ctx = {
+        Promise, JSON, String, setTimeout: (f) => setTimeout(f, 5),
+        $: (id) => els[id] || null,
+        fetch: async () => ({ json: async () => ({ version: pasta }) }),
+        chrome: { runtime: { getManifest: () => ({ version: carregada }), lastError: undefined,
+          sendMessage: (m, cb) => { if (sw) setTimeout(() => cb({ versao: sw }), 1); } } },
+      };
+      vm.createContext(ctx);
+      vm.runInContext(fonte, ctx);
+      await ctx.mostrarVersao();
+      return { versao: els.versao.textContent, aviso: aviso.textContent, visivel: !aviso.classes.has("hidden") };
+    };
+    let v = await rodar({ carregada: "2.4.7", pasta: "2.4.7", sw: "2.4.7" });
+    chk(v.versao === "v2.4.7" && !v.visivel, "tudo na mesma versão: mostra v2.4.7 e nenhum aviso");
+    v = await rodar({ carregada: "2.4.4", pasta: "2.4.7", sw: "2.4.4" });
+    chk(v.visivel && /versão NOVA na pasta \(v2\.4\.7\)/.test(v.aviso) && /↻ \(recarregar\)/.test(v.aviso),
+      "pasta mais nova que a carregada: pede o ↻ (recarregar) em chrome://extensions");
+    v = await rodar({ carregada: "2.4.7", pasta: "2.4.7", sw: null });
+    chk(v.visivel && /NÃO RESPONDE/.test(v.aviso), "serviço de fundo mudo: diz que não responde e o que fazer");
+    v = await rodar({ carregada: "2.4.7", pasta: "2.4.7", sw: "2.4.5" });
+    chk(v.visivel && /serviço de fundo está na v2\.4\.5/.test(v.aviso), "serviço de fundo em outra versão: aponta a diferença");
+    chk(/A extensão NÃO respondeu ao clique/.test(pj) && /respondeu = !erro && !!\(resp && resp\.ok\)/.test(pj),
+      "«Captura completa» sem resposta em 3s troca o «Abrindo…» pelo aviso do ↻");
+    chk(/id="versao"/.test(ler("popup.html")) && /id="aviso-versao"/.test(ler("popup.html")),
+      "popup.html: o lugar da versão e do aviso");
   }
 
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");
