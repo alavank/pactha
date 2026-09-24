@@ -2519,9 +2519,10 @@ tem perfil no módulo Discricionárias; o login é real.** Esse sempre foi o est
 o "Sair do Acesso Livre" contava como "Sair" (logado), e o servidor idem. A trava de visitante (#546,
 2.4.4/2.4.5) é que passou a barrar TODA captura dessa conta — foi ela o "não captura mais". Extensão 2.4.6:
 visitante na porta 1 + `/private/` do mandatárias abrindo = `visitante_com_login` (a captura sai); o
-roteiro não tenta mais sair do visitante (a porta 2 exige o login real). O servidor precisa da MESMA regra
-(`veredito_login` na entrada do discricionárias diz "login" para essa conta, e a promoção de candidata
-recusa). A tela do idp tem «Entrar com gov.br» e, logo abaixo, o link
+roteiro não tenta mais sair do visitante (a porta 2 exige o login real). O servidor tem a MESMA regra
+(`govbr_renew._visitante_com_login`): entrada em Acesso Livre + `/private/` do mandatárias abrindo no
+mesmo contexto = login real — o renew não pede recaptura, a candidata é promovida e o keepalive registra
+o login vivo; visitante PURO continua "login"/recusado. A tela do idp tem «Entrar com gov.br» e, logo abaixo, o link
 «Acesso livre» (`www.gov.br/transferegov/…/acesso-livre`) — a armadilha, que devolve ao visitante. A
 2.4.4 já barrava a captura de visitante (certo), mas calada: o roteiro abria as 4 portas sem nunca ver
 login e terminava "nada enviado", sem dizer o que fazer. **Não medido:** a página LOGADA (título e HTML)
