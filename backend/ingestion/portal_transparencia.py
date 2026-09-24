@@ -16,9 +16,18 @@ DUAS FASES, e a separacao e o que torna isto barato e reversivel:
   tenants, e entrega autor, tipo, impositividade, orgao, ano e valor. E ela e
   COMMITADA antes de a fase 2 — incerta — ser tentada.
 
-  FASE 2 — EXECUCAO. Pergunta a CGU, por codigo de emenda, quanto foi
+  FASE 2 ABERTA — EXECUCAO PELA PLANILHA (desde 24/09/2026, TODO tenant). Le o
+  `EmendasParlamentares.zip` que a CGU publica todo dia (32 MB, sem chave) e
+  grava empenhado/liquidado/pago/restos em `emendas_federais_cgu` para cada
+  codigo da fila. Casamento medido na base nacional: 95-99% dos codigos
+  derivados de 2019-2026 existem na planilha; o que nao casa e de 2010-2015,
+  que a CGU publica SEM codigo (as 11.155 linhas de 2014 vem "Sem informacao").
+  Ver `ler_planilha` e `execucao_planilha`. `PT_PLANILHA=0` desliga.
+
+  FASE 2 — EXECUCAO PELA API. Pergunta a CGU, por codigo de emenda, quanto foi
   empenhado/liquidado/pago e quais documentos existem. So roda com
-  `PORTAL_TRANSPARENCIA_API_KEY`.
+  `PORTAL_TRANSPARENCIA_API_KEY`. Com a planilha, o que SO ela traz e a linha
+  do tempo de documentos (empenho, liquidacao, pagamento com data).
 
 ⚠️ A CHAVE E DE PESSOA FISICA, e isso e uma decisao, nao um detalhe tecnico.
 Ela sai de `portaldatransparencia.gov.br/api-de-dados/cadastrar-email` com conta
@@ -123,6 +132,33 @@ TAXA_MINIMA = float(os.getenv("PT_TAXA_MINIMA", "0.25") or "0.25")
 DIVERGENCIA_MAXIMA = float(os.getenv("PT_DIVERGENCIA_MAXIMA", "0.25") or "0.25")
 # auto | codigo | ano_numero
 ESTRATEGIA = (os.getenv("PT_ESTRATEGIA", "auto") or "auto").strip().lower()
+
+# ⭐ A EXECUCAO PELA PLANILHA ABERTA DA CGU (24/09/2026) — sem chave, nos sete
+# tenants. O Portal publica todo dia (~20:00 UTC) o zip das emendas; o arquivo
+# `EmendasParlamentares.csv` tem, por emenda x localidade x funcao x subfuncao x
+# programa x acao, os mesmos seis valores do `ConsultaEmendasDTO`. `=0` desliga.
+PLANILHA_LIGADA = os.getenv("PT_PLANILHA", "1") != "0"
+PLANILHA_URL = ("https://dadosabertos-download.cgu.gov.br/PortalDaTransparencia/saida/"
+                "emendas-parlamentares/EmendasParlamentares.zip")
+PLANILHA_ARQUIVO = "EmendasParlamentares.csv"
+# Colunas lidas por NOME (o cabecalho vem em Latin-1, entre aspas). Faltando uma,
+# a planilha e recusada inteira — coluna renomeada e o risco de dump, e "zero em
+# silencio" e o modo de falha mais caro deste repo.
+PLANILHA_COLUNAS = {
+    "codigo": "Código da Emenda", "ano": "Ano da Emenda", "tipo": "Tipo de Emenda",
+    "autor": "Código do Autor da Emenda", "nome_autor": "Nome do Autor da Emenda",
+    "numero": "Número da emenda", "localidade": "Localidade de aplicação do recurso",
+    "funcao": "Nome Função", "subfuncao": "Nome Subfunção",
+    "empenhado": "Valor Empenhado", "liquidado": "Valor Liquidado", "pago": "Valor Pago",
+    "resto_inscrito": "Valor Restos A Pagar Inscritos",
+    "resto_cancelado": "Valor Restos A Pagar Cancelados",
+    "resto_pago": "Valor Restos A Pagar Pagos",
+}
+# 94.577 linhas em 23/09/2026. Abaixo disto a planilha veio cortada, e marcar
+# "a CGU nao conhece" em quem faltou seria mentir com a tabela vazia.
+PLANILHA_MIN_LINHAS = int(os.getenv("PT_PLANILHA_MIN_LINHAS", "50000") or "50000")
+# A CGU regera todo dia; mais velha que isto, a rodada avisa (`partial`).
+PLANILHA_MAX_IDADE_H = 96
 
 
 def chave() -> str:
@@ -1275,6 +1311,164 @@ NOTA_SEM_CHAVE = (
     "gov.br Prata/Ouro e fica vinculada ao CPF de quem a cadastrou.")
 
 
+# ---------------------------------------------------------------------------
+# FASE 2 ABERTA — a execucao pela planilha da CGU, sem chave (24/09/2026)
+# ---------------------------------------------------------------------------
+def _dec_planilha(v) -> "Decimal | None":
+    from decimal import Decimal, InvalidOperation
+    s = (v or "").strip().replace(".", "").replace(",", ".")
+    if not s:
+        return None
+    try:
+        return Decimal(s)
+    except InvalidOperation:
+        return None
+
+
+def ler_planilha(conteudo: bytes, codigos: "set[str]") -> "tuple[dict, int]":
+    """({(codigo, localidade, funcao, subfuncao): linha de emendas_federais_cgu},
+    linhas lidas) para os `codigos` pedidos. Levanta ValueError se o arquivo nao
+    tiver o formato medido.
+
+    ⚠️ A PLANILHA E MAIS FINA QUE A TABELA: desce a programa, acao e plano
+    orcamentario. A chave de `emendas_federais_cgu` para em localidade x funcao x
+    subfuncao — a do `ConsultaEmendasDTO` —, entao as linhas mais finas sao
+    SOMADAS ate ela. Sobrescrever em vez de somar gravaria so a ultima acao.
+
+    ⚠️ SEM CONFERENCIA DE AUTOR, e de proposito. O codigo tem o codigo do AUTOR
+    dentro (digitos 5-8): casar o codigo exato ja garante o mesmo autor. Medido
+    na base nacional em 24/09/2026: o nome diverge em 279 de 30.449 emendas
+    casadas, e TODAS sao a mesma pessoa com outro nome ("PAULINHO DA FORCA" x
+    "PAULO PEREIRA DA SILVA", "COMISSAO DA SAUDE" x "COM. DA SAUDE"). A trava da
+    API (`_confere_autor`) aqui so esconderia emenda certa."""
+    import csv
+    import io
+    import zipfile
+    from decimal import Decimal
+    with zipfile.ZipFile(io.BytesIO(conteudo)) as z:
+        if PLANILHA_ARQUIVO not in z.namelist():
+            raise ValueError(f"{PLANILHA_ARQUIVO} ausente no zip (tem: {z.namelist()})")
+        # ⚠️ Latin-1, nao UTF-8 (medido: o cabecalho sai "C\xf3digo da Emenda").
+        texto = io.TextIOWrapper(z.open(PLANILHA_ARQUIVO), encoding="latin-1", newline="")
+        leitor = csv.DictReader(texto, delimiter=";")
+        faltam = [c for c in PLANILHA_COLUNAS.values() if c not in (leitor.fieldnames or [])]
+        if faltam:
+            raise ValueError(f"colunas ausentes na planilha da CGU: {faltam}")
+        col = PLANILHA_COLUNAS
+        valores = ("empenhado", "liquidado", "pago", "resto_inscrito",
+                   "resto_cancelado", "resto_pago")
+        saida: dict = {}
+        n = 0
+        for r in leitor:
+            n += 1
+            codigo = (r[col["codigo"]] or "").strip()
+            if codigo not in codigos:
+                continue
+            chave = (codigo, (r[col["localidade"]] or "").strip(),
+                     (r[col["funcao"]] or "").strip(), (r[col["subfuncao"]] or "").strip())
+            linha = saida.get(chave)
+            if linha is None:
+                try:
+                    ano = int((r[col["ano"]] or "").strip())
+                except ValueError:
+                    ano = None
+                linha = saida[chave] = {
+                    "codigo_emenda": codigo, "ano": ano,
+                    "tipo_emenda": (r[col["tipo"]] or "").strip()[:60] or None,
+                    "autor": (r[col["autor"]] or "").strip()[:20] or None,
+                    "nome_autor": (r[col["nome_autor"]] or "").strip()[:200] or None,
+                    "numero_emenda": (r[col["numero"]] or "").strip()[:20] or None,
+                    "localidade_gasto": chave[1], "funcao": chave[2], "subfuncao": chave[3],
+                    **{f"valor_{v}": None for v in valores},
+                    "_linhas": 0,
+                }
+            linha["_linhas"] += 1
+            for v in valores:
+                d = _dec_planilha(r[col[v]])
+                if d is not None:
+                    linha[f"valor_{v}"] = (linha[f"valor_{v}"] or Decimal("0")) + d
+    for linha in saida.values():
+        linha["raw_data"] = json.dumps({"fonte": "planilha_cgu",
+                                        "linhas_somadas": linha.pop("_linhas")})
+    return saida, n
+
+
+def execucao_planilha(cur, conn, client: httpx.Client, dry: bool = False) -> dict:
+    """A execucao de TODA a fila pela planilha aberta — uma requisicao, sem chave.
+
+    Grava em `emendas_federais_cgu` (a mesma tabela da API) e marca
+    `emendas_federais_consulta.agregados_em` + `achou_agregado`.
+
+    ⚠️ NAO TOCA EM `consultado_em`: ele e o RODIZIO da API. Onde ha chave, a API
+    continua trazendo o que so ela tem — a linha do tempo de documentos —, e
+    carimbar `consultado_em` aqui a faria pular exatamente os codigos novos. A tela
+    le `coalesce(agregados_em, consultado_em)` para saber se a execucao existe."""
+    rel = {"codigos": 0, "achou": 0, "linhas_cgu": 0, "gravadas": 0, "nota": None}
+    cnpjs = list(alvos(cur).keys())
+    limpar_fila_orfa(cur, cnpjs)
+    semear_fila(cur, cnpjs)
+    if not dry:
+        conn.commit()
+    cur.execute("SELECT codigo_emenda FROM emendas_federais_consulta")
+    codigos = {r[0] for r in cur.fetchall() if r[0]}
+    rel["codigos"] = len(codigos)
+    if not codigos:
+        return rel
+
+    r = client.get(PLANILHA_URL, headers=UA, timeout=300)
+    r.raise_for_status()
+    idade_h = None
+    lm = r.headers.get("last-modified")
+    if lm:
+        from email.utils import parsedate_to_datetime
+        try:
+            idade_h = (datetime.now(parsedate_to_datetime(lm).tzinfo)
+                       - parsedate_to_datetime(lm)).total_seconds() / 3600
+        except (TypeError, ValueError):
+            idade_h = None
+    linhas, n = ler_planilha(r.content, codigos)
+    rel["linhas_cgu"] = n
+    if n < PLANILHA_MIN_LINHAS:
+        # Planilha cortada: nada e gravado nem marcado — "a CGU nao conhece" em
+        # quem faltou seria afirmacao falsa.
+        rel["nota"] = (f"planilha da CGU com so {n} linha(s) (< {PLANILHA_MIN_LINHAS}) "
+                       "— recusada, execucao mantida como estava")
+        return rel
+    achados = {k[0] for k in linhas}
+    rel["achou"] = len(achados)
+    rel["gravadas"] = len(linhas)
+    if idade_h is not None and idade_h > PLANILHA_MAX_IDADE_H:
+        rel["nota"] = (f"planilha da CGU com {idade_h:.0f}h (a CGU regera todo dia) "
+                       "— execucao possivelmente defasada")
+    if dry:
+        return rel
+
+    import psycopg2.extras
+    psycopg2.extras.execute_batch(cur, _SQL_CGU, list(linhas.values()), page_size=200)
+    # A fatia que a CGU deixou de publicar sai — mas SO a que ESTA leitura gravou
+    # (`raw_data.fonte`): a linha que a API escreveu tem dono proprio.
+    por_codigo: dict = {}
+    for (codigo, loc, fun, sub) in linhas:
+        por_codigo.setdefault(codigo, []).append(f"{loc}\x1f{fun}\x1f{sub}")
+    for codigo, chaves in por_codigo.items():
+        cur.execute("""
+            DELETE FROM emendas_federais_cgu
+             WHERE codigo_emenda = %s AND raw_data->>'fonte' = 'planilha_cgu'
+               AND NOT (localidade_gasto || chr(31) || funcao || chr(31) || subfuncao
+                        = ANY(%s))
+        """, (codigo, chaves))
+    # ⚠️ Achou NUNCA volta a "nao achou" por aqui: o que a API achou (com a chave)
+    # continua achado. So o que ninguem achou vira FALSE — a CGU nao publica.
+    cur.execute("""
+        UPDATE emendas_federais_consulta
+           SET agregados_em = NOW(),
+               achou_agregado = (codigo_emenda = ANY(%s)) OR coalesce(achou_agregado, false)
+         WHERE codigo_emenda = ANY(%s)
+    """, (list(achados), list(codigos)))
+    conn.commit()
+    return rel
+
+
 def ingest(dry: bool = False) -> int:
     """Fase 1 sempre (se ligada); fase 2 so com chave.
 
@@ -1327,11 +1521,40 @@ def ingest(dry: bool = False) -> int:
                     nota = ("sem CNPJ cadastrado (a emenda e reconhecida por ele): "
                             + ", ".join(rel["sem_cnpj"][:5]))
 
-            # ---- FASE 2 -------------------------------------------------
+            # ---- FASE 2 ABERTA (planilha da CGU, sem chave) ----------------
+            # Roda em TODO tenant, com ou sem chave: e ela que da a execucao
+            # aos cinco que nunca tiveram a chave. Falhar aqui nao derruba a
+            # rodada — a carteira ja foi commitada e a API (se houver) segue.
+            pl = None
+            if PLANILHA_LIGADA:
+                try:
+                    with httpx.Client(follow_redirects=True) as client:
+                        pl = execucao_planilha(cur, conn, client, dry)
+                    log.info("execucao pela planilha da CGU: %d de %d codigo(s) "
+                             "com execucao publicada, %d linha(s) gravada(s) "
+                             "(planilha com %d linhas)", pl["achou"], pl["codigos"],
+                             pl["gravadas"], pl["linhas_cgu"])
+                    if pl["nota"]:
+                        status = "partial"
+                        nota = " | ".join(x for x in (nota, pl["nota"]) if x)
+                except Exception as e:
+                    conn.rollback()
+                    status = "partial"
+                    nota = " | ".join(x for x in (
+                        nota, f"planilha da CGU falhou: {type(e).__name__}: "
+                              f"{str(e)[:160]}") if x)
+                    log.warning("planilha da CGU falhou: %s: %s",
+                                type(e).__name__, str(e)[:200])
+
+            # ---- FASE 2 (API, com chave) -------------------------------
             if not habilitado():
                 if status == "success":
-                    nota = (f"carteira: {gravadas} linha(s); execucao CGU nao "
-                            "coletada (sem PORTAL_TRANSPARENCIA_API_KEY)")
+                    nota = (f"carteira: {gravadas} linha(s); execucao pela planilha "
+                            f"da CGU: {pl['achou']} de {pl['codigos']} emenda(s)"
+                            if pl else
+                            f"carteira: {gravadas} linha(s); execucao CGU nao "
+                            "coletada (planilha desligada e sem "
+                            "PORTAL_TRANSPARENCIA_API_KEY)")
                 if not dry:
                     _log_ingest(cur, conn, status, gravadas, nota)
                 return gravadas

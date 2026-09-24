@@ -29,6 +29,31 @@
 
 ---
 
+## 1.37. Execução das emendas federais pela planilha aberta da CGU (24/09/2026)
+
+Sexta fonte do relatório do dono: "Portal da Transparência — aba Transferências
+Especiais". A aba em si **já estava coberta** (`transferegov_te.py` lê a mesma base pela
+API oficial do TransfereGov). O achado foi outro: a CGU publica todo dia, **sem token**,
+`EmendasParlamentares.zip` (32 MB) — e a execução (empenhado, liquidado, pago, restos),
+que até aqui só vinha pela API com a chave de pessoa física ligada em dois tenants, passou
+a vir dela **nos sete**.
+
+- Grava na MESMA tabela da API (`emendas_federais_cgu`); a planilha desce a programa/
+  ação, então as linhas são **somadas** até a chave localidade × função × subfunção.
+- Marca `emendas_federais_consulta.agregados_em` e `achou_agregado`, e **não toca em
+  `consultado_em`** — ele é o rodízio da API, que onde há chave continua trazendo a linha
+  do tempo de documentos. A tela lê `coalesce(agregados_em, consultado_em)`.
+- **Sem conferência de autor, de propósito:** o código tem o código do autor dentro;
+  casar o código exato já garante o autor. Os 279 nomes "divergentes" na base nacional
+  eram todos a mesma pessoa com outro nome.
+- Conferido num Postgres 16 real com a planilha e a carteira reais: Nova Palma passa a
+  ter execução em 57 das 59 emendas; Monte Sião, 23 de 24.
+- **Falta (PR 2):** os outros dois arquivos do mesmo zip — `_Convenios.csv` (emenda →
+  número do convênio, o vínculo que a API não tem) e `_PorFavorecido.csv` (quem recebeu,
+  mês a mês, com CNPJ).
+
+---
+
 ## 1.36. TRANSFERE.TO — os convênios do Estado do Tocantins (23/09/2026)
 
 Quinta fonte do relatório do dono ("Transparência TO — convênios e parcerias (CGE-TO)",
@@ -518,8 +543,9 @@ caminho que o produto usava para chegar em emenda federal passava por proposta �
 metade da carteira era invisível.
 
 **O desenho, em duas fases:** a **carteira** (dump aberto, por CNPJ) roda nos cinco tenants
-e é *commitada antes* da **execução** (CGU, com chave), que só roda em `novapalma-rs` e
-`montesiao-mg`. É isso que faz a tela nascer útil onde a chave não está.
+e é *commitada antes* da **execução**. ⚠️ Desde 24/09/2026 a execução sai da **planilha
+aberta da CGU em todo tenant** (§1.37); a API com chave (`novapalma-rs`, `montesiao-mg`)
+ficou só para a linha do tempo de documentos.
 
 **Três armadilhas que a medição encontrou e que viraram teste:**
 
@@ -568,10 +594,9 @@ coluna de cada worker, porque os do plano colidiam com `obrasgov` e `tcm-go`). C
 **Monte Sião 53 / 31 / R$ 11,96 mi**. Zero duplicatas; a segunda rodada não mudou contagem
 nem valor, e o `visto_em` avançou — idempotência medida em produção, não presumida.
 
-⚠️ **A FASE 2 (execução) NÃO RODOU:** falta a `PORTAL_TRANSPARENCIA_API_KEY` nos workers.
-A rodada sai `success` com a nota «execucao CGU nao coletada», e a tela diz isso em vez de
-mostrar R$ 0,00. **A hipótese do código de 12 dígitos segue sem confirmação** — é o
-`--verificar` que a testa, e ele depende da chave.
+(Histórico: a fase 2 pela API esperou a chave por dias; a hipótese do código de 12
+dígitos foi confirmada depois — 20/20 na amostra — e, em 24/09/2026, de novo na base
+nacional contra a planilha aberta da CGU: 95-99% dos códigos de 2019-2026 casam.)
 
 ⚠️ **E uma armadilha de identificação que me custou tempo:** `ps aux | grep uvicorn` dentro
 do container NÃO distingue API de worker de forma confiável — rodei a primeira carga dentro
@@ -2627,7 +2652,8 @@ o procedimento para cliente novo estão em INFRA.md §2.
 ### 6.2 Secrets opcionais por tenant (features ficam OFF até setar)
 `ANTHROPIC_API_KEY` (módulo IA — hoje só `montesiao-mg-api` tem). Setar via `PATCH /applications/<api_uuid>/envs/bulk` + redeploy. (`TELEGRAM_BOT_TOKEN` e `TELEGRAM_WEBHOOK_SECRET` saíram desta lista em 05/09/2026 com o módulo — nunca foram setados em tenant nenhum.)
 
-**`PORTAL_TRANSPARENCIA_API_KEY`** (emendas federais — a EXECUÇÃO). Vai no **worker**,
+**`PORTAL_TRANSPARENCIA_API_KEY`** (emendas federais — a LINHA DO TEMPO de documentos;
+os VALORES da execução vêm da planilha aberta desde 24/09/2026, §1.37). Vai no **worker**,
 não na API: quem consulta a CGU é o coletor. Decisão de 06/09/2026: **só em
 `novapalma-rs` e `montesiao-mg`**, porque a chave fica vinculada ao **CPF de quem a
 cadastrou** e com cinco tenants a chave de uma pessoa responderia pelas consultas de

@@ -151,7 +151,12 @@ SELECT c.codigo_emenda, c.nr_emenda, c.ano, c.parlamentar, c.tipo_parlamentar,
        max(g.valor_resto_pago)      AS valor_resto_pago,
        max(g.funcao) AS funcao, max(g.subfuncao) AS subfuncao,
        max(g.localidade_gasto) AS localidade_gasto,
-       q.consultado_em, q.achou_agregado, coalesce(q.n_documentos, 0) AS n_docs
+       -- A execução "foi consultada" quando QUALQUER dos dois caminhos a leu: a
+       -- planilha aberta da CGU (`agregados_em`, todo tenant, desde 24/09/2026)
+       -- ou a API com chave (`consultado_em`). O nome da coluna fica: o teste de
+       -- índices amarra x[22] a ele.
+       coalesce(q.agregados_em, q.consultado_em) AS consultado_em,
+       q.achou_agregado, coalesce(q.n_documentos, 0) AS n_docs
   FROM emendas_federais_carteira c
   -- ⚠️⚠️ LATERAL, E NÃO UM `LEFT JOIN` DIRETO — a diferença é o dinheiro do
   -- município. `emendas_federais_cgu` é 1:N por desenho: a chave única é
@@ -186,7 +191,8 @@ SELECT c.codigo_emenda, c.nr_emenda, c.ano, c.parlamentar, c.tipo_parlamentar,
  WHERE c.municipio_id = :m
  GROUP BY c.codigo_emenda, c.nr_emenda, c.ano, c.parlamentar, c.tipo_parlamentar,
           c.impositiva, c.orgao_siafi, c.beneficiario_cnpj, c.beneficiario_nome,
-          c.e_prefeitura, c.codigo_confirmado, q.consultado_em, q.achou_agregado,
+          c.e_prefeitura, c.codigo_confirmado, q.agregados_em, q.consultado_em,
+          q.achou_agregado,
           q.n_documentos
  ORDER BY c.ano DESC NULLS LAST, valor_indicado DESC NULLS LAST
 """
@@ -442,7 +448,7 @@ async def linha_do_tempo(db: AsyncSession, codigo_emenda: str,
         """), {"c": codigo_emenda, "m": municipio_id})
         linhas = r.fetchall()
         cons = await db.execute(text(
-            "SELECT q.consultado_em, "
+            "SELECT q.consultado_em, q.agregados_em, q.achou_agregado, "
             "       (SELECT max(c.tipo_parlamentar) "
             "          FROM emendas_federais_carteira c "
             "         WHERE c.codigo_emenda = q.codigo_emenda "
@@ -457,7 +463,9 @@ async def linha_do_tempo(db: AsyncSession, codigo_emenda: str,
                 "motivo": "A execução desta emenda ainda não foi consultada no "
                           "Portal da Transparência."}
     consultado_em = crow[0].isoformat() if (crow and crow[0]) else None
-    tipo = crow[1] if crow else None
+    so_planilha = bool(crow and crow[1] and not crow[0])
+    achou = bool(crow and crow[2])
+    tipo = crow[3] if crow else None
     docs = [{"data": d[0].isoformat() if d[0] else None, "fase": d[1],
              "codigo_documento": d[2], "documento_resumido": d[3],
              "especie_tipo": d[4]} for d in linhas]
@@ -478,6 +486,21 @@ async def linha_do_tempo(db: AsyncSession, codigo_emenda: str,
                       "não é coletada. Os valores acima são da emenda inteira.")
         elif consultado_em:
             motivo = "A CGU não publica documento de execução para esta emenda."
+        elif so_planilha and not achou:
+            # Medido em 24/09/2026: na planilha, as 11.155 linhas de 2014 vêm
+            # com o código "Sem informação"; de 2015 em diante, com código.
+            antiga = codigo_emenda[:4].isdigit() and int(codigo_emenda[:4]) < 2015
+            motivo = ("A CGU não publica execução para esta emenda"
+                      + (" — a planilha dela só traz o código das emendas a partir "
+                         "de 2015." if antiga else "."))
+        elif so_planilha:
+            # ⚠️ Não é "a CGU não publica": os valores vieram da PLANILHA aberta,
+            # que não tem documento a documento. A linha do tempo só vem pela API
+            # com chave — dizer que ela não existe seria afirmar o que ninguém
+            # perguntou.
+            motivo = ("Os valores acima vêm da planilha aberta da CGU, que traz o "
+                      "total da emenda mas não a linha do tempo documento a "
+                      "documento (empenho, liquidação, pagamento com data).")
         else:
             motivo = ("A execução desta emenda ainda não foi consultada no "
                       "Portal da Transparência.")

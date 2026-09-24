@@ -122,9 +122,10 @@ FRASE_CREDENCIAL = {
 # Convenios passou meses acusando o cliente de nao ter convenio quando o que
 # faltava era senha no Cofre — o defeito que a funcao acima existe para corrigir.
 #
-# ⚠️ E a fonte tem DUAS FASES com dependencias diferentes: a CARTEIRA sai de um
-# dump ABERTO (roda nos cinco tenants) e a EXECUCAO exige a chave da CGU (ligada
-# em dois). Por isso "sem chave" nao e "sem dado": e carteira sem execucao, e a
+# ⚠️ E a fonte tem DUAS FASES: a CARTEIRA sai de um dump ABERTO e a EXECUCAO vem
+# da CGU — desde 24/09/2026 pela PLANILHA ABERTA, em todo tenant (antes so pela
+# API com chave, ligada em dois). "sem_chave" ficou sendo o estado de carteira
+# sem execucao nenhuma (planilha desligada ou falhando): nao e "sem dado", e a
 # tela precisa dizer exatamente isso.
 # ---------------------------------------------------------------------------
 def classificar_emendas_federais(chave_configurada: bool, houve_coleta: bool,
@@ -138,7 +139,8 @@ def classificar_emendas_federais(chave_configurada: bool, houve_coleta: bool,
     dizer "nao ha emenda" ali seria acusar a prefeitura de uma ausencia que e
     do nosso cadastro.
 
-    ⚠️ `n_execucao_consultada` e contado por `consultado_em IS NOT NULL`, e NAO
+    ⚠️ `n_execucao_consultada` e contado por execucao CONSULTADA (na tela,
+    `coalesce(agregados_em, consultado_em) IS NOT NULL` — planilha ou API), e NAO
     por `valor_empenhado > 0`. Emenda consultada cujo empenho e zero e um FATO da
     CGU; emenda nao consultada e ausencia NOSSA. Confundir as duas e a unica
     forma de esta tela mentir com numeros certos.
@@ -192,8 +194,8 @@ FRASE_EMENDAS_FEDERAIS = {
     # "nada foi empenhado", e sim "ninguem perguntou".
     "sem_chave":
         "A execução destas emendas (empenhado, liquidado, pago) vem do Portal da "
-        "Transparência da CGU e ainda não foi consultada neste ambiente — ela "
-        "depende de uma chave de acesso que nem todo ambiente tem. A carteira "
+        "Transparência da CGU e ainda não foi consultada neste ambiente — ela é "
+        "lida de madrugada, da planilha que a CGU publica todo dia. A carteira "
         "abaixo está completa; o que falta é o andamento de cada uma, e onde ele "
         "aparece como «—» o dado não foi buscado, não é R$ 0.",
 
