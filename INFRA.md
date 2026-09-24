@@ -531,8 +531,9 @@ O desenho atual (13/09/2026, "coleta noturna"):
 - **`fns-saldo` (24/09/2026), escada de 5 min de 06:00 (freitas) a 06:30 UTC
   (juranda):** um GET da página de downloads do Portal FNS; o arquivo anual (~16 MB) só é
   baixado quando sai o ano novo ou entra município novo. Kill 900 s, timeout da task
-  1020 s. Migration `add_fns_saldo_conta.sql` (tabela nova). A criar nos sete por
-  `scripts/criar_task_fns_saldo.sh` (idempotente) depois do deploy.
+  1020 s. Migration `add_fns_saldo_conta.sql` (tabela nova) no deploy do #552, 24/09/2026
+  ~03:57 UTC: "146/146 em dia" nas sete APIs. **Task criada nos sete em 24/09/2026 ~04:05
+  UTC** por `scripts/criar_task_fns_saldo.sh`; primeira rodada no mesmo dia, 06:00 UTC.
 - **`emendas-mg` (24/09/2026), escada de 10 min de 07:40 (freitas) a 08:40 UTC
   (juranda):** os dois `DADOS_EMENDAS_*.xlsx` da SEGOV (~14 MB, ~1 min de leitura) nos
   tenants com município de MG; nos outros sai antes de baixar (`success`, 0). Kill 900 s,
