@@ -227,6 +227,9 @@ export const FONTE_CONVENIOS_ESTADUAIS: Record<string, string> = {
   // Portal da Transparência do PR: o SIT do TCE-PR em arquivo aberto
   // (`backend/ingestion/convenios_pr.py`, fonte `SIT-PR`).
   PR: "SIT · Transparência PR",
+  // TRANSFERE.TO, a pesquisa externa do sistema de convênios do Estado
+  // (`backend/ingestion/convenios_to.py`, fonte `TRANSFERE-TO`).
+  TO: "TRANSFERE.TO",
 };
 
 /** A fonte de EMENDAS ESTADUAIS que este sistema coleta, por UF.

@@ -191,6 +191,7 @@ const FONTES_ROTULOS: Record<string, string> = {
   "SIGCON-MG": "SIGCON-MG (convênio estadual)",
   "GCONV-ES": "GConv-ES (convênio estadual)",
   "SIT-PR": "SIT-PR (convênio estadual)",
+  "TRANSFERE-TO": "TRANSFERE.TO (convênio estadual)",
   FNS: "Fundo Nacional de Saúde (não é convênio estadual)",
 };
 

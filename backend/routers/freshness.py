@@ -306,6 +306,12 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
          "WHERE fonte = 'CERTIDOES-PR'",
          "regularidade_pr"),
     ],
+    "TO": [
+        ("Convênios do Estado — TRANSFERE.TO (TO)",
+         "SELECT max(updated_at), count(*) FROM convenios_estadual "
+         "WHERE fonte = 'TRANSFERE-TO'",
+         "convenios_to"),
+    ],
     "ES": [
         ("GConv-ES — Convênios estaduais (ES)",
          "SELECT max(updated_at), count(*) FROM convenios_estadual WHERE fonte ILIKE '%GCONV%'",

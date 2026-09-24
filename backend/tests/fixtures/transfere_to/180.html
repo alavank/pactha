@@ -1,0 +1,1392 @@
+
+
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head><title>
+	TRANSFERE.TO
+</title><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <!-- Meta, title, CSS, favicons, etc. -->
+        <meta charset="utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+	    
+
+        <!-- Bootstrap -->
+        <link href="/Styles/vendors/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
+        <!-- Font Awesome -->
+        <link href="/Styles/vendors/font-awesome/css/font-awesome.min.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/pnotify/dist/pnotify.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.buttons.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.nonblock.css" rel="stylesheet" />
+
+        <!-- Custom Theme Style -->
+        <link href="/Styles/build/css/custom.min.css" rel="stylesheet" />
+
+        <link href="/Styles/Site.css" rel="stylesheet" />
+    
+        <script src="/js/jquery-3.3.1.min.js"></script>
+        <script src="/js/jquery.mask.min.js"></script>
+    
+        <link rel="stylesheet" href="/Styles/jquery-confirm.min.css" />    
+        <script src="/js/jquery-confirm.min.js"></script>
+
+        <!-- Switchery -->
+        <link href="/Styles/vendors/switchery/dist/switchery.min.css" rel="stylesheet" />
+
+        <link rel="stylesheet" href="/Styles/jquery-ui.css" />
+        <script src="/js/jquery-ui.js"></script>
+
+        <script src="/js/funcao.js"></script>    
+    
+        <script src="/js/moment.js"></script>
+        <script src="/js/moment-with-locales.js"></script>
+
+        <!-- bootstrap-datetimepicker -->
+        <link href="/Styles/vendors/bootstrap-datetimepicker/build/css/bootstrap-datetimepicker.css" rel="stylesheet" />
+        <script src="/Styles/vendors/bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min.js"></script>
+
+        <!-- bootstrap-progressbar -->
+        <link href="/Styles/vendors/bootstrap-progressbar/css/bootstrap-progressbar-3.3.4.min.css" rel="stylesheet" />
+
+        <link href="/Styles/style.css" rel="stylesheet" />
+        <link href="/Styles/prism.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/select2/dist/css/select2.css" rel="stylesheet" />
+
+        <!-- iCheck -->
+        <link href="/Styles/vendors/iCheck/skins/flat/green.css" rel="stylesheet" />         
+
+        <script type="text/javascript">       
+            (function ($) {
+                $(function () {
+                    $('.data').mask('00/00/0000', { reverse: false });
+                    $('.dinheiro').mask('000.000.000.000,00', { reverse: true, maxlength: 18 });
+                    $('.cpf').mask('000.000.000-00', { reverse: false });
+                    $('.cnpj').mask('00.000.000/0000-00', { reverse: false });
+                    $('.cep').mask('00000-000', { reverse: false });
+                    $('.numero').mask('000', { reverse: true });
+                    $('.numero_dez').mask('0000000000', { reverse: true});
+                    $('.rg').mask('0000000', { reverse: false, maxlength: 7 });
+                    $('.telefone').mask(behavior, options);
+                    $('.agencia').mask('0000-0', { reverse: false });
+                    $('.conta').mask('00000-0', { reverse: false });
+                    $('.numero_decimal').mask('00,0', { reverse: true, maxlength: 4 });
+                    $('.numero_decimal_2').mask('00,00', { reverse: true, maxlength: 4 });
+                    $('.natureza_despesa').mask('0.0.00.00', { reverse: false, maxlength: 9 });
+                    $('.numero_sgd').mask('0000/00000/000000', { reverse: false });
+                });
+            })(jQuery);
+
+            var behavior = function (val) {
+                return val.replace(/\D/g, '').length === 11 ? '(00) 00000-0000' : '(00) 0000-00009';
+            },
+                options = {
+                    onKeyPress: function (val, e, field, options) {
+                        field.mask(behavior.apply({}, arguments), options);
+                    }
+                };
+        </script>
+
+        <script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+        
+</head>
+    <body class="nav-md">
+        <form method="post" action="./VisualizarConvenio.aspx?idConvenio=180" id="frm1" data-parsley-validate="">
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__LASTFOCUS" id="__LASTFOCUS" value="" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="MSWOlxpfDYPsUHk1s3GGZ2lShL/PHfNFFFA7yTEzNKKnjRLxuZ3orVUQFL8xr9zqO0ZPBsjB9uRpkyadsJ3X6BaGcfoRdha11h5nyZ+9AEC9VTAoPg/iG1la6SlUZMQZRGD6YsirL7KnpQRBJt22ZQHoEEN9/Wfj43/YDRfBu7nY8ijEXEwRK3PD95k3DgsRZg/GqdthbVppj09L6JbYjcKaEy1yXbpjZVb0pDt3YPaAEyKmz9wfWxk2mP72ZvUkxVp8obbV7QHyPGWefKCMAas+Etk2sWT/C3bzWdxGN2H4i4DnqAvqn/fLxuiT8Ykc5jzxSFIyJijdX6DEjyL7zRoEEJmBoT+n+oKEKGcsYToeAPO0L7jKSebYOgKQqv1+VyyhI1t7xHukYQzhMYYSNqJf7cuT4Fx27MiINbBbfU+3rbZRSiBqIGFx2jPPjj7JnLJb22Xznb5w1IVmIZq5P3eoQzGoUyidwFH4bDaGFBl1ohV5oMjUZyDEuNmY9SMDlGoTSx4k4sP+BhdrNqn46tD2GjIdpMBq9gAOIpeyJcFPwYWZvJXIYGECGQ4irvAp1HsMJoe1pS34GEjj8/VcolE22ZoVJjo9Rk0Ky/39NZRYtgOY7AQ2D8qLr40zZyFZDEuamLKiS5EIaRILsnA/YTSDvspZ1cwukFko3f4AKW2pkfUIyU80NA0I62cm089OLHOauaT4IT4S2KUEL5dC4iLcCL7G1TCyZxO2DQcxXkxo1KWqeVLaxhZc+YFpkZO2rkKZVs4d17RIJlVUIc3neqi1lfadRRz6eexdZsqCLJsAkQWrnz1IjtWCr6I1uqot9ONiKBAMa5DEEkAmFZYHFgAKeILLQKZOtefjstfauy0NVnq04eaGoNBdylHdj70KrmCJuYRezfFvLVpQ62V/ScOoFSI/tSMHvKxH6uge99sMiAdGXfAXbOrOY0iilgGxTQccyIBQfx8RwFfFA7zpOD1jheIxQYh1NkM0/4hvN6wdKNfD+ibPX5pTZQcrQ0Dbzeud7SRfpO82rYYVhD5Wf6BdLYGKjiT5ZylbeW6AHEjMzs1i8x6s91PfCkONSCjfmDAN/7KTMIP9q/TnycbF7yFhV1KhB9bIyL9GO93+zBBqGXWtVZ1hw/pJasMtyGnXZ0z1u/vjPrhzktQU1DwX2+2zbN4cpdEcH5ps0egyXMLjq40ZPZPiU1AbmmAIDnasAa8cdEVxQFzVdkMmUc360AaoyUnKPPZLu+NirnGcpb84C2utG7yDBYUFmRYkm38Ol4ZHJROoNu+VLvuQI4EqxOPg4mI/CJm3aVdSxG65sSWJbYF0Du8/gZK7fcK6GduECCoEN3t4EqAmdssWgCnHmYppDh94g04w0A0uV9Pct2GI+r264EHD6qEY6DLzfDWZILXZEAqf6V9C0ItPVa4o6IGmT92UAmD8vUUukDCMQcmwb+XVNo91F3Q7VQHVDmhpOgI0xdO1zjq01Wi5p3O/54QetUiP3M7XziCADJ9z8TE7faJ0WAB5BNUJpojfex5LBp5f59Z8qozSbtHvqGer1ZoM6PlN864foWuNOxLglbVIi2gaHkI3V4e+sxUx+niUTD/kgJLKkrxXYjOjljh8nU2s6/N+J9KeL6d8M6sIP9I5LG13ctmMjW5Db7SZs4LTf9v7r96sGViefo2k1fiq4gqeCAwUJTVzeNFQ6xgFzcbM/H++6Nx7AwYgK/txFwg9KOmZa79Gw/0mHA+OCyoDllGJtxdd50VX46+U8jO3FATKhum+7LTDLmM2e+WEY6WbR11GNhichkgnl8ovz4BULx/YQuIv3XnpgXivulYKKvk/w5K0J37xd75JTGRnCVTlFkXyY3OG7cX/az2aT5V8u5KwUaOQhfG03tVeTFoup+SeGfYWf9HQ4N5yWJxyOaBJTHn+yUs0Rgs62ujo0uEbaiVE6hdWUmph6WSIlgCtTLf4dkjX7CAg/kk9jTZVEmMsN3NjOGfBvRQv68OrbP9fJ6kghWlC8Xo2foPWiYAzy14=" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['frm1'];
+if (!theForm) {
+    theForm = document.frm1;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="F1EDBA79" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="UdafpVmrpbDGU+fbr33MtUsETVjnPQa2c2Lylo79NRuvHspcHs1P6E742+Lnfo4UJg3eV7ZNj8hYX/Zx0C3ppYlROs3vM7efadLOKvp1C8FVv+O4DbsniLMbGSE0NK3YJonkwIiZzjJ9uEs1gqivjvnhp0Yr63tQq3tLt5Rmxeg=" />
+</div>
+            <input type="hidden" name="ctl00$class_body" id="class_body" />
+            <input type="hidden" name="ctl00$txtEnderecoSistema" id="txtEnderecoSistema" />
+            <div class="container body">
+                <div class="main_container">  
+                    
+                    
+
+<div class="col-md-3 left_col">
+    <div class="left_col scroll-view">
+    <div class="navbar nav_title" style="border: 0;">
+        <a href="/Default.aspx" class="site_title"><i class="glyphicon glyphicon-home"></i> <span>TRANSFERE.TO</span></a>
+    </div>
+
+    <div class="clearfix"></div>
+    
+    <br />
+
+    <!-- sidebar menu -->
+    <div id="sidebar-menu" class="main_menu_side hidden-print main_menu">
+        <div class="menu_section">            
+                       
+        </div>        
+    </div>
+    <!-- /sidebar menu -->
+  
+    <!-- /menu footer buttons -->
+    <div class="sidebar-footer hidden-small">
+        
+    </div>
+    <!-- /menu footer buttons -->
+
+    </div>
+</div>        
+                    
+<!-- top navigation -->
+<div class="top_nav">
+    <div class="nav_menu">
+        <nav>
+            <div class="nav toggle">
+                <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+            </div>         
+            
+        </nav>
+    </div>
+</div>
+<!-- /top navigation -->
+                
+                    
+    <input type="hidden" name="ctl00$MainContent$id" id="id" value="180" />
+    <div class="right_col" role="main">
+        <div class="row">
+            <div class="col-md-12 col-sm-12 col-xs-12">
+                <div class="x_panel">
+                    <div class="x_title">
+                        <h2>Convênio > Visualizar</h2>
+                        <div class="clearfix"></div>
+                    </div>
+                    <div class="x_content">
+                        <!-- Dados básicos do convênio -->
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Número</label><br />
+                                <span id="MainContent_lblNumero">29010.000017/2021</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Data de Abertura</label><br />
+                                <span id="MainContent_lblDataAbertura">04/08/2021 14:06:44</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Situação</label><br />
+                                <span id="MainContent_lblSituacao">PRESTAÇÃO DE CONTAS EM ANÁLISE</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label>Órgão Concedente</label><br />
+                                <span id="MainContent_lblOrgaoConcedente">SECRETARIA DA SAÚDE</span>
+                            </div>
+                            
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Convenente</label><br />
+                                <span id="MainContent_lblConveniado">12.489.636/0001-28 - FMS DE SÃO SALVADOR DO TOCANTINS</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Objeto</label><br />
+                                <span id="MainContent_lblFinalidade">AQUISIÇÃO DE INSUMOS PARA MANUTENÇÃO DAS UNIDADES BÁSICAS DE SAÚDE REDE DE ATENÇÃO PRIMÁRIA DE SÃO SALVADOR DO TOCANTINS.</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Ação Orçamentária</label><br />
+                                <span id="MainContent_lblAcaoOrcamentaria">4156 - QUALIFICAÇÃO DO PROCESSO DE TRABALHO DA ATENÇÃO PRIMÁRIA</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Data de Vigência</label><br />
+                                <span id="MainContent_lblDataVigencia">05/08/2021 - 05/06/2022 (304 dias)</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Valor do Convênio</label><br />
+                                <span id="MainContent_lblValorConvenio">R$80.000,00</span>
+                            </div>
+                        </div>
+                        <div class="ln_solid"></div>
+                        <br />
+                        <!-- Abas -->
+                        <div class="" role="tabpanel" data-example-id="togglable-tabs">
+                            <ul id="myTab" class="nav nav-tabs bar_tabs" role="tablist">
+                                <li role="presentation" class="active"><a href="#tab_content_celebracao" id="tab_celebracao" role="tab" data-toggle="tab" aria-expanded="true"><b>Celebração</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_execucao" id="tab_execucao" role="tab" data-toggle="tab" aria-expanded="false"><b>Execução</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_prestacao_contas" id="tab_prestacao_contas" role="tab" data-toggle="tab" aria-expanded="false"><b>Prestação de Contas</b></a></li>
+                            </ul>
+                            <div id="myTabContent" class="tab-content">
+                                
+                                <!-- ABA CELEBRAÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade active in" id="tab_content_celebracao" aria-labelledby="aria-labelledby">
+                                    <br />
+                                    <!-- Tabela Origem -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Origem</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_origem" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo</th><th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Data de Abertura</th>
+		</tr><tr>
+			<td class="alinha_centro">PROCESSO</td><td class="alinha_centro">2021/30551/000049</td><td class="alinha_centro">31/03/2021 10:57:43</td>
+		</tr><tr>
+			<td class="alinha_centro">EMENDA</td><td class="alinha_centro">010424.00096/2021</td><td class="alinha_centro">30/03/2021 10:17:49</td>
+		</tr><tr>
+			<td class="alinha_centro">PROJETO</td><td class="alinha_centro">010400.00335/2021</td><td class="alinha_centro">31/03/2021 10:57:43</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Assinatura -->
+                                    <div id="MainContent_divAssinatura" class="row">
+                                        <div class="col-md-12">
+                                            <label>Registro de Assinatura</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_assinaturas" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Data da Assinatura</th><th class="alinha_centro" scope="col">Tipo de Assinatura</th>
+		</tr><tr>
+			<td class="alinha_centro">05/08/2021 16:25:37</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">05/08/2021 16:20:42</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Publicação -->
+                                    
+                                </div>
+                                
+                                <!-- ABA EXECUÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_execucao" aria-labelledby="profile-tab">
+                                    <br />
+                                    
+                                    <!-- Solicitações de Adequações -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Solicitações de Adequações</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroAdequacao">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Aditivos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Aditivos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroAditivo">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Prorrogações de Ofício -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Prorrogações de Ofício</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_prorroga_oficio" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">#</th><th class="alinha_centro" scope="col">Vig&#234;ncia</th><th class="alinha_centro" scope="col">Data da Inclus&#227;o</th><th class="alinha_centro" scope="col">Homologado Em</th>
+		</tr><tr>
+			<td class="alinha_centro">001</td><td class="alinha_centro">05/08/2021 - 05/06/2022</td><td class="alinha_centro">03/02/2022 09:43:20</td><td class="alinha_centro">03/02/2022 09:46:50</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contrapartidas -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contrapartida</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroContrapartida">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Programação Financeira -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Programação Financeira</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_programacao_financeira" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo</th><th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Data de Emiss&#227;o</th><th class="alinha_centro" scope="col">Valor</th>
+		</tr><tr>
+			<td class="alinha_centro">DETALHAMENTO DE DOTAÇÃO</td><td class="alinha_centro">2021DD03761</td><td class="alinha_centro">06/07/2021</td><td>R$80.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE EMPENHO</td><td class="alinha_centro">2021NE04671</td><td class="alinha_centro">06/07/2021</td><td>R$80.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE LIQUIDAÇÃO</td><td class="alinha_centro">2021NL15797</td><td class="alinha_centro">02/12/2021</td><td>R$80.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">PROGRAMA DE DESEMBOLSO</td><td class="alinha_centro">2021PD22037</td><td class="alinha_centro">02/12/2021</td><td>R$80.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">ORDEM BANCÁRIA</td><td class="alinha_centro">2021OB19911</td><td class="alinha_centro">02/12/2021</td><td>R$80.000,00</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Rendimentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Rendimentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroRendimentos">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Relatório de Execução -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Relatório de Execução</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_relatorios_execucao" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo de Relat&#243;rio</th><th class="alinha_centro" scope="col">Descri&#231;&#227;o</th><th class="alinha_centro" scope="col">Data de Inclus&#227;o</th><th class="alinha_centro" scope="col">Avalia&#231;&#227;o</th><th class="alinha_centro" scope="col">Avaliado Em</th>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>4.-ANEXO-IV---CONCILIA----O-BANC--RIA_29_ASSINADO CUSTEIO</td><td class="alinha_centro">12/06/2024 09:18:34</td><td></td><td></td>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>EXTRATO CONTA CORRENTE E APLICA&#199;&#195;O CUSTEIO</td><td class="alinha_centro">12/06/2024 09:19:09</td><td></td><td></td>
+		</tr><tr>
+			<td>EXECUÇÃO RECEITA E DESPESA</td><td>3.-ANEXO-III---EXECU----O-RECEITA-DESPESA_ASSINADO CUSTEIO</td><td class="alinha_centro">12/06/2024 09:19:34</td><td></td><td></td>
+		</tr><tr>
+			<td>RELAÇÃO DE PAGAMENTOS</td><td>5.-ANEXO-V - -RELA -  - O-DE-PAGAMENTOS_ASSINADO CUSTEION</td><td class="alinha_centro">12/06/2024 09:23:11</td><td></td><td></td>
+		</tr><tr>
+			<td>RELATÓRIO DE EXECUÇÃO FÍSICO FINANCEIRA</td><td>6.-ANEXO-VI---RELATORIO-DE--EXECU----O-FISICO-FINANCEIRA_ASSINADO CUSTEIO</td><td class="alinha_centro">12/06/2024 09:23:24</td><td></td><td></td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Processos de Compras -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Processos de Compras</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_processo_compra" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Processo de Compra</th><th class="alinha_centro" scope="col">Data</th>
+		</tr><tr>
+			<td class="alinha_centro">000680/2024</td><td class="alinha_centro">11/06/2024 10:00:04</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contratos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contratos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_contrato" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Data</th>
+		</tr><tr>
+			<td class="alinha_centro">000664/2024</td><td class="alinha_centro">11/06/2024 10:54:53</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Notas Fiscais -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Notas Fiscais</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_notas_fiscais" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Nota Fiscal</th><th class="alinha_centro" scope="col">Data de Emiss&#227;o</th><th class="alinha_centro" scope="col">Valor da Nota</th>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">026.872</td><td class="alinha_centro">28/01/2022</td><td>R$2.020,40</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">026.971</td><td class="alinha_centro">31/01/2022</td><td>R$1.785,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">026.972</td><td class="alinha_centro">31/01/2022</td><td>R$1.794,16</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">026.974</td><td class="alinha_centro">31/01/2022</td><td>R$1.822,25</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7958</td><td class="alinha_centro">08/12/2021</td><td>R$918,25</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7959</td><td class="alinha_centro">08/12/2021</td><td>R$772,92</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7960</td><td class="alinha_centro">08/12/2021</td><td>R$300,40</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7962</td><td class="alinha_centro">08/12/2021</td><td>R$2.020,31</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7961</td><td class="alinha_centro">08/12/2021</td><td>R$1.485,90</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7965</td><td class="alinha_centro">09/12/2021</td><td>R$601,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7987</td><td class="alinha_centro">20/12/2021</td><td>R$488,15</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7980</td><td class="alinha_centro">20/12/2021</td><td>R$1.050,80</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8037,38,39</td><td class="alinha_centro">29/12/2021</td><td>R$5.902,10</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8082</td><td class="alinha_centro">24/01/2022</td><td>R$1.512,80</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8083</td><td class="alinha_centro">24/01/2022</td><td>R$256,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8084</td><td class="alinha_centro">24/01/2022</td><td>R$2.401,23</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8085</td><td class="alinha_centro">24/01/2022</td><td>R$981,50</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8086</td><td class="alinha_centro">24/01/2022</td><td>R$1.438,64</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8087</td><td class="alinha_centro">24/01/2022</td><td>R$1.369,29</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7984</td><td class="alinha_centro">20/12/2021</td><td>R$2.462,75</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7985</td><td class="alinha_centro">20/12/2021</td><td>R$2.443,56</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7986</td><td class="alinha_centro">20/12/2021</td><td>R$2.176,47</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">7990</td><td class="alinha_centro">20/12/2021</td><td>R$1.342,85</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8105</td><td class="alinha_centro">31/01/2022</td><td>R$1.169,18</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8106</td><td class="alinha_centro">31/01/2022</td><td>R$1.250,47</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8107</td><td class="alinha_centro">31/01/2022</td><td>R$441,60</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8112</td><td class="alinha_centro">31/01/2022</td><td>R$871,66</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8111</td><td class="alinha_centro">31/01/2022</td><td>R$1.062,35</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8110</td><td class="alinha_centro">31/01/2022</td><td>R$1.583,77</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8113</td><td class="alinha_centro">31/01/2022</td><td>R$2.728,26</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8133</td><td class="alinha_centro">09/02/2022</td><td>R$843,05</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8132</td><td class="alinha_centro">09/12/2021</td><td>R$1.777,18</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8135</td><td class="alinha_centro">09/12/2021</td><td>R$1.391,80</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8134</td><td class="alinha_centro">09/02/2022</td><td>R$1.665,70</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8136</td><td class="alinha_centro">09/02/2022</td><td>R$981,25</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8157</td><td class="alinha_centro">16/02/2022</td><td>R$1.318,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8158</td><td class="alinha_centro">16/02/2022</td><td>R$1.098,99</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8159</td><td class="alinha_centro">16/02/2022</td><td>R$1.066,90</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8160</td><td class="alinha_centro">16/02/2022</td><td>R$780,20</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8237</td><td class="alinha_centro">31/01/2022</td><td>R$1.810,08</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">8238</td><td class="alinha_centro">31/01/2022</td><td>R$1.424,90</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.377</td><td class="alinha_centro">09/12/2021</td><td>R$2.229,99</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.378</td><td class="alinha_centro">09/12/2021</td><td>R$1.609,99</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.379</td><td class="alinha_centro">09/12/2021</td><td>R$1.926,75</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.380</td><td class="alinha_centro">09/12/2021</td><td>R$726,96</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.598</td><td class="alinha_centro">13/01/2022</td><td>R$2.448,04</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.599</td><td class="alinha_centro">13/01/2022</td><td>R$2.815,78</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.601</td><td class="alinha_centro">13/01/2022</td><td>R$2.565,68</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.602</td><td class="alinha_centro">13/01/2022</td><td>R$1.704,51</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.603</td><td class="alinha_centro">13/01/2022</td><td>R$1.662,01</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000666/2024
+                                                        </td><td class="alinha_centro">029.604</td><td class="alinha_centro">13/01/2022</td><td>R$1.616,02</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Pagamentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Pagamentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_pagamentos" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Nota Fiscal</th><th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Valor da Nota</th><th class="alinha_centro" scope="col">Valor Pago</th><th class="alinha_centro" scope="col">Pagamento</th><th class="alinha_centro" scope="col">Data do Pagamento</th><th class="alinha_centro" scope="col">Forma de Pagamento</th>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            026.872
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.020,40
+                                                        </td><td>R$2.020,40</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            026.971
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.785,00
+                                                        </td><td>R$1.785,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            026.972
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.794,16
+                                                        </td><td>R$1.794,16</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">15/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            026.974
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.822,25
+                                                        </td><td>R$1.822,25</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7958
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$918,25
+                                                        </td><td>R$918,25</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">19/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7959
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$772,92
+                                                        </td><td>R$772,92</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7960
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$300,40
+                                                        </td><td>R$300,40</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7962
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.020,31
+                                                        </td><td>R$2.020,31</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7965
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$601,00
+                                                        </td><td>R$601,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7980
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.050,80
+                                                        </td><td>R$1.050,80</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7961
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.485,90
+                                                        </td><td>R$1.485,90</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7987
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$488,15
+                                                        </td><td>R$488,15</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8083
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$256,00
+                                                        </td><td>R$256,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">25/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8084
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.401,23
+                                                        </td><td>R$2.401,23</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">25/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8085
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$981,50
+                                                        </td><td>R$981,50</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">25/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8086
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.438,64
+                                                        </td><td>R$1.438,64</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">25/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8087
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.369,29
+                                                        </td><td>R$1.369,29</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">25/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7984
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.462,75
+                                                        </td><td>R$2.462,75</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7985
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.443,56
+                                                        </td><td>R$2.443,56</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7986
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.176,47
+                                                        </td><td>R$2.176,47</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            7990
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.342,85
+                                                        </td><td>R$1.342,85</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8105
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.169,18
+                                                        </td><td>R$1.169,18</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8106
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.250,47
+                                                        </td><td>R$1.250,47</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8107
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$441,60
+                                                        </td><td>R$441,60</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8112
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$871,66
+                                                        </td><td>R$871,66</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8111
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.062,35
+                                                        </td><td>R$1.062,35</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8110
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.583,77
+                                                        </td><td>R$1.583,77</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8113
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.728,26
+                                                        </td><td>R$2.728,26</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8133
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$843,05
+                                                        </td><td>R$843,05</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">11/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8132
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.777,18
+                                                        </td><td>R$1.777,18</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">11/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8135
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.391,80
+                                                        </td><td>R$1.391,80</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">11/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8134
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.665,70
+                                                        </td><td>R$1.665,70</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">11/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8136
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$981,25
+                                                        </td><td>R$981,25</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">11/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8157
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.318,00
+                                                        </td><td>R$1.318,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">18/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8158
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.098,99
+                                                        </td><td>R$1.098,99</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">18/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8159
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.066,90
+                                                        </td><td>R$1.066,90</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">18/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8160
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$780,20
+                                                        </td><td>R$780,20</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">18/02/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8237
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.810,08
+                                                        </td><td>R$1.810,08</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/03/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8238
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.424,90
+                                                        </td><td>R$1.424,90</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">21/03/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.377
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.229,99
+                                                        </td><td>R$2.229,99</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">17/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.378
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.609,99
+                                                        </td><td>R$1.609,99</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">17/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.379
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.926,75
+                                                        </td><td>R$1.926,75</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">20/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.380
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$726,96
+                                                        </td><td>R$726,96</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">20/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.598
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.448,04
+                                                        </td><td>R$2.448,04</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">20/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.599
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.815,78
+                                                        </td><td>R$2.815,78</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">19/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.601
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$2.565,68
+                                                        </td><td>R$2.565,68</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">19/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.602
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.704,51
+                                                        </td><td>R$1.704,51</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">19/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.603
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.662,01
+                                                        </td><td>R$1.662,01</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">20/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            029.604
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.616,02
+                                                        </td><td>R$1.616,02</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">19/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8037,38,39
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$5.902,10
+                                                        </td><td>R$5.902,10</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">30/12/2021</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            8082
+                                                        </td><td>
+                                                            000666/2024
+                                                        </td><td>
+                                                            R$1.512,80
+                                                        </td><td>R$1.512,80</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">25/01/2022</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                </div>
+                                
+                                <!-- ABA PRESTAÇÃO DE CONTAS -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_prestacao_contas" aria-labelledby="profile-tab">
+                                    <div id="MainContent_divPrestacaoContas" class="row">
+                                        <div class="col-md-12">
+                                            <table class="table-responsive table table-striped jambo_table bulk_action" border="1" style="border-collapse: collapse;">
+                                                <tbody>
+                                                    <tr>
+                                                        <th class="alinha_centro" scope="col">Número</th>
+                                                        <th class="alinha_centro" scope="col">Data de Abertura</th>
+                                                        <th class="alinha_centro" scope="col">Tipo de Execução</th>
+                                                        <th class="alinha_centro" scope="col">Prazo de Prestação</th>
+                                                        <th class="alinha_centro" scope="col">Situação</th>
+                                                    </tr>
+                                                    <tr>
+                                                        <td id="MainContent_td_prestacao_contas_numero" class="alinha_centro"><a href='VisualizarPrestacaoContas.aspx?idPrestacaoContas=979' target='_blank'>000885/2024</a></td>
+
+                                                        <td id="MainContent_td_prestacao_contas_data_abertura" class="alinha_centro">12/06/2024 09:27:44</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_tipo_execucao" class="alinha_centro">ADIANTAMENTO</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_prazo_execucao" class="alinha_centro">05/07/2022</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_situacao" class="alinha_centro">PRESTAÇÃO DE CONTAS EM ANÁLISE</td>
+
+                                                    </tr>
+                                                    <tr>
+                                                        <td id="MainContent_td_prestacao_contas_obs" colspan="5"><b>OBSERVAÇÃO: </b>NENHUMA</td>
+
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+                    
+
+<!-- jQuery -->
+<script src="/Styles/vendors/jquery/dist/jquery.min.js"></script>
+<!-- Bootstrap -->
+<script src="/Styles/vendors/bootstrap/dist/js/bootstrap.min.js"></script>    
+    
+<!-- PNotify -->
+
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.buttons.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.nonblock.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.callbacks.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.confirm.js"></script>  
+
+<!-- Switchery -->
+<script src="/Styles/vendors/switchery/dist/switchery.min.js"></script>
+
+
+<!-- footer content -->
+<footer>
+    <div class="pull-right">    
+        quarta-feira, 23 de setembro de 2026
+    </div>
+    <div class="clearfix"></div>
+</footer>
+<!-- /footer content -->
+
+<!-- validator -->
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+
+<!-- bootstrap-progressbar -->
+<script src="/Styles/vendors/bootstrap-progressbar/bootstrap-progressbar.min.js"></script>
+
+<!-- jQuery Smart Wizard -->
+<script src="/Styles/vendors/jQuery-Smart-Wizard/js/jquery.smartWizard.js"></script>
+
+<!-- Custom Theme Scripts -->
+<script src="/Styles/build/js/custom.js"></script>
+
+<script src="/js/chosen.jquery.js"></script>
+<script src="/js/prism.js"></script>
+<script src="/js/init.js"></script>
+
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+<script src="/Styles/vendors/parsleyjs/dist/i18n/pt-br.js"></script>
+
+<script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+<script type="text/javascript" src="/js/lacuna/jquery.blockUI.js"></script>    
+<script type="text/javascript" src="/js/lacuna/lacuna-web-pki-2.9.0.js"></script>    
+<script type="text/javascript" src="/js/lacuna/assinatura-js/batch-signature-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-complete-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-start-form.js"></script>
+
+<!-- iCheck -->
+<script src="/Styles/vendors/iCheck/icheck.min.js"></script>
+
+<script type="text/javascript">
+    window.Parsley.setLocale('pt-br');
+
+    $(".select2").select2();
+
+    var c = 0;
+
+    $("#frm1").parsley().on('form:validate', function (formInstance) {
+        if (!formInstance.isValid())
+            c = 0;
+    });
+
+    jQuery.fn.preventDoubleSubmission = function () {
+        $(this).on('submit', function (e) {
+            var $form = $(this);
+
+            if ($form.data('submitted') === true) {
+                if (c >= 1) {
+                    e.preventDefault();
+                }
+            } else {
+                // Mark it so that the next submit can be ignored
+                c++;
+                $form.data('submitted', true);
+            }
+            //console.log(c);
+        });
+
+        //console.log(c);
+
+        // Keep chainability
+        return this;
+    };
+    $('#frm1').preventDoubleSubmission();
+</script>  
+
+                </div>
+            </div>
+        </form>                      
+    </body>
+    
+</html>

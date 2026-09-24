@@ -1,0 +1,598 @@
+
+
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head><title>
+	TRANSFERE.TO
+</title><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <!-- Meta, title, CSS, favicons, etc. -->
+        <meta charset="utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+	    
+
+        <!-- Bootstrap -->
+        <link href="/Styles/vendors/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
+        <!-- Font Awesome -->
+        <link href="/Styles/vendors/font-awesome/css/font-awesome.min.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/pnotify/dist/pnotify.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.buttons.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.nonblock.css" rel="stylesheet" />
+
+        <!-- Custom Theme Style -->
+        <link href="/Styles/build/css/custom.min.css" rel="stylesheet" />
+
+        <link href="/Styles/Site.css" rel="stylesheet" />
+    
+        <script src="/js/jquery-3.3.1.min.js"></script>
+        <script src="/js/jquery.mask.min.js"></script>
+    
+        <link rel="stylesheet" href="/Styles/jquery-confirm.min.css" />    
+        <script src="/js/jquery-confirm.min.js"></script>
+
+        <!-- Switchery -->
+        <link href="/Styles/vendors/switchery/dist/switchery.min.css" rel="stylesheet" />
+
+        <link rel="stylesheet" href="/Styles/jquery-ui.css" />
+        <script src="/js/jquery-ui.js"></script>
+
+        <script src="/js/funcao.js"></script>    
+    
+        <script src="/js/moment.js"></script>
+        <script src="/js/moment-with-locales.js"></script>
+
+        <!-- bootstrap-datetimepicker -->
+        <link href="/Styles/vendors/bootstrap-datetimepicker/build/css/bootstrap-datetimepicker.css" rel="stylesheet" />
+        <script src="/Styles/vendors/bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min.js"></script>
+
+        <!-- bootstrap-progressbar -->
+        <link href="/Styles/vendors/bootstrap-progressbar/css/bootstrap-progressbar-3.3.4.min.css" rel="stylesheet" />
+
+        <link href="/Styles/style.css" rel="stylesheet" />
+        <link href="/Styles/prism.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/select2/dist/css/select2.css" rel="stylesheet" />
+
+        <!-- iCheck -->
+        <link href="/Styles/vendors/iCheck/skins/flat/green.css" rel="stylesheet" />         
+
+        <script type="text/javascript">       
+            (function ($) {
+                $(function () {
+                    $('.data').mask('00/00/0000', { reverse: false });
+                    $('.dinheiro').mask('000.000.000.000,00', { reverse: true, maxlength: 18 });
+                    $('.cpf').mask('000.000.000-00', { reverse: false });
+                    $('.cnpj').mask('00.000.000/0000-00', { reverse: false });
+                    $('.cep').mask('00000-000', { reverse: false });
+                    $('.numero').mask('000', { reverse: true });
+                    $('.numero_dez').mask('0000000000', { reverse: true});
+                    $('.rg').mask('0000000', { reverse: false, maxlength: 7 });
+                    $('.telefone').mask(behavior, options);
+                    $('.agencia').mask('0000-0', { reverse: false });
+                    $('.conta').mask('00000-0', { reverse: false });
+                    $('.numero_decimal').mask('00,0', { reverse: true, maxlength: 4 });
+                    $('.numero_decimal_2').mask('00,00', { reverse: true, maxlength: 4 });
+                    $('.natureza_despesa').mask('0.0.00.00', { reverse: false, maxlength: 9 });
+                    $('.numero_sgd').mask('0000/00000/000000', { reverse: false });
+                });
+            })(jQuery);
+
+            var behavior = function (val) {
+                return val.replace(/\D/g, '').length === 11 ? '(00) 00000-0000' : '(00) 0000-00009';
+            },
+                options = {
+                    onKeyPress: function (val, e, field, options) {
+                        field.mask(behavior.apply({}, arguments), options);
+                    }
+                };
+        </script>
+
+        <script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+        
+</head>
+    <body class="nav-md">
+        <form method="post" action="./VisualizarConvenio.aspx?idConvenio=100" id="frm1" data-parsley-validate="">
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__LASTFOCUS" id="__LASTFOCUS" value="" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="QV97LTz8uNp62HpmZ5FFT6+UaIt2JJRcs92YE/XGvi6Jks+tvwFXxh1VzpEvAqvjlB1axvfUFeAIcCOLl/0DevRJvqv0ZLb8vg8uDEG/5cIh8SHJ2+r0XFTZhRIlGVYu6vKcbkC7DDer6q0cbAS0ZNAo7fdM78N8BmOsxP/mlyR5eNiJcrU9gEuH+3bTcxluAbIyf5tnxjkeTz/90I9RVQ6haR0XjIdi4Y0QpQTblgxzcOBFf+WsRo7SNV475D5kIJlCmC8OqbXuNBJIsEj+7V/VijVdpHBS8J0FEhv/IP8DTW4nbNUh89+O8fgTAJbzTnWHtkg/FM5HiUNzypOgc1LtAxZlR47QqmGNUNl/qk0FFAeVzHr5plr8tWoZvr7ozhOlmIr+9XSp9jw5w43UI4NeShk5Gus7fwOQW+FetsdlseYVMBjzJ0CwmBIxGrbxuxVL97op8FB9idix/0Nggjt9gZEPPAWuIhuC8TTYedbxBkUSkX0/EBfjuADPyLnBMXWOZI5w0Iieb2aSOJM9ITWNyCIPxA49M7+8/ptKgtj7ITyflMGpSHnF36Pt+FwxFgPra91SDwP3y2dM0fwSsZOgh7nqDpe2fWa6YexIcNJFFFFOBdXVkB1RpWfOGvfnbnBuxxmxZmoEg2E9aZOpIEjFBWERnMYKiLB0BTPKUA8OP9dFGrawxcEcsCBIXgetDZiMs+Z92exqR6k4FvXLkmDjPpXGESMNM4aS/HOaliqCcNoDx5Y0Yy2RZtB1uR3G+S4UkfzcbyTTqhAnZ28NTBs83YcgVdYLYtlcdLgEa6Ya6/FCOoxWWmSLPlW4071BCoKBqJ5cVk0ZKWnEKSouTldLxRyHNqLhM/vticzzA/X5oHIGBgfPuF3bBa8SiJTuv+EWS0H35hO7n5KRLLas0/H21qYBGDx3mqJUDeZkv8suKXzDuS7XU+JKje24/v+uRXHVnSVcsWbfd5pHODOiyMPFyRSGrRWieK+orU1mvXj56++wHbwkpbbxqpaDarfEpPPvAeVWxGqzrV59iNvJiMYcqrKWpAQaBqbhMO2s294T5g48rfCzNpFbKobJlPZk0hKq/jdkNfQrDoss2AmSwrwrz+uqsJa7PEUu3LG3pjYyYWnwGZ4fdoDIndopM1w6RoOo3LNmoVoPzvYbZrx3UkQIkYheek+ErNk/rrYV+gYtAMl/oyRyvjS1BEY1cHy20iZWH/wug9s3vyYig54H69k/xXPWCVVMhT2Lz9ZHsA77GIMVmpFqwMWG738p1BDzCLL3mgY/jS8/9e8qrdnBUGq7/y265EsVxfPwsdq+nQB1hQ8Jn6ihtQK0bTovz2OA0rmQFvgt+Z0h5Uk3Os6qHNr5R9UTwHUxfb08pjWNg0nO3tW5rBNizpO+NVQ/ZRB73Cf414DKX9y4U8VhewmwPI7VTwnQV+Jn/a/D5PVbt+prvM5lHVQwZ+ntZXu2YJdcg02G3xoMSfeu/C897i8EluV+BtdC5Se2vD47dJjhQ3UlvP8p3BrH8MUsjwp0xLGX0Z5P33fpMG9nHzeRAtTYUPyOAuav6qxSNmf7v1v2D0x9YqDMXpPMLi7C7tDZUcvuTdJicDZVquhR2OabmodASjOELAm3sLABMoesZ6w00g+tVxOd8mWvMJ7eaShDOnXS3GwropKAOPORjfcKfshW405z5XYNV9JtnwLLEk6lsQh+l5OphOrbGVBWvRxq8dZv6LsDJMBWK6fWF0ZpEqT3ky0Odb1PVziGPapEbPHm5ciq1cbXdkzWdFpbIrfQB7OehyVsfMKcIm0jD+q/GAb6JaTXC6sk/8HfmfYP+6y5VPnV/EnsE/Phy5/DRMOxdRlo+R/B/9lS7Meuhvn0Nlwbiwa4OxqsgsaMZKYWI8x4VJc=" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['frm1'];
+if (!theForm) {
+    theForm = document.frm1;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="F1EDBA79" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="Nop/p+uYejnJkAnvohzEenIi0//jI+Xf7N7A/zpWRwIEcITrw3b2xlHeBM9LiylkIxc4a0hEzmRLa0sRM6BSMz4OJVuG5kCApFN6rVMv9+9STRPOk/a8ov4GrICySzyYKPgNO5SLupEPlAPRp5OwNyZafo43wvz18gelCLNte6M=" />
+</div>
+            <input type="hidden" name="ctl00$class_body" id="class_body" />
+            <input type="hidden" name="ctl00$txtEnderecoSistema" id="txtEnderecoSistema" />
+            <div class="container body">
+                <div class="main_container">  
+                    
+                    
+
+<div class="col-md-3 left_col">
+    <div class="left_col scroll-view">
+    <div class="navbar nav_title" style="border: 0;">
+        <a href="/Default.aspx" class="site_title"><i class="glyphicon glyphicon-home"></i> <span>TRANSFERE.TO</span></a>
+    </div>
+
+    <div class="clearfix"></div>
+    
+    <br />
+
+    <!-- sidebar menu -->
+    <div id="sidebar-menu" class="main_menu_side hidden-print main_menu">
+        <div class="menu_section">            
+                       
+        </div>        
+    </div>
+    <!-- /sidebar menu -->
+  
+    <!-- /menu footer buttons -->
+    <div class="sidebar-footer hidden-small">
+        
+    </div>
+    <!-- /menu footer buttons -->
+
+    </div>
+</div>        
+                    
+<!-- top navigation -->
+<div class="top_nav">
+    <div class="nav_menu">
+        <nav>
+            <div class="nav toggle">
+                <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+            </div>         
+            
+        </nav>
+    </div>
+</div>
+<!-- /top navigation -->
+                
+                    
+    <input type="hidden" name="ctl00$MainContent$id" id="id" value="100" />
+    <div class="right_col" role="main">
+        <div class="row">
+            <div class="col-md-12 col-sm-12 col-xs-12">
+                <div class="x_panel">
+                    <div class="x_title">
+                        <h2>Convênio > Visualizar</h2>
+                        <div class="clearfix"></div>
+                    </div>
+                    <div class="x_content">
+                        <!-- Dados básicos do convênio -->
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Número</label><br />
+                                <span id="MainContent_lblNumero">10820.000005/2020</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Data de Abertura</label><br />
+                                <span id="MainContent_lblDataAbertura">21/10/2020 08:29:42</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Situação</label><br />
+                                <span id="MainContent_lblSituacao">CONVÊNIO ANALISADO</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label>Órgão Concedente</label><br />
+                                <span id="MainContent_lblOrgaoConcedente">AGÊNCIA DO DESENVOLVIMENTO DO TURISMO, CULTURA E ECONOMIA CRIATIVA</span>
+                            </div>
+                            
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Convenente</label><br />
+                                <span id="MainContent_lblConveniado">12.921.880/0001-18 - INSTITUTO TOCANTINENSE DE DESENVOLVIMENTO CULTURAL, ESPORTIVO, ECONOMICO, TURISTICO E SOCIAL</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Objeto</label><br />
+                                <span id="MainContent_lblFinalidade">O PRESENTE COLABORAÇÃO TEM POR OBJETO APOIAR A REALIZAÇÃO DA "LIVE ENCANTO" COM PRESTAÇÃO DE SERVIÇOS, FOMENTO A ARTISTAS, NOVOS TALENTOS E ESTRUTURA.</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Ação Orçamentária</label><br />
+                                <span id="MainContent_lblAcaoOrcamentaria">4336 - FOMENTO À PRODUÇÃO, CIRCULAÇÃO E PROMOÇÃO DA ARTE, DA CULTURA E DO TURISMO CULTURAL.</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Data de Vigência</label><br />
+                                <span id="MainContent_lblDataVigencia">22/10/2020 - 07/11/2020 (16 dias)</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Valor do Convênio</label><br />
+                                <span id="MainContent_lblValorConvenio">R$98.500,00</span>
+                            </div>
+                        </div>
+                        <div class="ln_solid"></div>
+                        <br />
+                        <!-- Abas -->
+                        <div class="" role="tabpanel" data-example-id="togglable-tabs">
+                            <ul id="myTab" class="nav nav-tabs bar_tabs" role="tablist">
+                                <li role="presentation" class="active"><a href="#tab_content_celebracao" id="tab_celebracao" role="tab" data-toggle="tab" aria-expanded="true"><b>Celebração</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_execucao" id="tab_execucao" role="tab" data-toggle="tab" aria-expanded="false"><b>Execução</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_prestacao_contas" id="tab_prestacao_contas" role="tab" data-toggle="tab" aria-expanded="false"><b>Prestação de Contas</b></a></li>
+                            </ul>
+                            <div id="myTabContent" class="tab-content">
+                                
+                                <!-- ABA CELEBRAÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade active in" id="tab_content_celebracao" aria-labelledby="aria-labelledby">
+                                    <br />
+                                    <!-- Tabela Origem -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Origem</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_origem" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo</th><th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Data de Abertura</th>
+		</tr><tr>
+			<td class="alinha_centro">EMENDA</td><td class="alinha_centro">010422.00606/2020</td><td class="alinha_centro">30/07/2020 13:15:12</td>
+		</tr><tr>
+			<td class="alinha_centro">PROJETO</td><td class="alinha_centro">010422.00317/2020</td><td class="alinha_centro">03/08/2020 12:04:15</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Assinatura -->
+                                    
+                                    <br />
+                                    
+                                    <!-- Publicação -->
+                                    
+                                </div>
+                                
+                                <!-- ABA EXECUÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_execucao" aria-labelledby="profile-tab">
+                                    <br />
+                                    
+                                    <!-- Solicitações de Adequações -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Solicitações de Adequações</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroAdequacao">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Aditivos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Aditivos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroAditivo">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Prorrogações de Ofício -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Prorrogações de Ofício</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroProrrogaOficio">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contrapartidas -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contrapartida</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroContrapartida">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Programação Financeira -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Programação Financeira</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroProgramacaoFinanceira">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Rendimentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Rendimentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroRendimentos">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Relatório de Execução -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Relatório de Execução</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroRelatorioExecucao">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Processos de Compras -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Processos de Compras</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroProcessoCompra">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contratos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contratos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroContrato">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Notas Fiscais -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Notas Fiscais</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroNotas">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Pagamentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Pagamentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroPagamento">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                </div>
+                                
+                                <!-- ABA PRESTAÇÃO DE CONTAS -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_prestacao_contas" aria-labelledby="profile-tab">
+                                    
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+                    
+
+<!-- jQuery -->
+<script src="/Styles/vendors/jquery/dist/jquery.min.js"></script>
+<!-- Bootstrap -->
+<script src="/Styles/vendors/bootstrap/dist/js/bootstrap.min.js"></script>    
+    
+<!-- PNotify -->
+
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.buttons.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.nonblock.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.callbacks.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.confirm.js"></script>  
+
+<!-- Switchery -->
+<script src="/Styles/vendors/switchery/dist/switchery.min.js"></script>
+
+
+<!-- footer content -->
+<footer>
+    <div class="pull-right">    
+        quarta-feira, 23 de setembro de 2026
+    </div>
+    <div class="clearfix"></div>
+</footer>
+<!-- /footer content -->
+
+<!-- validator -->
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+
+<!-- bootstrap-progressbar -->
+<script src="/Styles/vendors/bootstrap-progressbar/bootstrap-progressbar.min.js"></script>
+
+<!-- jQuery Smart Wizard -->
+<script src="/Styles/vendors/jQuery-Smart-Wizard/js/jquery.smartWizard.js"></script>
+
+<!-- Custom Theme Scripts -->
+<script src="/Styles/build/js/custom.js"></script>
+
+<script src="/js/chosen.jquery.js"></script>
+<script src="/js/prism.js"></script>
+<script src="/js/init.js"></script>
+
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+<script src="/Styles/vendors/parsleyjs/dist/i18n/pt-br.js"></script>
+
+<script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+<script type="text/javascript" src="/js/lacuna/jquery.blockUI.js"></script>    
+<script type="text/javascript" src="/js/lacuna/lacuna-web-pki-2.9.0.js"></script>    
+<script type="text/javascript" src="/js/lacuna/assinatura-js/batch-signature-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-complete-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-start-form.js"></script>
+
+<!-- iCheck -->
+<script src="/Styles/vendors/iCheck/icheck.min.js"></script>
+
+<script type="text/javascript">
+    window.Parsley.setLocale('pt-br');
+
+    $(".select2").select2();
+
+    var c = 0;
+
+    $("#frm1").parsley().on('form:validate', function (formInstance) {
+        if (!formInstance.isValid())
+            c = 0;
+    });
+
+    jQuery.fn.preventDoubleSubmission = function () {
+        $(this).on('submit', function (e) {
+            var $form = $(this);
+
+            if ($form.data('submitted') === true) {
+                if (c >= 1) {
+                    e.preventDefault();
+                }
+            } else {
+                // Mark it so that the next submit can be ignored
+                c++;
+                $form.data('submitted', true);
+            }
+            //console.log(c);
+        });
+
+        //console.log(c);
+
+        // Keep chainability
+        return this;
+    };
+    $('#frm1').preventDoubleSubmission();
+</script>  
+
+                </div>
+            </div>
+        </form>                      
+    </body>
+    
+</html>

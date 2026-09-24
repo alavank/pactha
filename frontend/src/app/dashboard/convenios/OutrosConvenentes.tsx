@@ -28,6 +28,7 @@ interface Outro {
   situacao: string | null;
   valor_concedente: number | null;
   valor_repassado: number | null;
+  valor_total?: number | null;
   dt_assinatura: string | null;
   dt_vigencia_final: string | null;
   numero: string | null;
@@ -77,7 +78,8 @@ export function OutrosConvenentes({ municipioId }: { municipioId: string }) {
                   <Selo>não é a prefeitura</Selo>
                 </span>
               }
-              valor={moeda(o.valor_concedente)}
+              // O TO não separa a parte do Estado: sem ela, o total da fonte.
+              valor={moeda(o.valor_concedente ?? o.valor_total ?? null)}
               meta={
                 <>
                   {o.convenente && <span>{o.convenente}</span>}

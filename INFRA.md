@@ -528,6 +528,14 @@ O desenho atual (13/09/2026, "coleta noturna"):
   1020 s. **Criada nos sete em 23/09/2026 ~01:25 UTC** por
   `scripts/criar_task_cgu_convenios.sh` (idempotente), depois do deploy do #539 — a
   migration conferida "143/143 em dia" no log das sete APIs.
+- **`convenios-to` (23/09/2026), escada de UMA HORA de 01:00 (freitas) a 07:00 UTC
+  (juranda):** varre todos os ids do TRANSFERE.TO (~3.200 páginas, ~0,45 s cada da VPS,
+  ~25 min) no worker que tem município do TO; nos outros sai em segundos (`success`, 0).
+  O portal do Estado é um só, por isso uma hora entre tenants — duas varreduras nunca se
+  sobrepõem. Orçamento interno de 50 min (`CONVENIOS_TO_BUDGET_S=3000`), kill em 3300 s,
+  timeout da task 3420 s; o que não couber vira `partial` e a rodada não apaga nada.
+  Sem migration (grava em `convenios_estadual` e `convenios_estadual_outros`). A criar
+  nos sete por `scripts/criar_task_convenios_to.sh` (idempotente) depois do deploy.
 - **`dou-federal` (22/09/2026) também é escada ENTRE TENANTS:** os sete buscam no mesmo
   `in.gov.br` do mesmo IP. 10 min de passo, de 08:00 (freitas) a 09:00 UTC (juranda), na
   ordem da tabela de uuids; orçamento interno de 8 min (`DOU_BUDGET_S=480`), kill em 600 s,

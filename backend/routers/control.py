@@ -418,9 +418,11 @@ _COBERTURA_POR_FONTE = [
              WHEN fonte ILIKE '%GCONV%' THEN 'Convênios GConv-ES'
              WHEN fonte = 'CAGE-RS'     THEN 'Convênios CAGE-RS'
              WHEN fonte = 'SIT-PR'      THEN 'Convênios SIT-PR'
+             WHEN fonte = 'TRANSFERE-TO' THEN 'Convênios TRANSFERE.TO'
              ELSE 'Convênios SIGCON-MG' END""",
      {"FNS (propostas)": "Saúde", "Convênios GConv-ES": "Estadual",
       "Convênios CAGE-RS": "Estadual", "Convênios SIT-PR": "Estadual",
+      "Convênios TRANSFERE.TO": "Estadual",
       "Convênios SIGCON-MG": "Estadual"}),
     ("cagec_situacao", """
         CASE WHEN fonte = 'CHE-RS' THEN 'CHE-RS (habilitação)'

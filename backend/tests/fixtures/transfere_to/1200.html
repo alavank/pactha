@@ -1,0 +1,691 @@
+
+
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head><title>
+	TRANSFERE.TO
+</title><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <!-- Meta, title, CSS, favicons, etc. -->
+        <meta charset="utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+	    
+
+        <!-- Bootstrap -->
+        <link href="/Styles/vendors/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
+        <!-- Font Awesome -->
+        <link href="/Styles/vendors/font-awesome/css/font-awesome.min.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/pnotify/dist/pnotify.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.buttons.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.nonblock.css" rel="stylesheet" />
+
+        <!-- Custom Theme Style -->
+        <link href="/Styles/build/css/custom.min.css" rel="stylesheet" />
+
+        <link href="/Styles/Site.css" rel="stylesheet" />
+    
+        <script src="/js/jquery-3.3.1.min.js"></script>
+        <script src="/js/jquery.mask.min.js"></script>
+    
+        <link rel="stylesheet" href="/Styles/jquery-confirm.min.css" />    
+        <script src="/js/jquery-confirm.min.js"></script>
+
+        <!-- Switchery -->
+        <link href="/Styles/vendors/switchery/dist/switchery.min.css" rel="stylesheet" />
+
+        <link rel="stylesheet" href="/Styles/jquery-ui.css" />
+        <script src="/js/jquery-ui.js"></script>
+
+        <script src="/js/funcao.js"></script>    
+    
+        <script src="/js/moment.js"></script>
+        <script src="/js/moment-with-locales.js"></script>
+
+        <!-- bootstrap-datetimepicker -->
+        <link href="/Styles/vendors/bootstrap-datetimepicker/build/css/bootstrap-datetimepicker.css" rel="stylesheet" />
+        <script src="/Styles/vendors/bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min.js"></script>
+
+        <!-- bootstrap-progressbar -->
+        <link href="/Styles/vendors/bootstrap-progressbar/css/bootstrap-progressbar-3.3.4.min.css" rel="stylesheet" />
+
+        <link href="/Styles/style.css" rel="stylesheet" />
+        <link href="/Styles/prism.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/select2/dist/css/select2.css" rel="stylesheet" />
+
+        <!-- iCheck -->
+        <link href="/Styles/vendors/iCheck/skins/flat/green.css" rel="stylesheet" />         
+
+        <script type="text/javascript">       
+            (function ($) {
+                $(function () {
+                    $('.data').mask('00/00/0000', { reverse: false });
+                    $('.dinheiro').mask('000.000.000.000,00', { reverse: true, maxlength: 18 });
+                    $('.cpf').mask('000.000.000-00', { reverse: false });
+                    $('.cnpj').mask('00.000.000/0000-00', { reverse: false });
+                    $('.cep').mask('00000-000', { reverse: false });
+                    $('.numero').mask('000', { reverse: true });
+                    $('.numero_dez').mask('0000000000', { reverse: true});
+                    $('.rg').mask('0000000', { reverse: false, maxlength: 7 });
+                    $('.telefone').mask(behavior, options);
+                    $('.agencia').mask('0000-0', { reverse: false });
+                    $('.conta').mask('00000-0', { reverse: false });
+                    $('.numero_decimal').mask('00,0', { reverse: true, maxlength: 4 });
+                    $('.numero_decimal_2').mask('00,00', { reverse: true, maxlength: 4 });
+                    $('.natureza_despesa').mask('0.0.00.00', { reverse: false, maxlength: 9 });
+                    $('.numero_sgd').mask('0000/00000/000000', { reverse: false });
+                });
+            })(jQuery);
+
+            var behavior = function (val) {
+                return val.replace(/\D/g, '').length === 11 ? '(00) 00000-0000' : '(00) 0000-00009';
+            },
+                options = {
+                    onKeyPress: function (val, e, field, options) {
+                        field.mask(behavior.apply({}, arguments), options);
+                    }
+                };
+        </script>
+
+        <script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+        
+</head>
+    <body class="nav-md">
+        <form method="post" action="./VisualizarConvenio.aspx?idConvenio=1200" id="frm1" data-parsley-validate="">
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="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" />
+
+<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="F1EDBA79" />
+<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="RubxuyKywN5j+/wVjdusi5enGiBjRuYwajA5txkMtu+F7IG3DPSlvDtrSj4bf716ctYtth18h4vzxHwsw7yzG9n2Dq6rIMoLPA/kRsdvowmz5sFHoL7na8wvaoNxzgMS9nvGgqLW+rL56YA4cfs3dApT9OrBBpDC7X2uKjNu0Pw=" />
+            <input type="hidden" name="ctl00$class_body" id="class_body" />
+            <input type="hidden" name="ctl00$txtEnderecoSistema" id="txtEnderecoSistema" />
+            <div class="container body">
+                <div class="main_container">  
+                    
+                    
+
+<div class="col-md-3 left_col">
+    <div class="left_col scroll-view">
+    <div class="navbar nav_title" style="border: 0;">
+        <a href="/Default.aspx" class="site_title"><i class="glyphicon glyphicon-home"></i> <span>TRANSFERE.TO</span></a>
+    </div>
+
+    <div class="clearfix"></div>
+    
+    <br />
+
+    <!-- sidebar menu -->
+    <div id="sidebar-menu" class="main_menu_side hidden-print main_menu">
+        <div class="menu_section">            
+                       
+        </div>        
+    </div>
+    <!-- /sidebar menu -->
+  
+    <!-- /menu footer buttons -->
+    <div class="sidebar-footer hidden-small">
+        
+    </div>
+    <!-- /menu footer buttons -->
+
+    </div>
+</div>        
+                    
+<!-- top navigation -->
+<div class="top_nav">
+    <div class="nav_menu">
+        <nav>
+            <div class="nav toggle">
+                <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+            </div>         
+            
+        </nav>
+    </div>
+</div>
+<!-- /top navigation -->
+                
+                    
+    <input type="hidden" name="ctl00$MainContent$id" id="id" value="1200" />
+    <div class="right_col" role="main">
+        <div class="row">
+            <div class="col-md-12 col-sm-12 col-xs-12">
+                <div class="x_panel">
+                    <div class="x_title">
+                        <h2>Convênio > Visualizar</h2>
+                        <div class="clearfix"></div>
+                    </div>
+                    <div class="x_content">
+                        <!-- Dados básicos do convênio -->
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Número</label><br />
+                                <span id="MainContent_lblNumero">77010.000036/2023</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Data de Abertura</label><br />
+                                <span id="MainContent_lblDataAbertura">15/03/2023 08:46:50</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Situação</label><br />
+                                <span id="MainContent_lblSituacao">PRESTAÇÃO DE CONTAS EM ANÁLISE</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label>Órgão Concedente</label><br />
+                                <span id="MainContent_lblOrgaoConcedente">SECRETARIA DA CULTURA</span>
+                            </div>
+                            
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Convenente</label><br />
+                                <span id="MainContent_lblConveniado">01.612.821/0001-41 - PREFEITURA MUNICIPAL DE CRIXAS DO TOCANTINS</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Objeto</label><br />
+                                <span id="MainContent_lblFinalidade">A REALIZAÇÃO DA  2ª EDIÇÃO DA FESTA DO MILHO , A SER REALIZADO NOS DIAS 22 A 24 DE ABRIL DE 2023.</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Ação Orçamentária</label><br />
+                                <span id="MainContent_lblAcaoOrcamentaria">4336 - FOMENTO À PRODUÇÃO, CIRCULAÇÃO E PROMOÇÃO DA ARTE, DA CULTURA E DO TURISMO CULTURAL.</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Data de Vigência</label><br />
+                                <span id="MainContent_lblDataVigencia">28/03/2023 - 31/12/2023 (278 dias)</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Valor do Convênio</label><br />
+                                <span id="MainContent_lblValorConvenio">R$135.000,00</span>
+                            </div>
+                        </div>
+                        <div class="ln_solid"></div>
+                        <br />
+                        <!-- Abas -->
+                        <div class="" role="tabpanel" data-example-id="togglable-tabs">
+                            <ul id="myTab" class="nav nav-tabs bar_tabs" role="tablist">
+                                <li role="presentation" class="active"><a href="#tab_content_celebracao" id="tab_celebracao" role="tab" data-toggle="tab" aria-expanded="true"><b>Celebração</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_execucao" id="tab_execucao" role="tab" data-toggle="tab" aria-expanded="false"><b>Execução</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_prestacao_contas" id="tab_prestacao_contas" role="tab" data-toggle="tab" aria-expanded="false"><b>Prestação de Contas</b></a></li>
+                            </ul>
+                            <div id="myTabContent" class="tab-content">
+                                
+                                <!-- ABA CELEBRAÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade active in" id="tab_content_celebracao" aria-labelledby="aria-labelledby">
+                                    <br />
+                                    <!-- Tabela Origem -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Origem</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_origem">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo</th><th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Data de Abertura</th>
+		</tr><tr>
+			<td class="alinha_centro">PROCESSO</td><td class="alinha_centro">2023/77011/000014</td><td class="alinha_centro">17/01/2023 12:10:35</td>
+		</tr><tr>
+			<td class="alinha_centro">PROGRAMA</td><td class="alinha_centro">7/2023</td><td class="alinha_centro">17/01/2023 12:09:31</td>
+		</tr><tr>
+			<td class="alinha_centro">PROJETO</td><td class="alinha_centro">010200.00007/2023</td><td class="alinha_centro">17/01/2023 12:10:35</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Assinatura -->
+                                    <div id="MainContent_divAssinatura" class="row">
+                                        <div class="col-md-12">
+                                            <label>Registro de Assinatura</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_assinaturas">
+		<tr>
+			<th class="alinha_centro" scope="col">Data da Assinatura</th><th class="alinha_centro" scope="col">Tipo de Assinatura</th>
+		</tr><tr>
+			<td class="alinha_centro">28/03/2023 15:48:01</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">17/03/2023 15:36:47</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Publicação -->
+                                    
+                                </div>
+                                
+                                <!-- ABA EXECUÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_execucao" aria-labelledby="profile-tab">
+                                    <br />
+                                    
+                                    <!-- Solicitações de Adequações -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Solicitações de Adequações</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroAdequacao">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Aditivos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Aditivos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroAditivo">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Prorrogações de Ofício -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Prorrogações de Ofício</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroProrrogaOficio">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contrapartidas -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contrapartida</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_contrapartidas">
+		<tr>
+			<th class="alinha_centro" scope="col">Data do Dep&#243;sito</th><th class="alinha_centro" scope="col">Valor do Dep&#243;sito</th><th class="alinha_centro" scope="col">Forma de Dep&#243;sito</th><th class="alinha_centro" scope="col">Data de Inclus&#227;o</th>
+		</tr><tr>
+			<td class="alinha_centro">18/04/2023</td><td>R$35.000,00</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td><td class="alinha_centro">06/02/2024 15:07:30</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Programação Financeira -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Programação Financeira</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_programacao_financeira">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo</th><th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Data de Emiss&#227;o</th><th class="alinha_centro" scope="col">Valor</th>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE EMPENHO</td><td class="alinha_centro">2023NE00156</td><td class="alinha_centro">24/03/2023</td><td>R$100.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE LIQUIDAÇÃO</td><td class="alinha_centro">2023NL00189</td><td class="alinha_centro">29/03/2023</td><td>R$100.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">PROGRAMA DE DESEMBOLSO</td><td class="alinha_centro">2023PD00299</td><td class="alinha_centro">29/03/2023</td><td>R$100.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">ORDEM BANCÁRIA</td><td class="alinha_centro">2023OB00390</td><td class="alinha_centro">17/04/2023</td><td>R$100.000,00</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Rendimentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Rendimentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroRendimentos">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Relatório de Execução -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Relatório de Execução</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_relatorios_execucao">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo de Relat&#243;rio</th><th class="alinha_centro" scope="col">Descri&#231;&#227;o</th><th class="alinha_centro" scope="col">Data de Inclus&#227;o</th><th class="alinha_centro" scope="col">Avalia&#231;&#227;o</th><th class="alinha_centro" scope="col">Avaliado Em</th>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>ANEXO II - CUMPRIMENTO DO OBJETO</td><td class="alinha_centro">06/02/2024 14:49:21</td><td></td><td></td>
+		</tr><tr>
+			<td>EXECUÇÃO RECEITA E DESPESA</td><td>ANEXO III - EXECU&#199;&#195;O RECEITA E DESPESA</td><td class="alinha_centro">06/02/2024 14:49:53</td><td></td><td></td>
+		</tr><tr>
+			<td>RELAÇÃO DE PAGAMENTOS</td><td>ANEXO IV RELA&#199;&#195;O DE PAGAMENTO REFERENTE AOS DOCUMENTOS  DE DESPESA NOTAS FISCAIS.</td><td class="alinha_centro">06/02/2024 14:50:46</td><td></td><td></td>
+		</tr><tr>
+			<td>RELATÓRIO DE EXECUÇÃO FÍSICO FINANCEIRA</td><td>RELATORIO FISICO FINANCEIRO</td><td class="alinha_centro">06/02/2024 14:51:23</td><td></td><td></td>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>ANEXO V CONCILIA&#199;&#195;O BANCARIA</td><td class="alinha_centro">06/02/2024 14:51:47</td><td></td><td></td>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>EXTRATO DA CONTA CORRENTE DO CONVENIO REF.04/2023 MES DO CREDITO ATE MES 10/2023 SEM RENDIMENTO</td><td class="alinha_centro">06/02/2024 15:14:58</td><td></td><td></td>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>EXTRATO CONTA APLICA&#199;&#195;O REFERENTE  DO MES DE 04/2023 A 10/2023., ZERADO POIS NAO HOUVE RENDIMENTOS</td><td class="alinha_centro">06/02/2024 15:16:44</td><td></td><td></td>
+		</tr><tr>
+			<td>RELATÓRIO DE EXECUÇÃO FÍSICO FINANCEIRA</td><td>RELATORIO FOTOGRAFICO DA 2&#170; EDI&#199;&#195;O DA FESTA DO MILHO 22 A 24 DE ABRIL DE 2023.</td><td class="alinha_centro">07/02/2024 08:59:57</td><td></td><td></td>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>ANEXO I OFICIO DE ENCAMINHAMENTO DA PRESTA&#199;&#195;O DE CONTAS</td><td class="alinha_centro">07/02/2024 09:02:39</td><td></td><td></td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Processos de Compras -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Processos de Compras</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_processo_compra">
+		<tr>
+			<th class="alinha_centro" scope="col">Processo de Compra</th><th class="alinha_centro" scope="col">Data</th>
+		</tr><tr>
+			<td class="alinha_centro">000233/2024</td><td class="alinha_centro">06/02/2024 11:53:35</td>
+		</tr><tr>
+			<td class="alinha_centro">000235/2024</td><td class="alinha_centro">06/02/2024 13:31:56</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contratos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contratos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_contrato">
+		<tr>
+			<th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Data</th>
+		</tr><tr>
+			<td class="alinha_centro">000234/2024</td><td class="alinha_centro">06/02/2024 11:58:39</td>
+		</tr><tr>
+			<td class="alinha_centro">000237/2024</td><td class="alinha_centro">06/02/2024 14:57:55</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Notas Fiscais -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Notas Fiscais</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_notas_fiscais">
+		<tr>
+			<th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Nota Fiscal</th><th class="alinha_centro" scope="col">Data de Emiss&#227;o</th><th class="alinha_centro" scope="col">Valor da Nota</th>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000234/2024
+                                                        </td><td class="alinha_centro">0222</td><td class="alinha_centro">03/04/2023</td><td>R$60.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000237/2024
+                                                        </td><td class="alinha_centro">0186</td><td class="alinha_centro">03/04/2023</td><td>R$75.000,00</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Pagamentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Pagamentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_pagamentos">
+		<tr>
+			<th class="alinha_centro" scope="col">Nota Fiscal</th><th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Valor da Nota</th><th class="alinha_centro" scope="col">Valor Pago</th><th class="alinha_centro" scope="col">Pagamento</th><th class="alinha_centro" scope="col">Data do Pagamento</th><th class="alinha_centro" scope="col">Forma de Pagamento</th>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            0186
+                                                        </td><td>
+                                                            000237/2024
+                                                        </td><td>
+                                                            R$75.000,00
+                                                        </td><td>R$75.000,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">18/04/2020</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            0222
+                                                        </td><td>
+                                                            000234/2024
+                                                        </td><td>
+                                                            R$60.000,00
+                                                        </td><td>R$60.000,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">18/04/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                </div>
+                                
+                                <!-- ABA PRESTAÇÃO DE CONTAS -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_prestacao_contas" aria-labelledby="profile-tab">
+                                    <div id="MainContent_divPrestacaoContas" class="row">
+                                        <div class="col-md-12">
+                                            <table class="table-responsive table table-striped jambo_table bulk_action" border="1" style="border-collapse: collapse;">
+                                                <tbody>
+                                                    <tr>
+                                                        <th class="alinha_centro" scope="col">Número</th>
+                                                        <th class="alinha_centro" scope="col">Data de Abertura</th>
+                                                        <th class="alinha_centro" scope="col">Tipo de Execução</th>
+                                                        <th class="alinha_centro" scope="col">Prazo de Prestação</th>
+                                                        <th class="alinha_centro" scope="col">Situação</th>
+                                                    </tr>
+                                                    <tr>
+                                                        <td id="MainContent_td_prestacao_contas_numero" class="alinha_centro"><a href='VisualizarPrestacaoContas.aspx?idPrestacaoContas=782' target='_blank'>000694/2024</a></td>
+
+                                                        <td id="MainContent_td_prestacao_contas_data_abertura" class="alinha_centro">07/02/2024 10:01:49</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_tipo_execucao" class="alinha_centro">ADIANTAMENTO</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_prazo_execucao" class="alinha_centro">30/01/2024</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_situacao" class="alinha_centro">PRESTAÇÃO DE CONTAS EM ANÁLISE</td>
+
+                                                    </tr>
+                                                    <tr>
+                                                        <td id="MainContent_td_prestacao_contas_obs" colspan="5"><b>OBSERVAÇÃO: </b>A SECRETARIA DE FINANÇAS  NÃO REALIZOU O CREDITO REFERENTE A CONTRA PARTIDA  NA CONTA DO CONVENIO, , MAS CREDITOU O RECURSO  DIRETAMENTE PARA O FORNECEDOR , LIQUIDANDO A DESPESA REFERENTE AO  NOTA FISCAL Nº 186  , 03/04/2023 NO VALOR TOTAL  DE R$:75.000,00, SENDO R$:35.000,00 CONTRA PARTIDA E R$:40.000,00 RECURSO DO CONVENIO PARA A   EMPRESA D & S  COMERCIO E SERVIÇOS CULTURAIS  E ENTRETENIMENTO LTDA, CNPJ:03.945121.0001-02, OBJETO CONTRATAÇÃO DE SHOW ARTISTICO DA DUPLA DANIEL E SAMUEL. NÃO HOUVE RENDIMENTOS DO CONVENIO, POIS O RECURSO FOI CREDITADO NA CONTA DIA 18 DE ABRIL DE 2023, NESSA MESMA DATA JA FOI PAGO AS NOTAS FISCAIS REFERENTE AO CONVENIO,NOTA FISCAL Nº 186,03/04/2023 NO VALOR DE R$:75.000,00  EMPRESA D & S  COMERCIO E SERVIÇOS CULTURAIS  E ENTRETENIMENTO LTDA, CNPJ:03.945121.0001-02, E NOTA FISCAL Nº0222 DE 03/04/2023 NO VALOR DE R$:60.000,00, EMPRESA SOARES EVENTOS E SERVIÇOS LTDA - ME, CNPJ:09.158.609.0001-68 . ANEXOS NOTAS FISCAIS E PGTO, TERMO DE ENCERRAMENTO DA CONTA.</td>
+
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+                    
+
+<!-- jQuery -->
+<script src="/Styles/vendors/jquery/dist/jquery.min.js"></script>
+<!-- Bootstrap -->
+<script src="/Styles/vendors/bootstrap/dist/js/bootstrap.min.js"></script>    
+    
+<!-- PNotify -->
+
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.buttons.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.nonblock.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.callbacks.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.confirm.js"></script>  
+
+<!-- Switchery -->
+<script src="/Styles/vendors/switchery/dist/switchery.min.js"></script>
+
+
+<!-- footer content -->
+<footer>
+    <div class="pull-right">    
+        quarta-feira, 23 de setembro de 2026
+    </div>
+    <div class="clearfix"></div>
+</footer>
+<!-- /footer content -->
+
+<!-- validator -->
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+
+<!-- bootstrap-progressbar -->
+<script src="/Styles/vendors/bootstrap-progressbar/bootstrap-progressbar.min.js"></script>
+
+<!-- jQuery Smart Wizard -->
+<script src="/Styles/vendors/jQuery-Smart-Wizard/js/jquery.smartWizard.js"></script>
+
+<!-- Custom Theme Scripts -->
+<script src="/Styles/build/js/custom.js"></script>
+
+<script src="/js/chosen.jquery.js"></script>
+<script src="/js/prism.js"></script>
+<script src="/js/init.js"></script>
+
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+<script src="/Styles/vendors/parsleyjs/dist/i18n/pt-br.js"></script>
+
+<script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+<script type="text/javascript" src="/js/lacuna/jquery.blockUI.js"></script>    
+<script type="text/javascript" src="/js/lacuna/lacuna-web-pki-2.9.0.js"></script>    
+<script type="text/javascript" src="/js/lacuna/assinatura-js/batch-signature-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-complete-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-start-form.js"></script>
+
+<!-- iCheck -->
+<script src="/Styles/vendors/iCheck/icheck.min.js"></script>
+
+<script type="text/javascript">
+    window.Parsley.setLocale('pt-br');
+
+    $(".select2").select2();
+
+    var c = 0;
+
+    $("#frm1").parsley().on('form:validate', function (formInstance) {
+        if (!formInstance.isValid())
+            c = 0;
+    });
+
+    jQuery.fn.preventDoubleSubmission = function () {
+        $(this).on('submit', function (e) {
+            var $form = $(this);
+
+            if ($form.data('submitted') === true) {
+                if (c >= 1) {
+                    e.preventDefault();
+                }
+            } else {
+                // Mark it so that the next submit can be ignored
+                c++;
+                $form.data('submitted', true);
+            }
+            //console.log(c);
+        });
+
+        //console.log(c);
+
+        // Keep chainability
+        return this;
+    };
+    $('#frm1').preventDoubleSubmission();
+</script>  
+
+                </div>
+            </div>
+        </form>                      
+    </body>
+    
+</html>

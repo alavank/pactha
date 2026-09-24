@@ -83,6 +83,7 @@ ONDE_OLHAR = {
     "dou_federal": "in.gov.br (busca publica do DOU + pagina de cada ato)",
     "cgu_convenios": "Portal da Transparencia/CGU (planilha de convenios, download-de-dados)",
     "convenios_pr": "transparencia.download.pr.gov.br (CONVENIOS-{ANO}.zip, o SIT aberto)",
+    "convenios_to": "convenio.to.gov.br/PesquisaExterna (TRANSFERE.TO, VisualizarConvenio por id)",
     "regularidade_pr": "certidões públicas da SEFA-PR (www4.pr.gov.br) e do TCE-PR (Liberatória)",
     "che_rs": "CHE/RS",
     "convenios_rs": "CAGE/RS",

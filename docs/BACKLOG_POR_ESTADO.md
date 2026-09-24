@@ -154,7 +154,7 @@ Vigiar: o ciclo segue no SIGA/GConv; o **SIADES novo ainda não absorveu convên
 | **Certidão de Regularidade de Transf. Voluntárias (CGE-TO)** | AUSENTE (**rótulo já pronto**) | **Ganho rápido nº 1 do TO.** Consulta/emissão **pública por CNPJ, sem login e sem captcha**, em `gestao.cge.to.gov.br/convenioseparcerias/certidao_convcedido/` — **verificado ao vivo**. ⚠️ Host **sem `www`**: o TLS do `www` é quebrado. É o semáforo de adimplência estadual do TO (Decretos 5.815 e 5.816/2018, vigentes) |
 | **Repasses fundo a fundo da saúde (FES-TO → FMS)** | AUSENTE | **Ganho rápido nº 2.** Consulta pública em `sistemas.saude.to.gov.br/repasse_fundoafundo/` — formulário HTML clássico com dropdown de **~139 fundos municipais** por CNPJ, por ação/programa e mês, **série 2010-2025**. Dificuldade baixa-média |
 | **TCE-TO** | AUSENTE | **A melhor porta estruturada do estado:** WebServices REST públicos em `api.tceto.tc.br/econtas/api` (processos/decisões por município). Lista de gestores com contas irregulares em PDF/HTML. ⚠️ No TO **quem julga conta municipal é o próprio TCE-TO** — não há TCM |
-| **Convênios estaduais (Transfere.TO)** | AUSENTE | Sistema atrás de login (perfil de convenente) — mesmo padrão SIGCON/FNS, viável com captura de sessão quando houver cliente que ceda acesso. A consulta pública só existe no Portal da Transparência (SPA JavaScript, TLS quebrado no `www`) — dificuldade alta |
+| **Convênios estaduais (Transfere.TO)** | **COLETADO desde 23/09/2026** (`convenios_to.py`, fonte `TRANSFERE-TO`) | ⚠️ O que esta linha dizia em 25/08 ("atrás de login; dificuldade alta") estava errado: o TRANSFERE.TO tem uma **pesquisa externa pública** (`convenio.to.gov.br/PesquisaExterna/VisualizarConvenio.aspx?idConvenio=N`), achada atrás do botão "Consulta de Emendas" do Portal da Transparência — GET simples, com CNPJ do convenente, ordens bancárias e a emenda de origem. Falta: a consulta de EMENDAS do mesmo sistema (`ConsultarEmendas.aspx`, filtro por município), para a tela de emendas estaduais |
 | **Emendas impositivas** | AUSENTE | EC 27/2014; **EC 55/2024 elevou a 1,73% da RCL**, ~R$ 10 mi/deputado; o repasse independe de adimplência desde 2019. Plataforma pública da Assembleia é um **app Shiny** (indicações por deputado/município, integrada a SIAFE+Transfere.TO; R$ 241 mi indicados em 2025) — headless, média-alta. No mínimo: tela curada com as regras (25% saúde, 13,5% investimento) |
 | **CND SEFAZ-TO** (finalidade "CONVÊNIO") | AUSENTE | Pública por CNPJ com PDF, dificuldade baixa. **CADIN-TO estadual não existe** (confirmado) — o papel é da certidão da CGE |
 
@@ -162,6 +162,19 @@ Vigiar: o ciclo segue no SIGA/GConv; o **SIADES novo ainda não absorveu convên
 sites `to.gov.br` parcialmente suspensos por legislação eleitoral desde 04/07/2026 — os
 coletores novos devem **tolerar o interstício**; TLS quebrado nos hosts `www.` de
 transparência e da CGE.
+
+### 3.6 Santa Catarina — medido em 23/09/2026, SEM cliente (não construir ainda)
+
+Nenhum tenant tem município de SC. O cartão do relatório de fontes do dono ("SIGEF/SC
+Transferências e SCtransferências · dados.sc.gov.br", prioridade 1) foi conferido contra a
+fonte e **acerta só em parte**. Quando entrar o primeiro cliente catarinense, o coletor sai
+em uma sessão — o rótulo "SC Transferências" já existe em `frontend/src/lib/estadual.ts`.
+
+| Item | Status | O que fazer |
+| :--- | :--- | :--- |
+| **Convênios Simplificados (art. 17-A da CE/SC)** — a "emenda pix" estadual | AUSENTE — **a fonte certa** | Dataset CKAN `tev` da SEF em `dados.sc.gov.br` (CSV/JSON/XLSX, **regerado todo dia ~10:00 UTC**, sem login). 16.921 linhas em 23/09: município, **CNPJ do beneficiário**, objeto, valor autorizado/contratado/pago e **NE, NL e OB com data** — o caminho do dinheiro inteiro. O cartão nem o cita |
+| Dataset `transferencias` (fundo a fundo, transporte escolar, subvenções, voluntárias) | **PARADO desde 03/2022** | O cartão o vende como a fonte principal; não serve para coleta diária. O link de consulta que o dataset aponta (`transparencia.sc.gov.br/transferencias`) dá 404 |
+| Portal SCtransferências (CGE-SC) | a medir | Mudou para `www.cge.sc.gov.br/sctransferencias/` (o endereço antigo redireciona). Falta ver o que a consulta pública mostra sem login |
 
 ---
 
