@@ -259,6 +259,39 @@ def ministerio_siafi(codigo) -> Optional[str]:
     return f"Ministério {prep} {nome}" if prep else nome
 
 
+# A fonte das voluntárias grava o órgão em caixa alta e SEM acento
+# ("MINISTERIO DOS TRANSPORTES"); o modelo do cliente escreve "Ministério da
+# Saúde". Só as palavras de NOME DE MINISTÉRIO — nada de corretor geral.
+_ACENTOS_MINISTERIO = {
+    "ministerio": "ministério", "saude": "saúde", "educacao": "educação",
+    "integracao": "integração", "agrario": "agrário", "pecuaria": "pecuária",
+    "ciencia": "ciência", "inovacao": "inovação", "inovacoes": "inovações",
+    "comunicacoes": "comunicações", "justica": "justiça", "seguranca": "segurança",
+    "publica": "pública", "publicos": "públicos", "assistencia": "assistência",
+    "familia": "família", "gestao": "gestão", "servicos": "serviços",
+    "previdencia": "previdência", "relacoes": "relações", "industria": "indústria",
+    "comercio": "comércio", "orcamento": "orçamento", "indigenas": "indígenas",
+    "economico": "econômico", "agricola": "agrícola", "energia": "energia",
+}
+
+
+def _acentua_ministerio(nome: str) -> str:
+    out = []
+    for p in str(nome or "").split(" "):
+        certo = _ACENTOS_MINISTERIO.get(p.casefold())
+        if certo:
+            p = certo[0].upper() + certo[1:] if p[:1].isupper() else certo
+        out.append(p)
+    return " ".join(out)
+
+
+def _sem_acento(s) -> str:
+    """Para COMPARAR nomes: sem acento, sem caixa, espaços colapsados."""
+    t = "".join(c for c in unicodedata.normalize("NFKD", str(s or ""))
+                if not unicodedata.combining(c))
+    return " ".join(t.casefold().split())
+
+
 def ministerio_do_orgao(orgao) -> str:
     """O MINISTÉRIO DE ORIGEM de um órgão gravado como "CÓDIGO - NOME" — o
     formato das voluntárias ("36000 - MINISTERIO DA SAUDE", "36211 - FUNASA",
@@ -274,13 +307,28 @@ def ministerio_do_orgao(orgao) -> str:
     txt = str(orgao or "").strip()
     if not txt:
         return SEM_DADO
-    m = re.match(r"(\d{5})\b", txt)
-    if m:
-        from routers.emendas_federais import ORGAOS_SIAFI
-        superior = m.group(1)[:2] + "000"
-        if superior in ORGAOS_SIAFI:
-            return ministerio_siafi(superior)
-    return nome_proprio(txt)
+    m = re.match(r"(\d{5})\s*-?\s*(.*)$", txt)
+    if not m:
+        return nome_proprio(txt)
+    codigo, nome_fonte = m.group(1), m.group(2).strip()
+    from routers.emendas_federais import ORGAOS_SIAFI
+    superior = codigo[:2] + "000"
+    mapa = ministerio_siafi(superior) if superior in ORGAOS_SIAFI else None
+    # ⚠️ O NOME DA FONTE VENCE O MAPA (revisão de 24/09/2026). O mapa tem UM nome
+    # por código e não muda com o ano: "39000 - MINISTERIO DOS TRANSPORTES" saía
+    # "Ministério da Infraestrutura" (extinto em 2023) e "25000 - MINISTERIO DA
+    # FAZENDA", "Ministério da Economia". O mapa só entra (a) quando o código é o
+    # PRÓPRIO ministério e o nome dele é o mesmo da fonte — aí dá os acentos
+    # ("MINISTERIO DA SAUDE" -> "Ministério da Saúde") — ou (b) quando o órgão é
+    # uma entidade VINCULADA (FUNASA, FNDE: código != superior), para dizer a qual
+    # ministério ela pertence.
+    if mapa and codigo != superior:
+        return mapa
+    if mapa and (not nome_fonte or _sem_acento(mapa) == _sem_acento(nome_fonte)):
+        return mapa
+    if nome_fonte:
+        return _acentua_ministerio(nome_proprio(nome_fonte))
+    return mapa or nome_proprio(txt)
 
 
 def orgao_do_programa(programa_codigo) -> Optional[str]:
@@ -443,8 +491,19 @@ def linha_fns(x: dict) -> dict:
     total_proposta = _num(x.get("valor_proposta")) or valor
     vp, vpg = _num(x.get("vl_pago")), _num(x.get("vl_pagar"))
     dt = str(x.get("data_pagamento") or "").strip()
+    morta = _fns_morta(x.get("situacao"))
     pago = bool(vp and vp > 0 and not (vpg and vpg > 0))
-    if pago:
+    if morta:
+        # ⚠️ FORA DO TOTAL, e a frase diz POR QUÊ (revisão de 24/09/2026): uma
+        # proposta ARQUIVADA/BLOQUEADA com repasse registrado saía só "Pagamento
+        # realizado em …", sem o motivo — contradizendo a nota do grupo. Mostra a
+        # situação primeiro (como o RM mostra `situacao_desc`) e o pagamento depois,
+        # e não conta como "pago" para o título.
+        sit = _ponto(frase(x.get("situacao") or "")) or "Proposta encerrada."
+        if vp and vp > 0:
+            sit += f" Repasse registrado: {_fmt_brl(vp)}" + (f" em {dt}." if dt else ".")
+        pago = False
+    elif pago:
         # A regra do RM (`rm_builder`, ramo FNS): repasse feito e nada a pagar.
         sit = f"Pagamento realizado em {dt}." if dt else "Pagamento realizado (data não coletada)."
     elif vp and vp > 0:
@@ -464,7 +523,7 @@ def linha_fns(x: dict) -> dict:
         valor=valor,
         referencias=[f"Proposta: {x['numero']}"] if x.get("numero") else [],
         situacao=sit, area="SAÚDE", pago=pago,
-        fora=GRUPO_NAO_RECURSO if _fns_morta(x.get("situacao")) else None,
+        fora=GRUPO_NAO_RECURSO if morta else None,
     )
 
 

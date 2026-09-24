@@ -245,6 +245,18 @@ def test_proposta_do_fns_arquivada_ou_bloqueada_fica_fora_do_total(situacao):
     assert [g["grupo"] for g in b["fora"]] == [GRUPO_NAO_RECURSO]
 
 
+@pytest.mark.parametrize("situacao", ["PROPOSTA ARQUIVADA", "Proposta Bloqueada"])
+def test_fns_fora_do_total_com_repasse_diz_o_motivo_e_nao_conta_como_pago(situacao):
+    """Revisão de 24/09/2026: ARQUIVADA/BLOQUEADA com vlPago saía só "Pagamento
+    realizado em …" — sem o motivo, contradizendo a nota do grupo fora do total."""
+    li = linha_fns(dict(FNS_MODELO, situacao=situacao, vl_pago=450000.0, vl_pagar=0.0,
+                        data_pagamento="18/11/2025"))
+    assert li["fora"] == GRUPO_NAO_RECURSO and li["pago"] is False
+    assert li["situacao"].lower().startswith(situacao.lower()[:10])
+    assert "Repasse registrado: R$ 450.000,00 em 18/11/2025." in li["situacao"]
+    assert not li["situacao"].startswith("Pagamento realizado")
+
+
 def test_proposta_do_fns_em_analise_continua_no_total():
     fns = dict(FNS_MODELO, situacao="EM ANALISE PELA AREA FINALISTICA", vl_pago=0.0)
     assert linha_fns(fns)["fora"] is None
@@ -397,8 +409,17 @@ def test_situacao_da_voluntaria(campos, fim, pago):
     ("26298 - FUNDO NACIONAL DE DESENVOLVIMENTO DA EDUCACAO",   # FNDE, autarquia
      "Ministério da Educação"),
     ("56000 - MINISTERIO DAS CIDADES", "Ministério das Cidades"),
-    # Código que o mapa não conhece: o órgão como veio, nada inventado.
-    ("99000 - ORGAO QUE O MAPA NAO CONHECE", "99000 - Orgao Que o Mapa Nao Conhece"),
+    # Código que o mapa não conhece: o NOME como veio (sem o código), nada inventado.
+    ("99000 - ORGAO QUE O MAPA NAO CONHECE", "Orgao Que o Mapa Nao Conhece"),
+    # Revisão de 24/09/2026: o nome da FONTE vence o do mapa, que não muda com o
+    # ano — antes saía "Ministério da Infraestrutura" (extinto em 2023) e
+    # "Ministério da Economia" para o que a fonte chamou de Fazenda.
+    ("39000 - MINISTERIO DOS TRANSPORTES", "Ministério dos Transportes"),
+    ("25000 - MINISTERIO DA FAZENDA", "Ministério da Fazenda"),
+    ("55000 - MINISTERIO DA CIDADANIA", "Ministério da Cidadania"),
+    # O próprio ministério com o MESMO nome do mapa: o do mapa, que tem os acentos.
+    ("53000 - MINISTERIO DA INTEGRACAO E DO DESENVOLVIMENTO REGIONAL",
+     "Ministério da Integração e do Desenvolvimento Regional"),
     # Sem código: como antes.
     ("MINISTERIO DA AGRICULTURA E PECUARIA", "Ministerio da Agricultura e Pecuaria"),
     ("", "—"),

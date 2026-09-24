@@ -29,7 +29,7 @@
 
 ---
 
-## 1.40. PDF de Parlamentares no modelo da planilha, execução da Emenda Pix e o "36 de 37" (24/09/2026)
+## 1.41. PDF de Parlamentares no modelo da planilha, execução da Emenda Pix e o "36 de 37" (24/09/2026)
 
 Pedidos da Laiza (Nova Serrana/MG, cliente da Freitas) e do dono:
 
@@ -107,6 +107,14 @@ No PDF novo: o pagamento do convênio SIGCON (`transparencia_mg_empenhos`/SEGOV)
 — SIGCON nunca conta como "pago"; casar FNS×carteira pedia o `coEmendaPolitica` do FNS,
 cujo formato nunca foi medido; a lista ANTIGA `relatorios_gestao` da TE só é contada (os
 nomes de campo dela não estão em captura nenhuma).
+
+Revisão final (24/09/2026): o MINISTÉRIO DE ORIGEM da voluntária usa o NOME que a fonte deu
+(sem o código, com os acentos das palavras de ministério) — o mapa `ORGAOS_SIAFI` tem um nome
+por código e não muda com o ano ("39000 - MINISTERIO DOS TRANSPORTES" saía "Ministério da
+Infraestrutura"); o mapa só entra para entidade vinculada (FUNASA, FNDE) ou quando o nome é o
+mesmo. FNS ARQUIVADA/BLOQUEADA com repasse sai fora do total dizendo o motivo, e não "pago".
+`vlIndObjeto` zero = ausente (a leitura da tela do FNS). Teste da mesma proposta em duas linhas
+com DOIS autores (o de um autor só escondia a soma dobrada).
 
 ## 1.39. Saldo das contas do Fundo Municipal de Saúde — Portal FNS (24/09/2026)
 

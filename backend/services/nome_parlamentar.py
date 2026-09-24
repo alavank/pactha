@@ -116,8 +116,14 @@ def propostas_saude_por_autor(linha_propostas, com_pagamento: bool = False) -> l
                 if not e_parlamentar_real(nm):
                     continue
                 a = autores.setdefault(_chave(nm), [nm, 0.0, False])
-                if pp.get("vlIndObjeto") is not None:
-                    a[1] += _valor_proposta(pp.get("vlIndObjeto"))
+                # ⚠️ vlIndObjeto ZERO conta como AUSENTE (revisão de 24/09/2026): é
+                # a leitura da tela do FNS (`routers/fns.py::_parlamentares`, com
+                # `or`). Contado como "veio", a parte do autor numa proposta paga
+                # virava R$ 0,00 e o bloco saía "RECURSOS PAGOS … TOTAL 0,00".
+                ind = (_valor_proposta(pp.get("vlIndObjeto"))
+                       if pp.get("vlIndObjeto") is not None else 0.0)
+                if ind > 0:
+                    a[1] += ind
                     a[2] = True
         extra = {}
         if com_pagamento:

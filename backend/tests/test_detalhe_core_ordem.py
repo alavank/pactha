@@ -347,6 +347,26 @@ def test_fns_a_mesma_proposta_em_duas_linhas_nao_soma_duas_vezes():
     assert f["valor_total"] == 450000.0
 
 
+def test_fns_em_duas_linhas_com_DOIS_autores_conta_a_parte_uma_vez_so():
+    """Revisão de 24/09/2026: com um autor só, a parte = vlProposta e o teto
+    escondia a soma dobrada — o `vistos` do detalhe_core podia sumir e nada
+    reprovava. Com dois autores a parte (250 mil) é menor que a proposta."""
+    vals = _com_fns([_parl("LUIS TIBÉ", "37080010", 250000.0),
+                     _parl("NIKOLAS FERREIRA", "40200001", 200000.0)])
+    det = asyncio.run(P.detalhe_core(_DbFnsEmDuasLinhas(vals), "LUIS TIBE", [2], None))
+    (f,) = det["fns"]
+    assert f["valor_total"] == 250000.0
+    assert f["proponente"] == "LUIS TIBÉ"
+
+
+def test_fns_vlIndObjeto_ZERO_conta_como_ausente():
+    """A leitura da tela do FNS (`routers/fns.py`, com `or`): parte 0 não é parte.
+    Contada, a proposta paga de 450 mil saía "RECURSOS PAGOS … TOTAL 0,00"."""
+    det = _detalhe(_com_fns([_parl("LUIS TIBÉ", "37080010", 0.0)]))
+    (f,) = det["fns"]
+    assert f["valor_total"] == 450000.0
+
+
 @pytest.mark.parametrize("parte_a,parte_b,esperado", [
     (250000.0, 200000.0, 450000.0),     # as duas partes que casaram a busca
     (None, None, 450000.0),             # sem vlIndObjeto: 450+450, teto na proposta

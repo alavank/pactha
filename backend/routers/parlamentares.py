@@ -1204,7 +1204,7 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     # la: casamento por nome de autor apagaria emenda legitima. O PAC nao traz o
     # nº da emenda; o FNS traz (`coEmendaPolitica` + `nuAnoExercicio` em
     # `parlamentares[]`), mas o formato dele contra o `codigo_emenda` de 12
-    # digitos nunca foi medido — por isso ainda nao se casa (CONTINUAR §1.40).
+    # digitos nunca foi medido — por isso ainda nao se casa (CONTINUAR §1.41).
     ef_list: list = []
     try:
         where_ef = " AND ef.municipio_id = ANY(:muns)"
