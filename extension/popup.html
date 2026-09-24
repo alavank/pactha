@@ -72,6 +72,7 @@
   .saude.vencendo { background: #feebc8; color: #7b341e; }
   .saude .linha { margin: 2px 0; }
   .porta-link { display:block; margin:2px 0; font-size:11px; color:#2b6cb0; cursor:pointer; text-decoration:underline; }
+  .aviso-livre { margin: 6px 0; padding: 6px 8px; border-radius: 4px; background: #fed7d7; color: #742a2a; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -97,6 +98,9 @@
     <div class="saude" id="saude-card">
       <strong id="saude-titulo">Sessão gov.br nos servidores</strong>
       <div class="info" id="saude-info">Consultando…</div>
+      <!-- O modo automático viu este Chrome no ACESSO LIVRE (visitante) e não mandou
+           nada: o texto (com o passo a passo) vem do popup.js. -->
+      <div class="aviso-livre hidden" id="aviso-livre"></div>
       <button id="btn-completa" style="margin-top:6px">Captura completa (abre as 4 portas)</button>
       <details style="margin-top:6px">
         <summary style="cursor:pointer; font-size:11px; color:#4a5568;">Abrir uma porta por vez</summary>
@@ -108,6 +112,8 @@
         Na hora do ⏰ é o contrário: <strong>Sair</strong> primeiro (só login novo renova o
         prazo), depois «Captura completa» e o login — se o gov.br não pedir senha, saia
         também em sso.acesso.gov.br e repita; os servidores voltam em até ~10 min.
+        Na tela de login do TransfereGov, clique em <strong>«Entrar com gov.br»</strong>,
+        nunca em «Acesso livre»: visitante não conecta os servidores.
       </div>
     </div>
 
@@ -153,7 +159,7 @@
          repetidas em UMA tela, preenchida uma vez. -->
     <div class="row">
       <label>Service Token por ambiente
-        (Administracao &gt; Service Tokens, scope session:write)</label>
+        (Configurações › Service Tokens, scope session:write)</label>
       <div id="cfg-ambientes"></div>
     </div>
     <button id="btn-save-config">Salvar configuracao</button>

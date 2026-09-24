@@ -992,7 +992,8 @@ def test_o_porteiro_da_extensao_olha_o_CORPO_e_vem_antes_do_debounce():
     assert "SAMLRequest" in amb and "async function chromeEstaLogado" in amb
     bg = (EXT / "background.js").read_text(encoding="utf-8")
     corpo = bg[bg.index("async function capture("):bg.index("// 1) AUTO-CAPTURA")]
-    assert corpo.index("await chromeEstaLogado()") < corpo.index("lastCaptureAt.set(dKey, now)")
+    # 2.4.5: o porteiro devolve o MOTIVO (`chromeEstadoLogin`; visitante ≠ deslogado).
+    assert corpo.index("await chromeEstadoLogin()") < corpo.index("lastCaptureAt.set(dKey, now)")
     assert 'tab.status !== "complete"' in bg, "o roteiro avancava com o SAML ainda em transito"
 
 

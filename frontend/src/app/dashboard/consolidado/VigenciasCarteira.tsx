@@ -37,7 +37,12 @@ interface Alerta {
   municipio_id?: number | null;
   nr_convenio?: string | null;
   nr_sigcon?: string | null;
+  nr_siafi?: string | null;
   objeto?: string | null;
+  situacao?: string | null;
+  alteracao_tipo?: string | null;
+  alteracao_situacao?: string | null;
+  alteracao_data?: string | null;
   dt_fim_vigencia?: string | null;
   dias_restantes?: number | null;
   municipio_nome?: string | null;
@@ -56,8 +61,27 @@ function tomDias(d?: number | null): { bg: string; fg: string } {
 
 /** Um instrumento a vencer. É o MESMO cartão nas duas visões — na lista solta e
  *  dentro do município na visão de bolhas — para o dado não mudar de cara. */
+/** O número que a pessoa reconhece — o mesmo rótulo do relatório (vigencias_export._numero):
+ *  sem nº de convênio, o que sobra sai ROTULADO ("SIAFI …" / "Proposta …"), nunca solto. */
+function numeroDoAlerta(i: Alerta): string {
+  const conv = (i.nr_convenio || "").trim();
+  const sig = (i.nr_sigcon || "").trim();
+  const siafi = (i.nr_siafi || "").trim();
+  if (i.esfera === "estadual") {
+    if (conv) return siafi && siafi !== conv ? `${conv} (SIAFI ${siafi})` : conv;
+    // SIAFI só quando É SIAFI (mesma regra de `vigencias_export._numero`): a chave
+    // interna de RS/PR/TO/ES e o nº do plano do SIGCON saem como estão.
+    if (siafi) return `SIAFI ${siafi}`;
+    return /^\d+$/.test(sig) ? `SIAFI ${sig}` : sig;
+  }
+  if (conv && conv !== sig) return conv;
+  return sig ? `Proposta ${sig}` : conv;
+}
+
 function LinhaAlerta({ i, nome, onAbrir }: { i: Alerta; nome: string; onAbrir: (i: Alerta) => void }) {
   const tom = tomDias(i.dias_restantes);
+  const numero = numeroDoAlerta(i);
+  const alteracao = [i.alteracao_tipo, i.alteracao_situacao].filter(Boolean).join(" — ");
   return (
     <button type="button" onClick={() => onAbrir(i)}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left bi-hover"
@@ -73,9 +97,16 @@ function LinhaAlerta({ i, nome, onAbrir }: { i: Alerta; nome: string; onAbrir: (
         <div className="truncate text-[11px]" style={{ color: "var(--bi-muted)" }}>
           {nome}
           {i.esfera === "voluntaria" ? " · federal (voluntária)" : i.esfera ? ` · ${i.esfera}` : ""}
-          {i.nr_convenio || i.nr_sigcon ? ` · ${i.nr_convenio || i.nr_sigcon}` : ""}
+          {numero ? ` · nº ${numero}` : ""}
           {i.dt_fim_vigencia ? ` · vence em ${new Date(`${String(i.dt_fim_vigencia).slice(0, 10)}T00:00:00`).toLocaleDateString("pt-BR")}` : ""}
+          {i.situacao ? ` · ${i.situacao}` : ""}
         </div>
+        {alteracao && (
+          <div className="truncate text-[11px] font-medium" style={{ color: "var(--bi-atencao-ink, #92400E)" }}
+               title="Alteração registrada no SIGCON (termo aditivo / prorrogação). O prazo só muda depois de publicada.">
+            SIGCON: {alteracao}{i.alteracao_data ? ` (${i.alteracao_data})` : ""}
+          </div>
+        )}
       </div>
     </button>
   );
