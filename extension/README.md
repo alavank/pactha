@@ -101,24 +101,32 @@ layout novo), a captura **segue**: o servidor tem a guarda dele, e travar por
 dúvida impediria a recaptura.
 
 **Acesso Livre — visitante (2.4.5):** no modo visitante do TransfereGov a porta 1
-**não pede login** (responde 200 com a página "… - Acesso Livre"; fatos medidos em
-`CONTINUAR.md` §1.32, 24/09/2026). Visitante não conecta os servidores, e o porteiro
-(`chromeEstadoLogin`) o distingue de *deslogado* só por marcadores precisos — o
-`<title>` com "Acesso Livre" ou o `<span class="exit">` "Sair do Acesso Livre"; a
-frase solta no HTML (script, comentário, texto oculto) não conta, porque página
-logada tomada por visitante barraria a captura boa para sempre.
-- **Captura completa:** porta assentada com a aba no Acesso Livre (título da aba, e a
-  sonda da porta 1 não dizendo "logado") → a aba vai para
-  `…/voluntarias?LLO=true` (o "Sair do Acesso Livre"), que cai na tela de login do
-  idp; a página seguinte leva de volta à porta 1 e o roteiro segue. **Na tela de
-  login, clique em «Entrar com gov.br» — nunca em «Acesso livre»** (volta ao
-  visitante). Mais de 3 voltas ao visitante encerram o roteiro com esse motivo no popup.
+**não pede login** (responde 200 com a página "… - Acesso Livre"; fatos medidos no
+`CONTINUAR.md`, seção "A sessão gov.br parava de ser derrubada por NÓS", parágrafo
+"Medido em 24/09/2026"). Visitante não conecta os servidores, e o porteiro
+(`chromeEstadoLogin`) o distingue de *deslogado* por UM marcador preciso: o
+`<span class="exit">` "Sair do Acesso Livre". O título "… - Acesso Livre" só dispara
+a pergunta — não decide, porque a página LOGADA não foi medida e o servidor já viu
+"Acesso Livre" no cabeçalho de sessão logada. A frase solta no HTML (script,
+comentário, texto oculto) também não conta: página logada tomada por visitante
+barraria a captura boa para sempre.
+- **Captura completa:** porta assentada com o título da aba no Acesso Livre E a sonda
+  da porta 1 achando o span de visitante → a aba vai para `…/voluntarias?LLO=true`
+  (o "Sair do Acesso Livre"), que cai na tela do idp; dali o roteiro volta na hora à
+  porta 1, que cai na tela de login COM contexto. Sonda sem resposta: espera o
+  próximo alarme. **Na tela de login, clique em «Entrar com gov.br» — nunca em
+  «Acesso livre»**: esse link leva a `www.gov.br/transferegov/…/acesso-livre`, e o
+  roteiro volta à porta 1 contando uma saída. Mais de 3 saídas encerram o roteiro com
+  esse motivo no popup. Durante o login no gov.br (inclusive banco ou certificado em
+  nuvem) o roteiro não arranca a aba: só uma página do TransfereGov fora do idp a leva
+  de volta à porta 1.
 - **Modo automático:** não navega nada; acende o **"!"** e o popup avisa
-  (`pactha_visitante`: some em 6h sem visitante novo, com o Chrome logado ou com a
-  primeira captura que chega a um servidor).
-- **Faixa na página** (`aviso_pagina.js`, content script): no Acesso Livre e, com o
-  roteiro em curso, na tela de login do TransfereGov. Fechável; não clica, não
-  preenche e não envia nada.
+  (`pactha_visitante`: some em 6h sem visitante novo, com a sonda dizendo logado ou
+  deslogado, ou com a primeira captura que chega a um servidor).
+- **Faixa na página** (`aviso_pagina.js`, content script): no Acesso Livre (pelo
+  mesmo span "Sair do Acesso Livre"; com o roteiro em curso ela diz "aguarde, a
+  Captura completa está saindo dele") e, com o roteiro em curso, na tela de login do
+  TransfereGov. Fechável; não clica, não preenche e não envia nada.
 - Ambiente com **HTTP 401** no popup: mostra o motivo do servidor ("Token inválido ou
   revogado", "Service token expirado") e a ação — gerar outro token em
   Configurações › Service Tokens no PACTHA daquele cliente e colar em «Configurar

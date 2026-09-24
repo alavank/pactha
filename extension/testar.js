@@ -386,9 +386,10 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
   {
     const { ctx } = montar({});
     const URL_TG = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/proposta/ConsultarProposta/ConsultarProposta.do";
-    // Como o Chrome do dono estava em 23/09/2026 (título e botão da página real).
+    // Como o Chrome do dono estava (título e o link do botão, medidos em 24/09/2026 — o
+    // `href='#'` da versão de 23/09 era palpite; o link real é o do LLO).
     const visitante = "<title>Transferegov - Consultar Proposta - Acesso Livre</title>"
-      + "<a href='#'>Sair do Acesso Livre</a> Consultar Proposta";
+      + "<a href='/voluntarias?LLO=true'>Sair do Acesso Livre</a> Consultar Proposta";
     chk(ctx.vereditoLogin(URL_TG, visitante) === false, "página de visitante = deslogado (o jar não sai)");
     chk(ctx.vereditoLogin(URL_TG, "<a>Sair</a> Consultar Proposta") === true, "página logada continua logada");
   }
@@ -525,9 +526,35 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     chk(ctx.corpoEhAcessoLivre(HTML_VISITANTE) === true, "o HTML medido de visitante = Acesso Livre");
     chk(ctx.corpoEhAcessoLivre('<div id="info"><span class="exit">Sair do Acesso Livre <input type="button" class="bt_exit" value=""></span></div>') === true,
       "só o span.exit «Sair do Acesso Livre» (sem título) também é");
-    chk(ctx.corpoEhAcessoLivre("<title>Transferegov - Consultar Proposta - Acesso Livre</title>") === true, "só o <title> também é");
+    // O TÍTULO NÃO DECIDE (revisão de 24/09/2026): a página logada não foi medida, e o
+    // keepalive do servidor, calibrado com sessão real, viu "Acesso Livre" no cabeçalho LOGADO.
+    chk(ctx.corpoEhAcessoLivre("<title>Transferegov - Consultar Proposta - Acesso Livre</title>") === false,
+      "só o <title> com «Acesso Livre» NÃO é visitante (não decide sozinho)");
     chk(ctx.corpoEhAcessoLivre(HTML_LOGADA) === false,
       "página logada simulada (título sem «Acesso Livre», span.exit «Sair», «Acesso Livre» no menu) NÃO é");
+    const LOGADA_TITULO_LIVRE = HTML_LOGADA.replace("<title>Transferegov - Consultar Proposta</title>",
+      "<title>Transferegov - Consultar Proposta - Acesso Livre</title>");
+    chk(ctx.corpoEhAcessoLivre(LOGADA_TITULO_LIVRE) === false
+      && ctx.estadoLogin(URL_TG, LOGADA_TITULO_LIVRE).motivo === "logado",
+      "página LOGADA com «Acesso Livre» no <title> (o pior caso não medido) = LOGADA");
+    chk(ctx.corpoEhAcessoLivre('<span class="exit">Sair do&nbsp;Acesso&#160;Livre <input class="bt_exit"></span>') === true,
+      "span.exit com &nbsp;/&#160; entre as palavras continua visitante");
+    chk(ctx.corpoEhAcessoLivre('<a href="/voluntarias?LLO=true"><b>Sair do Acesso Livre</b></a>') === true,
+      "o link do LLO com o texto «Sair do Acesso Livre» (sem o span) também é visitante");
+    chk(ctx.corpoEhAcessoLivre("<a href='#'>Sair do Acesso Livre</a>") === false
+      && ctx.corpoEhAcessoLivre('<a href="/voluntarias?LLO=true">voltar</a>') === false,
+      "só o texto (sem o LLO) ou só o LLO (sem o texto) NÃO bastam");
+    chk(ctx.tituloEhAcessoLivre("Transferegov - Consultar Proposta - Acesso Livre") === true,
+      "título com espaço não separável (U+00A0) continua disparando a pergunta");
+    const armadilha = "https://www.gov.br/transferegov/pt-br/sistemas/acesso-livre";
+    chk(ctx.ehPaginaDoAcessoLivre(armadilha) === true && ctx.ehPaginaDoAcessoLivre(armadilha + "/") === true,
+      "ehPaginaDoAcessoLivre: o link-armadilha medido da tela de login");
+    chk(ctx.ehPaginaDoAcessoLivre("https://www.gov.br/transferegov/pt-br") === false
+      && ctx.ehPaginaDoAcessoLivre(URL_VISITANTE) === false
+      && ctx.ehPaginaDoAcessoLivre("https://sso.acesso.gov.br/login") === false
+      && ctx.ehPaginaDoAcessoLivre("https://discricionarias.transferegov.sistema.gov.br/acesso-livre") === false
+      && ctx.ehPaginaDoAcessoLivre("lixo") === false,
+      "ehPaginaDoAcessoLivre: outras páginas do gov.br, do TransfereGov e do login NÃO são");
     const escondidas = {
       "num <script>": '<script>var rotulo = \'<span class="exit">Sair do Acesso Livre</span>\';</script>',
       "num comentário": '<!-- <span class="exit">Sair do Acesso Livre <input class="bt_exit"></span> -->',
@@ -549,6 +576,8 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     chk(ctx.estadoLogin(URL_TG, "<html>erro 500</html>").motivo === "nao_sei", "estadoLogin: sem prova = nao_sei");
     chk(ctx.tituloEhAcessoLivre(TIT_LIVRE) === true && ctx.tituloEhAcessoLivre(TIT_LOGIN) === false
       && ctx.tituloEhAcessoLivre(TIT_LOGADA) === false, "tituloEhAcessoLivre: só o título de visitante");
+    chk(ctx.estadoLogin(URL_TG, "<title>X - Acesso Livre</title><a>Sair</a>").motivo === "logado",
+      "estadoLogin: título de visitante SEM o span.exit não é visitante");
     chk(vm.runInContext("LLO_URL", ctx) === "https://discricionarias.transferegov.sistema.gov.br/voluntarias?LLO=true",
       "LLO_URL é o «Sair do Acesso Livre» medido");
 
@@ -747,6 +776,78 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
       chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "e o roteiro segue até a captura");
     }
 
+    // o PIOR CASO não medido: a página LOGADA tem «Acesso Livre» no título (a aba e a sonda);
+    // só o span.exit decide, então a aba logada NÃO vai ao LLO e a captura sai
+    {
+      const LOGADA_TITULO_LIVRE = HTML_LOGADA.replace("<title>Transferegov - Consultar Proposta</title>",
+        "<title>Transferegov - Consultar Proposta - Acesso Livre</title>");
+      const bg = montarBg(() => ({ titulo: TIT_LIVRE }), null, { sonda: () => LOGADA_TITULO_LIVRE });
+      bg.clicar(); await bg.esperar(400);
+      chk(!bg.navegacoes.includes(LLO) && !bg.store.pactha_roteiro && govbrPosts(bg).length >= 1,
+        "página logada com «Acesso Livre» no título: sem LLO, e a captura sai");
+    }
+
+    // título de visitante com a sonda SEM resposta: nem sai do Acesso Livre nem avança;
+    // quando a sonda volta (visitante), o alarme leva ao LLO
+    {
+      let sondaFora = true;
+      let estado = "visitante";
+      const bg = montarBg((url) => {
+        if (url === LLO) { estado = "deslogado"; return { url: URL_IDP, titulo: TIT_LOGIN }; }
+        if (url === PORTA(0) && estado === "visitante") return { url: URL_VISITANTE, titulo: TIT_LIVRE };
+        if (url === PORTA(0)) return { url: URL_IDP_COM_CONTEXTO, titulo: TIT_LOGIN };
+        return { titulo: TIT_LOGADA };
+      }, null, { sonda: () => (sondaFora ? "<html>erro 502</html>" : sondaPor(() => estado)()) });
+      bg.clicar(); await bg.esperar(300);
+      await bg.tick(); await bg.esperar(100);
+      chk(!bg.navegacoes.includes(LLO) && bg.navegacoes.length === 1 && bg.store.pactha_roteiro
+        && bg.store.pactha_roteiro.passo === 0, "sonda sem resposta: não vai ao LLO e não avança de porta");
+      sondaFora = false;
+      await bg.tick(); await bg.esperar(300);
+      chk(bg.navegacoes.filter((u) => u === LLO).length === 1, "a sonda voltou: o alarme leva ao LLO");
+    }
+
+    // a ARMADILHA: na tela de login a pessoa clica «Acesso livre» (vai a www.gov.br); o roteiro
+    // volta à porta 1 contando uma saída, e a 4ª vez encerra com o motivo
+    {
+      const ARMADILHA = "https://www.gov.br/transferegov/pt-br/sistemas/acesso-livre";
+      const bg = montarBg((url) => {
+        if (url === PORTA(0)) return { url: URL_IDP_COM_CONTEXTO, titulo: TIT_LOGIN };
+        return { titulo: TIT_LOGADA };
+      }, null, { sonda: () => MURO_REAL });
+      bg.clicar(); await bg.esperar(200);
+      const aba = [...bg.abas.values()][0];
+      const clicaArmadilha = async () => {
+        aba.url = ARMADILHA; aba.title = "Acesso livre — Transferegov"; aba.status = "complete";
+        bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: ARMADILHA, frameId: 0 }));
+        await bg.esperar(150);
+      };
+      await clicaArmadilha();
+      let rot = bg.store.pactha_roteiro;
+      chk(bg.navegacoes.filter((u) => u === PORTA(0)).length === 2 && rot && rot.saidasDoLivre === 1
+        && rot.passo === 0 && /você clicou em «Acesso livre»/.test(rot.fase),
+        "armadilha: volta à porta 1, conta uma saída e diz o que aconteceu");
+      chk(aba.url === URL_IDP_COM_CONTEXTO, "armadilha: e a aba está de novo na tela de login");
+      await clicaArmadilha(); await clicaArmadilha();
+      chk(bg.store.pactha_roteiro && bg.store.pactha_roteiro.saidasDoLivre === 3, "armadilha: 3 saídas contadas");
+      await clicaArmadilha();
+      const fim = bg.store.pactha_roteiro_fim;
+      chk(!bg.store.pactha_roteiro && fim && fim.visitante === true && /«Entrar com gov\.br»/.test(fim.barrado || ""),
+        "armadilha pela 4ª vez: encerra com o motivo (em vez de «tempo esgotado» 20 min depois)");
+      chk(bg.navegacoes.filter((u) => u === PORTA(0)).length === 4 && govbrPosts(bg).length === 0,
+        "armadilha: nenhuma 5ª navegação e nada enviado");
+    }
+
+    // a sonda dizendo DESLOGADO (muro/login) apaga o aviso de visitante: não é mais visitante
+    {
+      const bg = montarBg(() => ({}), { pactha_visitante: { quando: new Date().toISOString() } },
+        { sonda: () => MURO_REAL });
+      bg.ouvintes.nav.forEach((f) => f({ tabId: 7, url: PORTA(0), frameId: 0 }));
+      await bg.esperar(150);
+      chk(!bg.store.pactha_visitante && !bg.posts.some((p) => p.automation_key === "govbr"),
+        "sonda deslogada: pactha_visitante apagado, e nada enviado");
+    }
+
     // a pessoa clicou «Entrar com gov.br» ANTES de o roteiro voltar à porta 1: não é arrancada do login
     {
       let estado = "visitante";
@@ -759,9 +860,19 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
       bg.clicar(); await bg.esperar(200);
       chk(bg.navegacoes.filter((u) => u === PORTA(0)).length === 1 && bg.store.pactha_roteiro
         && bg.store.pactha_roteiro.saindoDoLivre === true, "no gov.br fazendo o login: o roteiro espera (não volta à porta 1)");
+      const aba = [...bg.abas.values()][0];
+      // o login passa por um BANCO (ou certificado em nuvem) e pelo idp em trânsito: não arranca a aba
+      for (const u of ["https://www2.bancobrasil.com.br/aapf/govbr/login.html",
+                       "https://idp.transferegov.sistema.gov.br/idp/profile/oidc/callback?code=x"]) {
+        aba.url = u; aba.title = "login"; aba.status = "complete";
+        bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: u, frameId: 0 }));
+        await bg.esperar(150);
+      }
+      await bg.tick();
+      chk(bg.navegacoes.filter((u) => u === PORTA(0)).length === 1 && bg.store.pactha_roteiro.saindoDoLivre === true,
+        "banco e idp em trânsito no meio do login: o roteiro NÃO volta à porta 1");
       // o login termina e o gov.br devolve a um endereço do TransfereGov
       estado = "logado";
-      const aba = [...bg.abas.values()][0];
       aba.url = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/Principal.do";
       aba.title = TIT_LOGADA; aba.status = "complete";
       bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: aba.url, frameId: 0 }));
@@ -774,7 +885,7 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
 
   console.log("\n16) a faixa na PÁGINA (aviso_pagina.js): avisa sem mexer em nada");
   {
-    const rodarAviso = ({ titulo, texto, roteiro, semBody, storageQuebrado }) => {
+    const rodarAviso = ({ titulo, texto, roteiro, semBody, storageQuebrado, exit }) => {
       const porId = {};
       const mk = (tag) => ({
         tag, id: "", style: {}, attrs: {}, filhos: [], ouvintes: {}, textContent: "",
@@ -789,7 +900,9 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
       const ctx = {
         Date, String,
         document: { title: titulo || "", readyState: "complete", body, documentElement: mk("html"),
-          getElementById: (id) => porId[id] || null, createElement: mk, addEventListener() {} },
+          getElementById: (id) => porId[id] || null, createElement: mk, addEventListener() {},
+          // o botão de saída do cabeçalho (`<span class="exit">`), como medido
+          querySelector: (sel) => (sel === "span.exit" && exit != null ? { textContent: exit } : null) },
         chrome: { storage: { local: { get: (k, cb) => {
           if (storageQuebrado) throw new Error("Extension context invalidated.");
           const o = {}; k.forEach((x) => { if (x in store) o[x] = store[x]; }); cb(o);
@@ -802,9 +915,18 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
       return { faixa, erro, texto: faixa ? faixa.filhos[0].textContent : "" };
     };
     const ativo = { tabId: 1, passo: 0, em: Date.now(), inicio: Date.now() };
-    let r = rodarAviso({ titulo: TIT_LIVRE, texto: "Sair do Acesso Livre" });
+    const EXIT_LIVRE = "Sair do Acesso Livre ";
+    let r = rodarAviso({ titulo: TIT_LIVRE, texto: "Sair do Acesso Livre", exit: EXIT_LIVRE });
     chk(r.faixa && /Acesso Livre \(visitante\)/.test(r.texto) && /«Captura completa»/.test(r.texto) && /«Sair do Acesso Livre»/.test(r.texto),
       "página de Acesso Livre: faixa de visitante (Captura completa / Sair do Acesso Livre)");
+    r = rodarAviso({ titulo: TIT_LIVRE, texto: "Sair Consultar Proposta Acesso Livre", exit: "Sair " });
+    chk(!r.faixa, "título com «Acesso Livre» mas o botão diz só «Sair» (logada): NENHUMA faixa");
+    r = rodarAviso({ titulo: TIT_LIVRE, texto: "Sair do Acesso Livre", exit: EXIT_LIVRE, roteiro: ativo });
+    chk(r.faixa && /está tirando este Chrome do Acesso Livre/.test(r.texto) && /aguarde/.test(r.texto)
+      && !/clique em «Sair do Acesso Livre»/.test(r.texto),
+      "Acesso Livre com a Captura completa em curso: «aguarde» (não manda sair à mão)");
+    r = rodarAviso({ titulo: TIT_LOGIN, texto: "Entrar com gov.br  Acesso livre", roteiro: { ...ativo, saindoDoLivre: true } });
+    chk(!r.faixa, "tela do idp DURANTE a saída do Acesso Livre (vai ser trocada): nenhuma faixa");
     r = rodarAviso({ titulo: TIT_LOGIN, texto: "Entrar com gov.br  Acesso livre", roteiro: ativo });
     chk(r.faixa && /clique em «Entrar com gov\.br»/.test(r.texto) && /Não use «Acesso livre»/.test(r.texto),
       "tela de login com o roteiro ativo: «clique em Entrar com gov.br; não use Acesso livre»");
@@ -818,16 +940,17 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     chk(!r.faixa, "roteiro vencido que sobrou no storage não acende a faixa");
     r = rodarAviso({ titulo: TIT_LOGADA, texto: "Sair  Consultar Proposta", roteiro: ativo });
     chk(!r.faixa, "página logada: nenhuma faixa");
-    r = rodarAviso({ titulo: TIT_LIVRE });
+    r = rodarAviso({ titulo: TIT_LIVRE, exit: EXIT_LIVRE });
     r.faixa.filhos[1].ouvintes.click();
     chk(r.faixa.removido === true, "o × fecha a faixa");
-    r = rodarAviso({ titulo: TIT_LIVRE, semBody: true });
+    r = rodarAviso({ titulo: TIT_LIVRE, semBody: true, exit: EXIT_LIVRE });
     chk(!r.erro, "página sem <body>: não quebra");
     r = rodarAviso({ titulo: TIT_LOGIN, texto: "Entrar com gov.br", storageQuebrado: true });
     chk(!r.erro && !r.faixa, "extensão recarregada (storage lança): não quebra a página");
     const src = ler("aviso_pagina.js");
-    chk(!/\.submit\(|\.click\(|fetch\(|XMLHttpRequest|sendMessage|\.value\s*=|querySelector|\.forms\b|cookie/i.test(src),
-      "o script não clica, não preenche, não lê formulário/cookie e não envia nada");
+    chk(!/\.submit\(|\.click\(|fetch\(|XMLHttpRequest|sendMessage|\.value\s*=|querySelectorAll|\.forms\b|cookie|input\b/i.test(src)
+      && (src.match(/querySelector\(/g) || []).length === 1 && /querySelector\("span\.exit"\)/.test(src),
+      "o script não clica, não preenche, não lê formulário/cookie e não envia nada (só lê o span.exit)");
   }
 
   console.log("\n17) manifest, popup e textos da 2.4.5");
@@ -854,6 +977,59 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
       "popup.html: a ajuda perto do botão diz «Entrar com gov.br», nunca «Acesso livre»");
     chk(/mud\.pactha_roteiro \|\|/.test(pj) && /setInterval\(\(\) => \{ refreshLastCapture\(\); mostrarRoteiro\(\); \}, 2000\)/.test(pj),
       "popup: o «Abrindo as 4 portas…» é trocado pelo andamento (ouvinte do storage + relógio de 2s)");
+  }
+
+  console.log("\n18) o POPUP de verdade: mostrarRoteiro diz o que fazer em cada estado");
+  {
+    // A função REAL, tirada do popup.js com as constantes do topo (o resto precisa do DOM).
+    // Revisão de 24/09/2026: 3 mutações nas mensagens passavam com TUDO OK.
+    const pj = ler("popup.js");
+    const consts = pj.slice(pj.indexOf("const $ = "), pj.indexOf("// Ver nota em background.js: config salva"));
+    const iniM = pj.indexOf("async function mostrarRoteiro(");
+    const fonteM = pj.slice(iniM, pj.indexOf("\n}\n", iniM) + 3);
+    const rodarPopup = async (store) => {
+      const aviso = { id: "aviso-livre", textContent: "", classes: new Set(["hidden"]) };
+      aviso.classList = { toggle: (c, on) => { if (on) aviso.classes.add(c); else aviso.classes.delete(c); } };
+      let status = null;
+      const ctx = {
+        Date, String, Math, JSON, Promise, PORTAS_GOVBR: [1, 2, 3, 4],
+        document: { getElementById: (id) => (id === "aviso-livre" ? aviso : null) },
+        chrome: { storage: { local: { get: (k, cb) => { const o = {}; k.forEach((x) => { if (x in store) o[x] = store[x]; }); cb(o); } } } },
+        showStatus: (msg, kind) => { status = { msg, kind }; },
+      };
+      vm.createContext(ctx);
+      vm.runInContext(consts + "\n" + fonteM, ctx);
+      await ctx.mostrarRoteiro();
+      return { status, aviso, visivel: !aviso.classes.has("hidden") };
+    };
+    const agora = new Date().toISOString();
+    const depois = new Date(Date.now() + 2000).toISOString();
+    const rotAtivo = { tabId: 1, passo: 0, em: Date.now(), inicio: Date.now(), fase: "passando pelo login" };
+    let p = await rodarPopup({ pactha_visitante: { quando: agora } });
+    chk(p.visivel && /ACESSO LIVRE/.test(p.aviso.textContent) && /«Entrar com gov\.br»/.test(p.aviso.textContent),
+      "visitante recente e sem roteiro: o aviso de Acesso Livre aparece, com «Entrar com gov.br»");
+    p = await rodarPopup({ pactha_visitante: { quando: agora }, pactha_roteiro: rotAtivo });
+    chk(!p.visivel && /porta 1 de 4/.test(p.status.msg), "com o roteiro em curso: o aviso some e o andamento aparece");
+    p = await rodarPopup({ pactha_visitante: { quando: new Date(Date.now() - 7 * 3600 * 1000).toISOString() } });
+    chk(!p.visivel, "visitante de mais de 6h: sem aviso");
+    const fimLivre = { quando: agora, barrado: "o TransfereGov deste Chrome está no Acesso Livre (visitante)", visitante: true };
+    p = await rodarPopup({ pactha_roteiro_fim: fimLivre });
+    chk(p.status.kind === "error" && /«Entrar com gov\.br»/.test(p.status.msg) && /«Captura completa»/.test(p.status.msg)
+      && !/Faça o login no TransfereGov/.test(p.status.msg),
+      "roteiro barrado por VISITANTE: passo a passo do Acesso Livre (e não «faça o login»)");
+    p = await rodarPopup({ pactha_roteiro_fim: { quando: agora, barrado: "o Chrome não está logado no TransfereGov" } });
+    chk(p.status.kind === "error" && /Faça o login no TransfereGov/.test(p.status.msg), "roteiro barrado por DESLOGADO: «faça o login»");
+    const enviou = { quando: depois, reason: "navigation", ambientes_ok: 7, ambientes_total: 7, falhas: [] };
+    p = await rodarPopup({ pactha_roteiro_fim: fimLivre, pactha_last_capture: enviou });
+    chk(p.status.kind === "success" && /Captura enviada: 7 de 7/.test(p.status.msg) && !/Nada foi enviado/.test(p.status.msg),
+      "barrado, mas uma captura CHEGOU depois: mostra o envio, não a recusa velha");
+    p = await rodarPopup({ pactha_roteiro_fim: { quando: agora, venceu: true }, pactha_last_capture: enviou });
+    chk(p.status.kind === "success", "tempo esgotado, mas uma captura chegou depois: mostra o envio");
+    p = await rodarPopup({ pactha_roteiro_fim: fimLivre,
+      pactha_last_capture: { ...enviou, ambientes_ok: 0, falhas: ["A: HTTP 500"] } });
+    chk(/Nada foi enviado/.test(p.status.msg), "captura depois que não chegou a NENHUM servidor não apaga a recusa");
+    chk(/estado\.motivo === "visitante"\s*\?\s*`Este Chrome está no ACESSO LIVRE/.test(pj),
+      "captura manual: visitante tem mensagem própria");
   }
 
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");

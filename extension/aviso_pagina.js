@@ -19,6 +19,10 @@
     var TEXTO_LIVRE = "PACTHA: este Chrome está no Acesso Livre (visitante) — os servidores não "
       + "conectam assim. Use «Captura completa» no PACTHA (ela sai do Acesso Livre sozinha) ou "
       + "clique em «Sair do Acesso Livre» e entre com gov.br.";
+    // Com a «Captura completa» em curso é ELA quem sai do Acesso Livre: mandar a
+    // pessoa clicar à mão atropelaria o roteiro (e outra «Captura completa», pior).
+    var TEXTO_LIVRE_ROTEIRO = "PACTHA: a «Captura completa» está tirando este Chrome do Acesso Livre "
+      + "(visitante) — aguarde a tela de login e, nela, clique em «Entrar com gov.br».";
     // O mesmo prazo do roteiro no background (20 min sem avançar / 60 min no total):
     // roteiro vencido que ficou no storage não acende a faixa.
     var ROTEIRO_TTL_MS = 20 * 60 * 1000;
@@ -27,7 +31,22 @@
     var titulo = function () {
       try { return String(document.title || ""); } catch (_) { return ""; }
     };
-    var ehAcessoLivre = function () { return /acesso livre/i.test(titulo()); };
+    /* Visitante pelo MESMO marcador da sonda (`corpoEhAcessoLivre`): o botão de saída
+       dizendo "Sair do Acesso Livre". O título não decide — a página logada não foi
+       medida, e o servidor já viu "Acesso Livre" no cabeçalho de sessão logada. */
+    var ehAcessoLivre = function () {
+      try {
+        var s = document.querySelector("span.exit");
+        return !!s && /^\s*sair\s+do\s+acesso\s+livre/i.test(String(s.textContent || ""));
+      } catch (_) {
+        return false;
+      }
+    };
+    var roteiroAtivo = function (r) {
+      if (!r) return false;
+      var agora = Date.now();
+      return !(agora - (r.em || 0) > ROTEIRO_TTL_MS || agora - (r.inicio || r.em || 0) > ROTEIRO_MAX_MS);
+    };
     var ehTelaDeLogin = function () {
       if (/login do transferegov/i.test(titulo())) return true;
       try {
@@ -66,19 +85,18 @@
 
     var decidir = function () {
       try {
-        // Visitante vale com ou sem roteiro: é o estado que barra toda captura.
-        if (ehAcessoLivre()) { faixa(TEXTO_LIVRE); return; }
-        if (!ehTelaDeLogin()) return;
-        // Na tela de login, só com a «Captura completa» em curso: fora dela, uma
-        // faixa em todo login do TransfereGov seria ruído (e deixaria de ser lida).
+        var livre = ehAcessoLivre();
+        if (!livre && !ehTelaDeLogin()) return;
         chrome.storage.local.get(["pactha_roteiro"], function (d) {
           try {
             var r = d && d.pactha_roteiro;
-            if (!r) return;
-            var agora = Date.now();
-            if (agora - (r.em || 0) > ROTEIRO_TTL_MS
-                || agora - (r.inicio || r.em || 0) > ROTEIRO_MAX_MS) return;
-            faixa(TEXTO_LOGIN);
+            var ativo = roteiroAtivo(r);
+            // Visitante vale com ou sem roteiro: é o estado que barra toda captura.
+            if (livre) { faixa(ativo ? TEXTO_LIVRE_ROTEIRO : TEXTO_LIVRE); return; }
+            // Na tela de login, só com a «Captura completa» em curso (fora dela, uma
+            // faixa em todo login do TransfereGov seria ruído) e não durante a saída
+            // do Acesso Livre: essa tela do idp é trocada pela porta 1 em seguida.
+            if (ativo && !r.saindoDoLivre) faixa(TEXTO_LOGIN);
           } catch (_) { /* ignore */ }
         });
       } catch (_) { /* ignore */ }

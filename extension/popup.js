@@ -381,6 +381,19 @@ async function mostrarRoteiro() {
   }
   const fim = d.pactha_roteiro_fim;
   if (fim && Date.now() - Date.parse(fim.quando) < 10 * 60 * 1000) {
+    /* ⚠️ Uma captura que CHEGOU a um servidor depois do fim do roteiro vence a recusa
+       dele: sem isto, "Nada foi enviado… Acesso Livre…" ficava 10 min no popup mesmo
+       depois de a pessoa sair do Acesso Livre à mão e a captura automática sair. */
+    const ult = d.pactha_last_capture;
+    const saiuDepois = ult && ult.quando && ult.ambientes_ok > 0
+      && Date.parse(ult.quando) >= Date.parse(fim.quando) - 1000;
+    if ((fim.barrado || fim.venceu) && saiuDepois) {
+      const ruinsDepois = (ult.falhas || []).length;
+      showStatus(`Captura enviada: ${ult.ambientes_ok} de ${ult.ambientes_total} ambiente(s)`
+        + (ruinsDepois ? ` — falharam: ${ult.falhas.join("; ")}` : ".")
+        + " Os servidores confirmam em até ~10 min.", ruinsDepois ? "info" : "success");
+      return;
+    }
     if (fim.venceu) {
       showStatus("A captura completa parou sem terminar (tempo esgotado). Clique de novo.", "error");
       return;

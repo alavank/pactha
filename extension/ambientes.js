@@ -242,29 +242,42 @@ function pareceLogin(url) {
    abaixo (www.gov.br/transferegov/…/acesso-livre) devolve ao modo visitante. */
 const LLO_URL = "https://discricionarias.transferegov.sistema.gov.br/voluntarias?LLO=true";
 
-/** O TÍTULO da aba diz "Acesso Livre"? (o roteiro lê `tab.title`, permissão "tabs"). */
+/** O TÍTULO da aba diz "Acesso Livre"? (o roteiro lê `tab.title`, permissão "tabs").
+ *  É só o GATILHO para perguntar à sonda — nunca decide sozinho (ver abaixo).
+ *  `\s` cobre o espaço não separável (U+00A0). */
 function tituloEhAcessoLivre(titulo) {
-  return /acesso livre/i.test(String(titulo || ""));
+  return /acesso\s+livre/i.test(String(titulo || ""));
 }
 
-/** O HTML é a página de VISITANTE? Só marcadores PRECISOS, medidos em 24/09/2026:
- *  o `<title>` com "Acesso Livre", ou o `<span class="exit">` cujo texto começa por
- *  "Sair do Acesso Livre" (dentro de `<div id="info">`).
+/** A página de "Acesso livre" do portal gov.br — o link-ARMADILHA da tela de login
+ *  do idp (medido em 24/09/2026: `<a href='https://www.gov.br/transferegov/pt-br/
+ *  sistemas/acesso-livre'>`, mesma aba). Ela ainda NÃO faz a pessoa visitante (só
+ *  lista os links de visitante), mas é o caminho para lá. */
+function ehPaginaDoAcessoLivre(url) {
+  // host *.gov.br e caminho /transferegov/…acesso-livre (sem depender de `URL`)
+  return /^https?:\/\/([a-z0-9-]+\.)*gov\.br\/transferegov\/[^?#]*acesso-livre/i.test(String(url || ""));
+}
+
+/** O HTML é a página de VISITANTE? UM marcador só, PRECISO, medido em 24/09/2026:
+ *  o `<span class="exit">` (dentro de `<div id="info">`) cujo texto começa por
+ *  "Sair do Acesso Livre" — só quem é visitante pode "sair do Acesso Livre".
  *
- *  ⚠️ A FRASE SOLTA NÃO CONTA. A versão 2.4.4 barrava com "sair do acesso livre" em
- *  QUALQUER lugar do HTML cru — e página logada pode ter texto escondido (já
- *  aconteceu com "Acesso Restrito" e `SAMLRequest`, ver `corpoEhLogin`). Página
- *  logada tomada por visitante = a captura boa barrada para sempre, em silêncio, e
- *  o roteiro mandando a aba para o LLO. Por isso comentário, `<script>`, `<style>`
- *  e `<template>` saem ANTES de procurar. (Como é a página LOGADA não foi medido;
- *  hipótese: o título sem "Acesso Livre" e o span.exit dizendo só "Sair".) */
+ *  ⚠️ O TÍTULO NÃO DECIDE. O título de visitante tem "- Acesso Livre", mas a página
+ *  LOGADA nunca foi medida, e o keepalive antigo do servidor, calibrado contra
+ *  sessão real em 07/2026, anotou: "'Acesso Livre' aparece no header MESMO logado"
+ *  (`backend/ingestion/govbr_keepalive.py`). Página logada tomada por visitante =
+ *  a captura boa barrada para sempre e o roteiro mandando uma aba LOGADA para o LLO.
+ *  ⚠️ A FRASE SOLTA TAMBÉM NÃO CONTA (a 2.4.4 barrava com ela em qualquer lugar do
+ *  HTML cru): comentário, `<script>`, `<style>` e `<template>` saem antes de
+ *  procurar, e o `&nbsp;` vira espaço. */
 function corpoEhAcessoLivre(html) {
   const t = String(html || "")
     .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(script|style|template)\b[\s\S]*?<\/\1\s*>/gi, " ");
-  const titulo = /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i.exec(t);
-  if (titulo && /acesso\s+livre/i.test(titulo[1])) return true;
-  return /<span\b[^>]*\bclass\s*=\s*["'](?:[^"']*\s)?exit(?:\s[^"']*)?["'][^>]*>\s*Sair\s+do\s+Acesso\s+Livre/i.test(t);
+    .replace(/<(script|style|template)\b[\s\S]*?<\/\1\s*>/gi, " ")
+    .replace(/&nbsp;|&#160;|&#x0*a0;/gi, " ");
+  if (/<span\b[^>]*\bclass\s*=\s*["'](?:[^"']*\s)?exit(?:\s[^"']*)?["'][^>]*>\s*Sair\s+do\s+Acesso\s+Livre/i.test(t)) return true;
+  // O mesmo botão pelo LINK medido: href do LLO (sair do visitante) E o texto, juntos.
+  return /<a\b[^>]*\bhref\s*=\s*["'][^"']*[?&]LLO=true[^"']*["'][^>]*>(?:\s|<[^>]*>)*Sair\s+do\s+Acesso\s+Livre/i.test(t);
 }
 
 /** O CORPO é a página de "HTTP Post Binding" do SAML (ou a tela de login)?
