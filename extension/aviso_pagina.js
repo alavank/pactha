@@ -16,9 +16,11 @@
     var ID = "pactha-aviso-faixa";
     var TEXTO_LOGIN = "PACTHA: clique em «Entrar com gov.br». Não use «Acesso livre» — "
       + "visitante não conecta os servidores.";
+    // ⛔ Sem mandar clicar em «Sair do Acesso Livre»: ele desloga TAMBÉM o gov.br deste
+    // Chrome (medido em 24/09/2026) — e, com ele, a sessão que os servidores usam.
     var TEXTO_LIVRE = "PACTHA: este Chrome está no Acesso Livre (visitante) — os servidores não "
-      + "conectam assim. Use «Captura completa» no PACTHA (ela sai do Acesso Livre sozinha) ou "
-      + "clique em «Sair do Acesso Livre» e entre com gov.br.";
+      + "conectam assim. Use «Captura completa» no PACTHA: ela sai do Acesso Livre sozinha e abre "
+      + "o login. Evite «Sair do Acesso Livre»: ele desliga o gov.br deste Chrome.";
     // Com a «Captura completa» em curso é ELA quem sai do Acesso Livre: mandar a
     // pessoa clicar à mão atropelaria o roteiro (e outra «Captura completa», pior).
     var TEXTO_LIVRE_ROTEIRO = "PACTHA: a «Captura completa» está tirando este Chrome do Acesso Livre "
@@ -93,10 +95,9 @@
             var ativo = roteiroAtivo(r);
             // Visitante vale com ou sem roteiro: é o estado que barra toda captura.
             if (livre) { faixa(ativo ? TEXTO_LIVRE_ROTEIRO : TEXTO_LIVRE); return; }
-            // Na tela de login, só com a «Captura completa» em curso (fora dela, uma
-            // faixa em todo login do TransfereGov seria ruído) e não durante a saída
-            // do Acesso Livre: essa tela do idp é trocada pela porta 1 em seguida.
-            if (ativo && !r.saindoDoLivre) faixa(TEXTO_LOGIN);
+            // Na tela de login, só com a «Captura completa» em curso: fora dela, uma
+            // faixa em todo login do TransfereGov seria ruído (e deixaria de ser lida).
+            if (ativo) faixa(TEXTO_LOGIN);
           } catch (_) { /* ignore */ }
         });
       } catch (_) { /* ignore */ }

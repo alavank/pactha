@@ -2369,8 +2369,13 @@ ninguém relogar; a sonda deve virar `erro` nessa hora enquanto o SP ainda diz v
 mais". No Chrome do dono (só leitura): no modo visitante a porta 1 **não redireciona para o login** —
 responde 200 em `…/voluntarias/proposta/ConsultarProposta/ConsultarProposta.do`, título
 "Transferegov - Consultar Proposta - Acesso Livre", com `<span class="exit">Sair do Acesso Livre …` e o
-link `/voluntarias?LLO=true` dentro de `<div id="info">`. O LLO tira do visitante e cai em
-`idp.transferegov…/idp/` ("Login do Transferegov"): botão «Entrar com gov.br» e, logo abaixo, o link
+link `/voluntarias?LLO=true` dentro de `<div id="info">`. ⛔ **O LLO NÃO é "sair do visitante"**
+(medido pela revisão, com curl): a página roda `fazLogout` em mandatárias, acompanhamento, habilitação e
+**`sso.acesso.gov.br/logout`** antes de cair em `idp.transferegov…/idp/` — é o logout de tudo, e derruba
+a sessão dos servidores quando ela é a mesma do Chrome. (Eu abri o LLO no Chrome do dono em 24/09 ~08:05
+BRT, antes de saber; a sessão dos servidores já estava morta desde 23:41.) **Sair do visitante sem
+logout = apagar o `JSESSIONID` do discricionarias** e reabrir a porta 1 — medido num navegador isolado:
+cai em "Login do Transferegov". A tela do idp tem «Entrar com gov.br» e, logo abaixo, o link
 «Acesso livre» (`www.gov.br/transferegov/…/acesso-livre`) — a armadilha, que devolve ao visitante. A
 2.4.4 já barrava a captura de visitante (certo), mas calada: o roteiro abria as 4 portas sem nunca ver
 login e terminava "nada enviado", sem dizer o que fazer. **Não medido:** a página LOGADA (título e HTML)
@@ -2381,7 +2386,8 @@ que "Acesso Livre" aparece no cabeçalho MESMO logado), nunca pela frase solta.
 12h a 79h, sem teto fixo) — o espelho do Chrome precisa levar o login novo, e o visitante numa porta o
 barrava em silêncio. O "HTTP 401" do Juranda no popup vem do servidor (token revogado/trocado/errado);
 o `detail` da resposta não aparecia. **Extensão 2.4.5** (comportamento em `extension/README.md`, "Acesso
-Livre"): a «Captura completa» sai do Acesso Livre sozinha (aba → LLO → porta 1; teto de 3 saídas), o
+Livre"): a «Captura completa» sai do Acesso Livre sozinha (apaga a sessão de visitante e reabre a
+porta 1; teto de 3 saídas; nunca o LLO), o
 modo automático só avisa ("!" + popup, sem navegar), faixa na página (content script `aviso_pagina.js`)
 e o 401 com o motivo e a ação. ⚠️ Copiar para `C:\CONVPREF\extension` inclui o arquivo NOVO
 `aviso_pagina.js` (e o manifest com `content_scripts`); depois recarregar em `chrome://extensions`.

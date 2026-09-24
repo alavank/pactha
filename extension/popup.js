@@ -385,7 +385,10 @@ async function mostrarRoteiro() {
        dele: sem isto, "Nada foi enviado… Acesso Livre…" ficava 10 min no popup mesmo
        depois de a pessoa sair do Acesso Livre à mão e a captura automática sair. */
     const ult = d.pactha_last_capture;
+    // Só uma captura do TRANSFEREGOV com a sonda dizendo LOGADO: a do FNS/SIMEC (o
+    // keepalive de 12 min) também "chega a um servidor" e não diz nada da sessão gov.br.
     const saiuDepois = ult && ult.quando && ult.ambientes_ok > 0
+      && ult.automation_key === "govbr" && ult.sonda === "logado"
       && Date.parse(ult.quando) >= Date.parse(fim.quando) - 1000;
     if ((fim.barrado || fim.venceu) && saiuDepois) {
       const ruinsDepois = (ult.falhas || []).length;

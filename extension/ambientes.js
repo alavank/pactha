@@ -232,14 +232,16 @@ function pareceLogin(url) {
   return u.includes("sso.acesso.gov.br") || u.includes("/idp/") || u.includes("acesso.gov.br/login");
 }
 
-/* ⭐ SAI DO "ACESSO LIVRE" (medido em 24/09/2026 no Chrome do dono). No modo
-   visitante a porta 1 NÃO redireciona para o login: responde 200 com a página de
-   visitante ("Transferegov - Consultar Proposta - Acesso Livre"), então o roteiro
-   abria as 4 portas, nunca aparecia tela de login, e a captura final era barrada
-   (corretamente) sem a pessoa saber o que fazer. O link "Sair do Acesso Livre" da
-   própria página é este endereço; ele cai em idp.transferegov…/idp/ ("Login do
-   Transferegov"), onde o certo é «Entrar com gov.br» — o link «Acesso livre» logo
-   abaixo (www.gov.br/transferegov/…/acesso-livre) devolve ao modo visitante. */
+/* ⛔ O "SAIR DO ACESSO LIVRE" DA PÁGINA — a extensão NUNCA navega para cá.
+   Medido em 24/09/2026: no modo visitante a porta 1 NÃO redireciona para o login
+   (responde 200 com "Transferegov - Consultar Proposta - Acesso Livre"). O botão
+   "Sair do Acesso Livre" é este endereço, e ele NÃO é só "sair do visitante": a
+   página roda `fazLogout` em mandatárias, acompanhamento, habilitação e
+   `sso.acesso.gov.br/logout` antes de cair em idp.transferegov…/idp/ — é o LOGOUT de
+   tudo, inclusive da sessão gov.br que os 7 servidores usam quando é a mesma deste
+   Chrome. A extensão sai do visitante apagando só o `JSESSIONID` do discricionarias
+   (`_apagaSessaoDeVisitante`, background.js). A constante fica para os testes
+   provarem que nada navega até aqui. */
 const LLO_URL = "https://discricionarias.transferegov.sistema.gov.br/voluntarias?LLO=true";
 
 /** O TÍTULO da aba diz "Acesso Livre"? (o roteiro lê `tab.title`, permissão "tabs").

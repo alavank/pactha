@@ -111,18 +111,27 @@ a pergunta — não decide, porque a página LOGADA não foi medida e o servidor
 comentário, texto oculto) também não conta: página logada tomada por visitante
 barraria a captura boa para sempre.
 - **Captura completa:** porta assentada com o título da aba no Acesso Livre E a sonda
-  da porta 1 achando o span de visitante → a aba vai para `…/voluntarias?LLO=true`
-  (o "Sair do Acesso Livre"), que cai na tela do idp; dali o roteiro volta na hora à
-  porta 1, que cai na tela de login COM contexto. Sonda sem resposta: espera o
-  próximo alarme. **Na tela de login, clique em «Entrar com gov.br» — nunca em
-  «Acesso livre»**: esse link leva a `www.gov.br/transferegov/…/acesso-livre`, e o
+  da porta 1 achando o span de visitante → a extensão **apaga só o `JSESSIONID` do
+  discricionarias** (a sessão de visitante) e reabre a porta 1, que cai na tela de
+  login COM contexto (medido em 24/09/2026 num navegador isolado). Título de visitante
+  com a sonda dizendo deslogado ou sem resposta: espera o próximo sinal (é a página
+  deixada, ainda na aba). **Na tela de login, clique em «Entrar com gov.br» — nunca
+  em «Acesso livre»**: esse link leva a `www.gov.br/transferegov/…/acesso-livre`, e o
   roteiro volta à porta 1 contando uma saída. Mais de 3 saídas encerram o roteiro com
-  esse motivo no popup. Durante o login no gov.br (inclusive banco ou certificado em
-  nuvem) o roteiro não arranca a aba: só uma página do TransfereGov fora do idp a leva
-  de volta à porta 1.
+  esse motivo no popup.
+- ⛔ **Nunca o "Sair do Acesso Livre" da página** (`/voluntarias?LLO=true`): ele roda
+  o logout de mandatárias, acompanhamento, habilitação **e do gov.br**
+  (`sso.acesso.gov.br/logout`) — derruba a sessão que os servidores usam quando ela é
+  a mesma deste Chrome. Nenhum caminho da extensão navega para lá, e a faixa manda
+  evitá-lo.
+- O prazo de 20 min do roteiro conta do último CARREGAMENTO de página; o alarme de 30s
+  só reconfere (antes ele renovava o prazo, e só o teto de 60 min valia).
+- O popup só troca a recusa do roteiro por "Captura enviada" com uma captura do
+  TransfereGov (`automation_key` `govbr`) cuja sonda disse **logado** — a do FNS/SIMEC
+  (keepalive de 12 min) também chega aos servidores e não prova nada da sessão gov.br.
 - **Modo automático:** não navega nada; acende o **"!"** e o popup avisa
-  (`pactha_visitante`: some em 6h sem visitante novo, com a sonda dizendo logado ou
-  deslogado, ou com a primeira captura que chega a um servidor).
+  (`pactha_visitante`: some em 6h sem visitante novo, ou com a sonda do TransfereGov
+  dizendo logado ou deslogado — captura de outro sistema não apaga).
 - **Faixa na página** (`aviso_pagina.js`, content script): no Acesso Livre (pelo
   mesmo span "Sair do Acesso Livre"; com o roteiro em curso ela diz "aguarde, a
   Captura completa está saindo dele") e, com o roteiro em curso, na tela de login do
