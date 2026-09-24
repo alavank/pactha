@@ -130,7 +130,8 @@ FRASE_CREDENCIAL = {
 # ---------------------------------------------------------------------------
 def classificar_emendas_federais(chave_configurada: bool, houve_coleta: bool,
                                  tem_cnpj: bool, n_emendas: int,
-                                 n_execucao_consultada: int) -> str:
+                                 n_execucao_consultada: int,
+                                 n_sem_codigo: int = 0) -> str:
     """'sem_cnpj' | 'sem_coleta' | 'sem_emendas' | 'sem_chave' | 'parcial' | 'ok'.
 
     ⚠️ `sem_cnpj` VEM PRIMEIRO porque e a unica causa ACIONAVEL e a unica em que
@@ -145,6 +146,12 @@ def classificar_emendas_federais(chave_configurada: bool, houve_coleta: bool,
     CGU; emenda nao consultada e ausencia NOSSA. Confundir as duas e a unica
     forma de esta tela mentir com numeros certos.
 
+    ⚠️ `n_sem_codigo` (24/09/2026): linhas da carteira SEM nº da emenda na fonte.
+    Elas nunca entram na fila da CGU (a fila e o JOIN sao pelo codigo), entao
+    conta-las no denominador deixava o aviso "parcial" aceso PARA SEMPRE —
+    prometendo uma busca que nunca vai acontecer. Saem da conta; a linha mostra
+    o motivo dela (grupo `sem_codigo` em `routers/emendas_federais.py`).
+
     ⚠️ Funcao PURA de proposito, como a `classificar_credencial`: nao ha Postgres
     de teste neste repo, e a REGRA e o que precisa de teste. A consulta fica no
     chamador."""
@@ -154,9 +161,10 @@ def classificar_emendas_federais(chave_configurada: bool, houve_coleta: bool,
         return "sem_coleta"
     if n_emendas == 0:
         return "sem_emendas"
-    if not chave_configurada:
+    consultaveis = n_emendas - (n_sem_codigo or 0)
+    if not chave_configurada and consultaveis > 0:
         return "sem_chave"
-    if n_execucao_consultada < n_emendas:
+    if n_execucao_consultada < consultaveis:
         return "parcial"
     return "ok"
 
@@ -202,11 +210,16 @@ FRASE_EMENDAS_FEDERAIS = {
     # (e) EXECUCAO PARCIAL. A frase mais importante das cinco: sem ela, oito
     # emendas sem consulta parecem oito emendas sem pagamento, e o gestor cobra
     # um parlamentar por um empenho que talvez exista. O {consultadas}/{total} e
-    # formatado pelo router.
+    # formatado pelo router (total = as que TEM numero de emenda).
+    # ⚠️ ATE 24/09/2026 dizia "onde a execucao aparece como «—», o dado ainda
+    # nao foi buscado" — FALSO para a «Sem registro na CGU», que FOI buscada e
+    # tambem mostra «—». A frase agora aponta o selo da linha, nao o traco.
     "parcial":
         "Carteira coletada; a execução foi consultada em {consultadas} de "
-        "{total} emendas. Onde a execução aparece como «—», o dado ainda não foi "
-        "buscado no Portal da Transparência — não é R$ 0.",
+        "{total} emendas. As marcadas «Execução não consultada» ainda não foram "
+        "buscadas no Portal da Transparência — o «—» delas não é R$ 0. As "
+        "marcadas «Sem registro na CGU» foram procuradas, e a CGU não publica "
+        "execução para elas.",
 
     # (f) TUDO CERTO: vazio, como o 'ok' de FRASE_CREDENCIAL. O selo de frescor
     # ja carrega a data, e repetir "esta tudo bem" acima de uma tela cheia e

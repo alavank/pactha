@@ -2542,10 +2542,14 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # chaves do `ops_obs` das voluntarias, entao as duas fontes passam pelas
             # MESMAS funcoes — nenhum parser novo, e nada para divergir depois.
             _des_te = _desembolso_ops_obs(row[8])
-            _pg_te = _jsonb(row[8]) if isinstance(_jsonb(row[8]), dict) else {}
-            _medido = bool(_pg_te)                       # NULO = nunca consultado
-            _pago_100 = bool(_pg_te.get("pago_integral"))
-            _vd_te = _des_te.get("valor_desembolsado")
+            # ⭐ A LEITURA DA EXECUÇÃO É A DA TELA E DO PDF DE PARLAMENTARES
+            # (services/execucao_te.py, 24/09/2026) — uma fonte só. Import LOCAL:
+            # aquele módulo importa este no topo, e o ciclo fecharia aqui.
+            # Só `pagamentos` entra (sem os empenhos do `detalhe`): assim o
+            # texto do RM continua byte a byte o de antes.
+            from services.execucao_te import execucao_te, texto_rm_te
+            _ex_te = execucao_te(row[8])                 # NULO = nunca consultado
+            _pago_100 = _ex_te["estado"] == "pago"
             # ⭐ O DINHEIRO QUE JA SAIU PROMOVE O ESTAGIO — e nao o texto do portal.
             # Sem isto, plano com Ordem Bancaria emitida mas `planoAcaoSituacao`
             # ainda "CIENTE" (o caso NORMAL: o plano 91573 tem OB de 22/06/2026 e
@@ -2572,17 +2576,10 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
             # PENDENTE DE DESEMBOLSO; se saiu 100%, diz que foi pago. Mesmo texto e
             # mesma ordem das voluntarias (bloco `sit_exibida`, acima), p/ o
             # relatorio nao ter dois dialetos para a mesma coisa.
-            # ⚠️ So com `_medido`: `pagamentos` NULO e "nunca consultado", NAO "nao
+            # ⚠️ So com medicao: `pagamentos` NULO e "nunca consultado", NAO "nao
             # ha pagamento" — a disciplina de _nes_resumo, que OMITE a linha em vez
-            # de afirmar o que nao mediu.
-            if _medido and _pago_100:
-                _txt_pg = f"Pago integralmente: {_fmt_brl(_vd_te)}"
-            elif _medido and (_vd_te or 0) > 0:
-                _txt_pg = f"Desembolsado: {_fmt_brl(_vd_te)} · Pendente de desembolso"
-            elif _medido and (_pg_te.get("obs") or _pg_te.get("pendentes")):
-                _txt_pg = "Pendente de desembolso"   # ha empenho/DH e nada saiu
-            else:
-                _txt_pg = ""
+            # de afirmar o que nao mediu. A frase mora em `texto_rm_te`.
+            _txt_pg = texto_rm_te(_ex_te)
             if _txt_pg:
                 sit_te = f"{sit_te} · {_txt_pg}" if sit_te else _txt_pg
             # Mesma regra de ano: concluida/empenhada fica (Parte 3/qualquer ano); ativa

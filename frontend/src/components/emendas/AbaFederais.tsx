@@ -53,7 +53,7 @@ interface Linha {
   municipal: boolean;
   beneficiario?: string | null;
   orgao?: string | null;
-  grupo: "nao_consultada" | "nao_encontrada" | "sem_empenho" | "parado" | "andamento" | "paga" | null;
+  grupo: "sem_codigo" | "nao_consultada" | "nao_encontrada" | "sem_empenho" | "parado" | "andamento" | "paga" | null;
   motivo: string | null;
   execucao_consultada?: boolean;
   execucao: Record<string, number | null> | null;
@@ -70,7 +70,8 @@ interface Resp {
   aviso: string | null;
   coleta_em: string | null;
   coleta_falhas: number | null;
-  execucao: { consultadas: number; total: number } | null;
+  /** `sem_codigo`: linhas sem nº da emenda na fonte — não têm como ser consultadas. */
+  execucao: { consultadas: number; total: number; sem_codigo?: number } | null;
   totais: {
     emendas: number; valor_prefeitura: number; fora_prefeitura_n: number;
     fora_prefeitura_valor: number; parado_n: number; com_pagamento_n: number;
@@ -88,10 +89,12 @@ const ROTULO_TIPO: Record<string, string> = {
   INDIVIDUAL: "Individual", BANCADA: "Bancada", COMISSAO: "Comissão", "RELATOR GERAL": "Relator-geral",
 };
 const ROTULO_GRUPO: Record<string, string> = {
+  sem_codigo: "Sem nº da emenda na fonte",
   nao_consultada: "Execução não consultada", nao_encontrada: "Sem registro na CGU",
   sem_empenho: "Sem empenho", parado: "Sem pagamento", andamento: "Pago em parte", paga: "Paga",
 };
 const TOM_GRUPO: Record<string, "neutro" | "ok" | "atencao" | "critico"> = {
+  sem_codigo: "neutro",
   nao_consultada: "neutro", nao_encontrada: "neutro", sem_empenho: "atencao",
   parado: "critico", andamento: "atencao", paga: "ok",
 };
@@ -268,6 +271,9 @@ export default function AbaFederais({ municipioId, onAbrir }: {
              style={{ color: (horasDesde(d.coleta_em) ?? 0) > 26 ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}>
             Atualizado em {formatDataHora(d.coleta_em)}
             {d.execucao && <> · execução consultada em {d.execucao.consultadas} de {d.execucao.total} emendas da carteira</>}
+            {/* A que falta por NÃO TER NÚMERO na fonte não é coleta pendente — o
+                selo diz, para o "36 de 37" não ser lido como "ainda puxando". */}
+            {!!d.execucao?.sem_codigo && <> ({d.execucao.sem_codigo} sem nº da emenda na fonte, sem como consultar)</>}
           </p>
         ) : null}
       </div>

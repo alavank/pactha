@@ -1,6 +1,7 @@
 """Export PDF: Convenios SIGCON-MG, Emendas Estaduais, Diario Oficial MG."""
 import re
 import html
+import unicodedata
 from io import BytesIO
 from datetime import date, datetime
 from typing import Optional
@@ -13,6 +14,7 @@ from models import ConvenioEstadual, Municipio
 from models.user import User
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.audit import registrar
+from services.bi import anos_list
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
@@ -809,18 +811,56 @@ def _sec_table(headers: list, rows: list, col_widths_mm: list) -> Table:
     return t
 
 
+def _slug_arquivo(s: str) -> str:
+    """Pedaço de NOME DE ARQUIVO em ASCII puro: sem acento, e o que não for letra
+    ou dígito vira `_`. O `Content-Disposition` daqui não usa `filename*=UTF-8''`,
+    e o Starlette codifica o cabeçalho em latin-1 — uma busca com caractere fora
+    dele (o `isalnum` deixava passar) dava 500 na hora de devolver o PDF."""
+    s = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_")
+
+
+def _rodape_cidade(cidade: str, emitido: str):
+    """Rodapé desenhado em TODA folha — o mesmo gesto de `services/rm_pdf.py::
+    _on_page`. O nome grande no topo só existe na primeira página; impressa, a
+    segunda folha em diante voltava a não dizer de qual cidade era, que é
+    exatamente o pedido (Laiza, Nova Serrana/MG, 24/09/2026)."""
+    def _desenha(canvas, doc):
+        canvas.saveState()
+        largura = doc.pagesize[0]
+        canvas.setFont("Helvetica-Bold", 8)
+        canvas.setFillColor(colors.HexColor("#0f172a"))
+        canvas.drawString(doc.leftMargin, 5 * mm, cidade)
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.drawRightString(largura - doc.rightMargin, 5 * mm,
+                               f"Relatório de Parlamentares · pág. {doc.page} · "
+                               f"gerado em {emitido} · PACTHA")
+        canvas.restoreState()
+    return _desenha
+
+
 @router.get("/parlamentares", dependencies=[exige("parlamentares.exportar")])
 async def export_parlamentares_pdf(
     request: Request,
     municipio_id: Optional[int] = Query(None),
     q: Optional[str] = Query(None),
     ano: Optional[int] = Query(None),
+    # ⚠️ `anos` e `tipo` SÃO OS DA TELA (24/09/2026). A aba sempre mandou `anos`
+    # (com o ano corrente marcado por padrão) e a rota só declarava `ano`: o
+    # FastAPI IGNORA parâmetro não declarado, sem erro, e o PDF saía "todos os
+    # anos" com a década inteira enquanto a tela mostrava 2026. E sem `tipo` o
+    # `listar` recebia o objeto `Query("parlamentar")` na chamada direta, o
+    # filtro de tipo não casava, e o PDF misturava os "outros" (Fundo
+    # Municipal, Município de X) que a tela esconde por padrão.
+    anos: Optional[list[int]] = Query(None),
+    tipo: str = Query("parlamentar", pattern="^(parlamentar|outro|todos)$"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
     """PDF da tela Parlamentares — uma secao por parlamentar (respeita a busca
-    `q`, o ano e o filtro de municipio), com TODOS os lancamentos: SIGCON-MG
-    (estadual), TransfereGov/SICONV (federal) e Emendas estaduais."""
+    `q`, os anos, o tipo e o filtro de municipio), com TODOS os lancamentos:
+    SIGCON-MG (estadual), TransfereGov/SICONV (federal) e Emendas estaduais."""
     # Unico endpoint do router que ja checava a tela — nada a acrescentar aqui.
     # A ordem invertida (tela antes de municipio) fica como esta pelo mesmo
     # motivo de `/ai-relatorio`: `municipio_id` e opcional, e um nao-admin que
@@ -831,17 +871,39 @@ async def export_parlamentares_pdf(
     # (`/api/consolidado/parlamentares/{nome}/exportar`).
     ensure_municipio_access(current, municipio_id)
 
-    from routers.parlamentares import listar as _listar, detalhe as _detalhe
-    # ⚠️ `anos=None` EXPLICITO. `listar`/`detalhe` sao endpoints do FastAPI e o
-    # default do parametro e um objeto `Query(None)`, nao `None` — quem resolve
-    # esse default e o framework, e aqui a chamada e DIRETA (funcao a funcao).
-    # Omitir o argumento faz o `anos or []` de la devolver o proprio `Query`, e a
-    # soma seguinte estoura com `TypeError: unsupported operand type(s) for +:
-    # 'Query' and 'list'` — 500 em TODA exportacao de parlamentares, para quem
-    # tem a tela inclusive. Ver `routers/parlamentares.py::listar` (linha do
-    # `anos_list((anos or []) + ...)`).
-    lista = await _listar(municipio_id=municipio_id, q=q, ano=ano, anos=None,
-                          db=db, current=current)
+    # ⭐ O NOME DA CIDADE, e não o ID (pedido da Laiza, 24/09/2026): o subtítulo
+    # dizia "município: 2" — o id interno —, e impressa a folha não dizia de
+    # qual cidade era. ⚠️ DEPOIS das duas portas: a leitura do banco não pode
+    # acontecer antes de a permissão ser conferida (a `BancoSentinela` de
+    # tests/test_export_pdf_gate.py prova "passou da porta" no 1º execute).
+    mun = None
+    if municipio_id:
+        mun = (await db.execute(select(Municipio).where(Municipio.id == municipio_id))).scalar_one_or_none()
+        if not mun:
+            raise HTTPException(404, "Município não encontrado")
+    _uf = ((mun.uf or "").strip().upper() if mun else "")
+    # `Nova Serrana/MG` no subtítulo e na trilha; sem UF (a coluna é anulável
+    # desde uf_sem_default_mg), só o nome — nunca "/None".
+    rotulo_mun = (f"{mun.nome}/{_uf}" if _uf else mun.nome) if mun else "Todos os municípios"
+    cidade_topo = (f"{mun.nome.upper()} / {_uf}" if _uf else mun.nome.upper()) if mun else "TODOS OS MUNICÍPIOS"
+
+    # Normalização contra a CHAMADA DIRETA (os testes chamam esta função sem o
+    # FastAPI no meio, e aí o default é o objeto `Query`, não o valor).
+    _anos = anos_list((anos if isinstance(anos, list) else [])
+                      + ([ano] if isinstance(ano, int) and ano else []))
+    _tipo = tipo if isinstance(tipo, str) else "parlamentar"
+
+    from routers.parlamentares import (listar as _listar, detalhe as _detalhe,
+                                       _rotulo_periodo)
+    # ⚠️ `ano`/`anos` SEMPRE EXPLICITOS. `listar`/`detalhe` sao endpoints do
+    # FastAPI e o default do parametro e um objeto `Query(None)`, nao `None` —
+    # quem resolve esse default e o framework, e aqui a chamada e DIRETA (funcao
+    # a funcao). Omitir o argumento faz o `anos or []` de la devolver o proprio
+    # `Query`, e a soma seguinte estoura com `TypeError: unsupported operand
+    # type(s) for +: 'Query' and 'list'` — 500 em TODA exportacao de
+    # parlamentares. O mesmo vale para `tipo`: omitido, chega `Query(...)`.
+    lista = await _listar(municipio_id=municipio_id, q=q, ano=None, anos=_anos,
+                          tipo=_tipo, db=db, current=current)
     items = lista.get("items", [])
 
     styles = getSampleStyleSheet()
@@ -854,26 +916,44 @@ async def export_parlamentares_pdf(
                                fontName="Helvetica-Bold",
                                textColor=colors.HexColor("#0f766e"),
                                spaceBefore=4, spaceAfter=2)
+    # ⭐ A CIDADE EM CIMA, GRANDE (24pt) — maior que o próprio título. Pedido da
+    # Laiza: "se eu precisar imprimir consigo identificar de qual cidade é". O
+    # A4 paisagem tem 277 mm úteis; o nome de município mais longo do país cabe.
+    cidade_style = ParagraphStyle("pcidade", parent=styles["Heading1"],
+                                  fontName="Helvetica-Bold", fontSize=24, leading=28,
+                                  textColor=colors.HexColor("#0f172a"), spaceAfter=2)
     title_style = ParagraphStyle("Title", parent=styles["Heading1"], fontSize=15,
                                  textColor=colors.HexColor("#1e40af"), spaceAfter=2)
     subt_style = ParagraphStyle("Sub", parent=styles["Normal"], fontSize=9,
                                 textColor=colors.HexColor("#475569"), spaceAfter=10)
 
+    # ⚠️ `html.escape` na busca e na cidade: Paragraph interpreta markup, e um
+    # "<" ou "&" na busca derrubava o PDF com 500 (e há município com
+    # apóstrofo, como Olhos-d'Água).
     filtros = []
     if q:
-        filtros.append(f"busca: \"{q}\"")
-    filtros.append(f"ano: {ano}" if ano else "todos os anos")
-    filtros.append(f"município: {municipio_id}" if municipio_id else "todos os municípios")
+        filtros.append(f"busca: \"{html.escape(q, quote=False)}\"")
+    if _anos:
+        filtros.append(f"{'ano' if len(_anos) == 1 else 'anos'}: {_rotulo_periodo(_anos)}")
+    else:
+        filtros.append("todos os anos")
+    if _tipo == "outro":
+        filtros.append("só outros proponentes (fundos, municípios)")
+    elif _tipo == "todos":
+        filtros.append("parlamentares e outros proponentes")
+    filtros.append(f"município: {html.escape(rotulo_mun, quote=False)}")
     story = [
+        Paragraph(html.escape(cidade_topo, quote=False), cidade_style),
         Paragraph("Relatório de Parlamentares", title_style),
         Paragraph(f"{len(items)} parlamentar(es) · {' · '.join(filtros)}", subt_style),
     ]
+    tem_te = False
 
     for p in items:
         try:
             det = await _detalhe(nome_normalizado=p["nome_display"],
-                                 municipio_id=municipio_id, ano=ano, anos=None,
-                                 db=db, current=current)  # `anos=None`: ver acima
+                                 municipio_id=municipio_id, ano=None, anos=_anos,
+                                 db=db, current=current)  # `ano`/`anos`: ver acima
         except HTTPException:
             det = {"sigcon": [], "voluntarias": [], "emendas": [], "plano_acao": [], "pac": [], "fns": []}
 
@@ -936,16 +1016,29 @@ async def export_parlamentares_pdf(
 
         pa = det.get("plano_acao", [])
         if pa:
+            tem_te = True
+            # ⭐ SITUAÇÃO DO PLANO ≠ EXECUÇÃO (pedido da Laiza, 24/09/2026: "só tá
+            # na situação como CIENTE"). CIENTE é cadastro; o dinheiro vem ao lado,
+            # da MESMA leitura do RM e da tela (`services/execucao_te.py`).
+            # `_br(None)` é "-": o que não foi medido não vira R$ 0,00.
             rows = [[
                 _pc(x.get("municipio_nome"), 30), _pc(x.get("codigo"), 20),
                 _pc(x.get("emenda"), 16), _pc(x.get("situacao"), 16),
+                _pc(x.get("execucao"), 40),
                 _pc(_br(x.get("valor_custeio"))), _pc(_br(x.get("valor_investimento"))),
-                _pc(_br(x.get("valor_total"))), _pc(x.get("objeto"), 500),
+                _pc(_br(x.get("valor_total"))),
+                _pc(_br(x.get("valor_empenhado"))), _pc(_br(x.get("valor_pago"))),
+                _pc(x.get("dt_ultimo_pagamento")),
+                _pc(x.get("objeto"), 500),
             ] for x in pa]
             story.append(Paragraph(f"Transferência Especial / Plano de Ação (RP9) — {len(pa)} plano(s)", sub_style))
             story.append(_sec_table(
-                ["Município", "Plano", "Emenda", "Situação", "Custeio", "Investim.", "Valor Total", "Objeto/Política"],
-                rows, [24, 26, 26, 22, 26, 26, 26, 101]))
+                # "\n" e não Paragraph: o cabeçalho é texto branco pintado pelo
+                # TableStyle, que não alcança Paragraph (sairia preto no escuro).
+                ["Município", "Plano", "Emenda", "Situação\ndo plano", "Execução",
+                 "Custeio", "Investim.", "Valor Total", "Empenhado", "Pago",
+                 "Últ.\npagamento", "Objeto/Política"],
+                rows, [20, 23, 20, 16, 23, 21, 21, 22, 22, 22, 16, 51]))
 
         pac = det.get("pac", [])
         if pac:
@@ -994,29 +1087,48 @@ async def export_parlamentares_pdf(
 
     if not items:
         story.append(Paragraph("Nenhum parlamentar para o filtro atual.", meta_style))
+    if tem_te:
+        # Uma vez, no fim — repetida sob cada parlamentar viraria ruído num PDF
+        # sem busca, com dezenas deles.
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            "<b>Transferência Especial — como ler.</b> <b>Situação do plano</b> é o "
+            "cadastro no Transferegov (CIENTE = o município deu ciência e o plano está "
+            "ativo; IMPEDIDO = há impedimento registrado) e não muda quando o dinheiro sai. "
+            "<b>Execução</b> vem dos empenhos e das ordens bancárias da União (API "
+            "oficial do Transferegov): <b>Pago</b> = ordem bancária emitida para a conta "
+            "do município; minuta de empenho ou de documento hábil não conta. "
+            "«-» = ainda não consultado, não é R$ 0.", meta_style))
+    emitido = datetime.now().strftime('%d/%m/%Y %H:%M')
     story.append(Spacer(1, 8))
     story.append(Paragraph(
-        f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M')} | PACTHA - Plataforma de Acompanhamento",
+        f"Gerado em {emitido} | PACTHA - Plataforma de Acompanhamento",
         ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7,
                        textColor=colors.HexColor("#64748b"), alignment=2)))
 
     buf = BytesIO()
+    # `title`: é o que aparece na aba do visualizador — a tela abre o PDF como
+    # blob (`window.open`), e o nome do arquivo do Content-Disposition se perde.
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
                             leftMargin=10*mm, rightMargin=10*mm,
-                            topMargin=10*mm, bottomMargin=10*mm)
-    doc.build(story)
+                            topMargin=10*mm, bottomMargin=10*mm,
+                            title=f"Relatório de Parlamentares — {rotulo_mun}",
+                            author="PACTHA")
+    _rodape = _rodape_cidade(rotulo_mun.upper(), emitido)
+    doc.build(story, onFirstPage=_rodape, onLaterPages=_rodape)
     buf.seek(0)
-    fn = "parlamentares"
+    fn = "parlamentares_" + (_slug_arquivo(mun.nome) if mun else "todos_os_municipios")
     if q:
-        fn += "_" + "".join(ch for ch in q if ch.isalnum())[:20]
-    if ano:
-        fn += f"_{ano}"
+        fn += "_" + _slug_arquivo(q)[:20]
+    if _anos:
+        fn += f"_{_anos[0]}" if len(_anos) == 1 else f"_{_anos[0]}-{_anos[-1]}"
+    fn = fn.rstrip("_")
     await _registrar_export(
         db, request=request, current=current, tipo="parlamentares",
         municipio_id=municipio_id, registros=len(items), arquivo=f"{fn}.pdf",
         # Sem municipio a exportacao e da carteira INTEIRA — a marca fica
         # explicita para nao passar por relatorio de uma prefeitura so.
-        filtros={"busca": q, "ano": ano,
+        filtros={"busca": q, "anos": _anos, "tipo": _tipo, "municipio": rotulo_mun,
                  "escopo": "municipio" if municipio_id else "todos os municipios"},
     )
     return StreamingResponse(buf, media_type="application/pdf",

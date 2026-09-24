@@ -275,7 +275,11 @@ def totais(linhas: list[dict]) -> dict:
         # pagamento" sem dizer "de 33" é lido como "todas as 354 pagas".
         if l["grupo"] in GRUPOS_COM_EXECUCAO:
             t["com_execucao_n"] += 1
-        if l["origem"] == "federal" and not l.get("execucao_consultada"):
+        # ⚠️ A linha SEM Nº DA EMENDA fica fora (24/09/2026): não há consulta
+        # possível, e o cartão dizia "1 da carteira ainda não consultada(s)"
+        # para sempre. Ela tem grupo e motivo próprios (`sem_codigo`).
+        if (l["origem"] == "federal" and not l.get("execucao_consultada")
+                and l.get("grupo") != "sem_codigo"):
             t["nao_consultadas_n"] += 1
         ex = l["execucao"] or {}
         if (ex.get("valor_pago") or 0) + (ex.get("valor_resto_pago") or 0) > 0:

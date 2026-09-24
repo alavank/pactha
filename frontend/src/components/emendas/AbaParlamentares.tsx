@@ -153,10 +153,37 @@ interface DetalhePlanoAcao {
   emenda: string | null;
   parlamentar: string | null;
   objeto: string | null;
+  /** Situação do PLANO (CIENTE/IMPEDIDO) — cadastro, não anda com o dinheiro. */
   situacao: string | null;
   valor_total: number;
   valor_custeio: number;
   valor_investimento: number;
+  /* A EXECUÇÃO, da mesma leitura do RM e do PDF (backend/services/execucao_te.py).
+     `null` = não medido — nunca vira R$ 0,00. */
+  execucao?: string | null;
+  execucao_estado?: EstadoExecucaoTE | null;
+  execucao_consultada?: boolean;
+  valor_empenhado?: number | null;
+  valor_pago?: number | null;
+  valor_a_pagar?: number | null;
+  dt_ultimo_pagamento?: string | null;
+  execucao_consultada_em?: string | null;
+}
+
+type EstadoExecucaoTE =
+  | "pago" | "pago_parte" | "empenhado" | "sem_empenho" | "sem_pagamento" | "nao_consultada";
+
+/* O tom do selo de execução vem do ESTADO, e não do texto: `situacaoTom` pintaria
+   «Pago» de neutro (não há "pag" na lista boa) e decidiria «Empenhado, aguardando
+   pagamento» pela palavra "aguardando". */
+const TOM_EXECUCAO_TE: Record<EstadoExecucaoTE, "neutro" | "ok" | "atencao"> = {
+  pago: "ok", pago_parte: "atencao", empenhado: "atencao",
+  sem_empenho: "neutro", sem_pagamento: "neutro", nao_consultada: "neutro",
+};
+
+/** Dinheiro que pode não ter sido medido: `null` é "—", nunca "R$ 0,00". */
+function brlOuTraco(v: number | null | undefined): string {
+  return v == null ? "—" : fmtMoney(v);
 }
 
 interface DetalhePac {
@@ -535,6 +562,9 @@ function ParlamentaresInner() {
       if (search.trim()) qs.set("q", search.trim());
       // URLSearchParams: `append` por ano (o backend le list[int])
       anosSel.forEach((a) => qs.append("anos", a));
+      // O MESMO recorte da lista: sem `tipo`, o PDF misturava os "outros"
+      // (Fundo Municipal, Município de X) que a tela esconde por padrão.
+      qs.set("tipo", tipoLista);
       const token = localStorage.getItem("pactha_token");
       const res = await fetch(`${api.defaults.baseURL}/export-pdf/parlamentares?${qs.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -1148,7 +1178,21 @@ function ParlamentaresInner() {
                                 meta={
                                   <>
                                     {pa.situacao && (
-                                      <Selo tom={situacaoTom(pa.situacao)} title={pa.situacao}>{pa.situacao}</Selo>
+                                      <Selo tom={situacaoTom(pa.situacao)}
+                                            title={`Situação do plano: ${pa.situacao} (cadastro no Transferegov — não muda quando o dinheiro sai)`}>
+                                        {pa.situacao}
+                                      </Selo>
+                                    )}
+                                    {/* ⭐ A EXECUÇÃO ao lado da situação (pedido da Laiza, Nova
+                                        Serrana, 24/09/2026: "só tá na situação como CIENTE"). */}
+                                    {pa.execucao && (
+                                      <Selo tom={TOM_EXECUCAO_TE[pa.execucao_estado ?? "nao_consultada"] ?? "neutro"}
+                                            title={pa.execucao_consultada
+                                              ? `Execução (empenhos e ordens bancárias da União)${pa.execucao_consultada_em
+                                                  ? ` · consultada em ${new Date(pa.execucao_consultada_em).toLocaleDateString("pt-BR")}` : ""}`
+                                              : "A execução deste plano ainda não foi consultada — não é R$ 0"}>
+                                        {pa.execucao}
+                                      </Selo>
                                     )}
                                     <span>{pa.municipio_nome}</span>
                                     {pa.parlamentar && (
@@ -1165,6 +1209,10 @@ function ParlamentaresInner() {
                                   campos={[
                                     { rotulo: "Custeio", valor: fmtMoney(pa.valor_custeio) },
                                     { rotulo: "Investimento", valor: fmtMoney(pa.valor_investimento) },
+                                    { rotulo: "Empenhado", valor: brlOuTraco(pa.valor_empenhado) },
+                                    { rotulo: "Pago", valor: brlOuTraco(pa.valor_pago),
+                                      tom: pa.execucao_estado === "pago" ? "ok" : "normal" },
+                                    { rotulo: "Último pagamento", valor: pa.dt_ultimo_pagamento || "—" },
                                   ]}
                                 />
                               </ItemLinha>

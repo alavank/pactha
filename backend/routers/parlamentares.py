@@ -25,6 +25,7 @@ from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.registro_rotas import exige
 from services.bi import anos_list, resolve_scope
+from services.execucao_te import execucao_te
 from models.user import User
 
 router = APIRouter(prefix="/api/parlamentares", tags=["parlamentares"])
@@ -826,11 +827,19 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     try:
         ano_te_d = " AND substr(te.programa_codigo, 5, 4) = ANY(:anos_txt_te)" if _anos else ""
         mun_te_d = " AND te.municipio_id = ANY(:muns)"
+        # ⭐ A EXECUÇÃO (24/09/2026): `pagamentos`, os empenhos da árvore e o
+        # carimbo, lidos por `services/execucao_te.py` — a MESMA leitura do RM.
+        # Sem isto a tela e o PDF só tinham `situacao`, que é a do PLANO (CIENTE)
+        # e não anda com o dinheiro. ⚠️ NO FIM DO SELECT, de propósito: o laço lê
+        # por índice, e coluna no meio deslocaria os r[N] seguintes em silêncio.
+        # Só `detalhe->'empenhos'`, e não a árvore inteira (~8 KB por plano).
         sql_pa = f"""
             SELECT te.plano_acao_id, te.municipio_id, m.nome, te.codigo, te.emenda,
                    te.parlamentar, te.objeto, te.situacao,
                    COALESCE(te.valor_total, 0), COALESCE(te.valor_custeio, 0),
-                   COALESCE(te.valor_investimento, 0)
+                   COALESCE(te.valor_investimento, 0),
+                   te.pagamentos, te.detalhe->'empenhos', (te.detalhe IS NOT NULL),
+                   te.pagamentos_atualizado_em
             FROM transferegov_te te
             LEFT JOIN municipios m ON m.id = te.municipio_id
             WHERE te.parlamentar IS NOT NULL AND te.municipio_id IS NOT NULL
@@ -849,6 +858,13 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
             autor = (r[5] or "").strip()
             if not autor or alvo not in _norm(autor):
                 continue
+            # Try POR LINHA: a execução de um plano com JSONB estranho não pode
+            # derrubar o `except` de fora, que apagaria a seção inteira.
+            try:
+                ex = execucao_te(r[11], r[12], bool(r[13]))
+                ex_em = r[14].isoformat() if r[14] else None
+            except Exception:
+                ex, ex_em = execucao_te(None), None
             plano_acao.append({
                 "id": r[0],
                 "municipio_id": r[1], "municipio_nome": r[2],
@@ -860,6 +876,17 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
                 "valor_total": _money(r[8]),
                 "valor_custeio": _money(r[9]),
                 "valor_investimento": _money(r[10]),
+                # `situacao` continua sendo a do PLANO (CIENTE/IMPEDIDO); quem
+                # exibe rotula "Situação do plano". A execução vem ao lado, com
+                # None onde não foi medido — nunca R$ 0 inventado.
+                "execucao": ex["rotulo"],
+                "execucao_estado": ex["estado"],
+                "execucao_consultada": ex["consultada"],
+                "valor_empenhado": ex["valor_empenhado"],
+                "valor_pago": ex["valor_pago"],
+                "valor_a_pagar": ex["valor_a_pagar"],
+                "dt_ultimo_pagamento": ex["dt_ultimo_pagamento"],
+                "execucao_consultada_em": ex_em,
                 "fonte": "plano_acao",
             })
     except Exception:

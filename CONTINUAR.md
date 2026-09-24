@@ -29,6 +29,42 @@
 
 ---
 
+## 1.40. PDF de Parlamentares com a cidade, execução da Emenda Pix e o "36 de 37" (24/09/2026)
+
+Três pedidos da Laiza (Nova Serrana/MG, cliente da Freitas), com print do PDF de
+Parlamentares e da aba Emendas:
+
+- **Cidade no PDF** (`routers/export_pdf.py::export_parlamentares_pdf`): o nome da cidade
+  sai em 24pt acima do título, no subtítulo (antes era o ID: "município: 2"), no rodapé de
+  TODA folha, no `/Title` do PDF (é o que a aba mostra: a tela abre o blob) e no arquivo
+  (`parlamentares_Nova_Serrana_<busca>_<ano>.pdf`, ASCII). Sem município: "TODOS OS
+  MUNICÍPIOS". ⚠️ De carona, o PDF passou a respeitar `anos` e `tipo` da tela — a rota só
+  declarava `ano` e saía "todos os anos" com a década inteira e com os "outros" (Fundo
+  Municipal) misturados. Agora traz MENOS linhas que antes, igual à tela.
+- **Execução da Emenda Pix** (`services/execucao_te.py`): CIENTE é a situação do PLANO
+  (cadastro; só existem CIENTE e IMPEDIDO) e não anda com o dinheiro. A leitura única de
+  `pagamentos` + `detalhe->'empenhos'` dá Pago / Pago em parte / Empenhado, aguardando
+  pagamento / Sem empenho / Sem pagamento / Execução não consultada. `pagamentos` NULO
+  nunca vira "Sem empenho" nem R$ 0; "Sem empenho" exige o `detalhe` lido; minuta de
+  empenho (número nulo, valor cheio) não soma. Ligada em `parlamentares.detalhe_core` (a
+  tela mostra o selo e os valores; o PDF ganha Execução/Empenhado/Pago/Últ. pagamento ao
+  lado de "Situação do plano"; o Consolidado recebe as chaves mas ainda não as exibe) e no
+  RM (`texto_rm_te`, texto byte a byte o de antes).
+  Decisão do dono em aberto: o RM escrever "Pendente de desembolso" para empenho sem
+  documento hábil (hoje fica calado, porque o RM não lê `detalhe`).
+- **"Execução consultada em 36 de 37"**: é só aviso. A linha da carteira SEM nº da emenda
+  (`codigo_emenda` nulo) nunca entra na fila da CGU nem casa no JOIN — o aviso prometia
+  uma busca que não acontece nunca. Ela virou o grupo `sem_codigo` ("Sem nº da emenda na
+  fonte"), sai do "X de Y" (`classificar_emendas_federais(n_sem_codigo=)`) e o selo diz
+  "(1 sem nº da emenda na fonte, sem como consultar)". A frase do `parcial` também mentia: «—» não é sempre
+  "não buscado" (a «Sem registro na CGU» foi buscada). ⚠️ Que o 1 de Nova Serrana é a
+  linha sem código é leitura do código, não medição: confirmar com
+  `coalesce(q.agregados_em, q.consultado_em) IS NULL` no banco do tenant.
+
+Fora deste trabalho: `/export-pdf/dou` imprime "Município {id}" e recebe sempre `0` do
+frontend (403 para quem não é super-admin); clicar na linha `sem-codigo-N` dá 404 em
+`_detalhe_federal`; `routers/ai.py` ainda lê `pagamentos->>'valor_desembolsado'` direto.
+
 ## 1.39. Saldo das contas do Fundo Municipal de Saúde — Portal FNS (24/09/2026)
 
 Oitava fonte, trazida pelo dono como link (`portalfns.saude.gov.br/downloads/`). A página
