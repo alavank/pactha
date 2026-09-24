@@ -487,12 +487,37 @@ async function init() {
     // tela achando que configurou tudo, e so descobre o ambiente faltando na
     // proxima vez que a sessao cair — que foi exatamente o que aconteceu com o
     // santamaria e o novapalma.
+    // ⚠️ TESTA CADA TOKEN NO SERVIDOR DELE, NA HORA (23/09/2026). O Juranda
+    // ficou em "HTTP 401" com o token "configurado": o valor colado não era o
+    // token inteiro. A lista do Service Tokens mostra só o COMEÇO (~12
+    // caracteres); o token inteiro (~64) aparece UMA vez, na janela logo depois
+    // de criar. Salvar e só descobrir na próxima captura é o erro silencioso que
+    // esta tela existe para evitar.
+    const incompletos = lista.filter((a) => a.token && /^pacth?a_st_/.test(a.token)
+      && a.token.length < 50).map((a) => a.nome);
+    let recusados = [];
+    try {
+      const itens = await consultarSaude(lista);
+      recusados = itens.filter((i) => !i.ok && /HTTP 40[13]/.test(i.detalhe || "")).map((i) => i.nome);
+    } catch (_) { /* sem rede: não afirma nada sobre os tokens */ }
+    const avisos = [];
+    if (incompletos.length) {
+      avisos.push(`Token INCOMPLETO em: ${incompletos.join(", ")} — copie o token inteiro (~64 caracteres) `
+        + "da janela que aparece ao criar; a lista mostra só o começo.");
+    }
+    const soRecusados = recusados.filter((n) => !incompletos.includes(n));
+    if (soRecusados.length) {
+      avisos.push(`O servidor RECUSOU o token de: ${soRecusados.join(", ")} — token errado, revogado `
+        + "ou só o começo dele. Crie outro e cole o valor inteiro.");
+    }
+    if (semToken.length) avisos.push(`SEM TOKEN ainda: ${semToken.join(", ")} — a captura não alcança esses.`);
     showStatus(
-      semToken.length
-        ? `Salvo. SEM TOKEN ainda: ${semToken.join(", ")} — a captura nao alcanca esses.`
-        : "Salvo. Os cinco ambientes tem token.",
-      semToken.length ? "info" : "success"
+      avisos.length
+        ? "Salvo, mas: " + avisos.join(" ")
+        : `Salvo. Os ${lista.length} ambientes têm token e o servidor de cada um aceitou.`,
+      avisos.length ? "error" : "success"
     );
+    desenharSaude();
   });
   $("btn-cancel-config").addEventListener("click", () => {
     $("config").classList.add("hidden");

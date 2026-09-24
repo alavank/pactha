@@ -782,8 +782,15 @@ async def processa_candidata() -> str:
         return "inconclusivo"
 
 def _eh_tela_de_login(url: str, body: str) -> bool:
+    """Prova POSITIVA de que a pagina NAO e sessao logada.
+
+    ⚠️ "Sair do Acesso Livre" (23/09/2026, visto no Chrome do dono): o modo
+    visitante do TransfereGov abre a pagina da porta com um botao "Sair" — que
+    `_is_authenticated` tomava por login. Uma captura de visitante chegando com a
+    sessao viva virava candidata e era PROMOVIDA por cima da sessao boa."""
     u = (url or "").lower(); b = (body or "").lower()
-    return "/idp/" in u or "sso.acesso.gov.br" in u or "identifique-se" in b or "acesso restrito" in b
+    return ("/idp/" in u or "sso.acesso.gov.br" in u or "identifique-se" in b
+            or "acesso restrito" in b or "sair do acesso livre" in b)
 
 
 def _is_authenticated(url: str, body: str) -> bool:

@@ -246,6 +246,12 @@ function corpoEhLogin(texto) {
      SAML leva `SAMLRequest=` na URL; o menu tem "Acesso Restrito" oculto, que o
      innerText do servidor não vê mas o fetch daqui vê). Resultado: a captura
      boa barrada para sempre, em silêncio. */
+  /* ⚠️ VISITANTE NÃO É LOGIN (23/09/2026, visto no Chrome do dono). O TransfereGov
+     tem o modo "Acesso Livre": a página abre, e tem um botão "Sair do Acesso
+     Livre" — o "Sair" que servia de prova de login. Tratado como logado, o jar de
+     VISITANTE sairia para os servidores e, pela mesma régua no servidor, seria
+     promovido por cima da sessão boa. */
+  if (/sair do acesso livre/i.test(t)) return true;
   if (/<title>\s*HTTP Post Binding/i.test(t)) return true;
   const formIdp = /<form[^>]*action=["'][^"']*(\/idp\/|idp\.transferegov|sso\.acesso)[^"']*["']/i.test(t);
   const inputSaml = /<input[^>]*name=["']SAMLRequest["']/i.test(t);

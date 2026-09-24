@@ -513,6 +513,22 @@ def test_renew_com_FALHA_DE_REDE_e_inconclusivo__timeout_nao_vira_SSO_expirou(mo
     assert rodada.salvos() == []
 
 
+VISITANTE = "Transferegov - Consultar Proposta - Acesso Livre  Sair do Acesso Livre  Consultar Proposta"
+
+
+def test_VISITANTE_Acesso_Livre_nao_e_login__o_Sair_dele_nao_conta():
+    """23/09/2026: o Chrome do dono estava no modo visitante, que tem "Sair do
+    Acesso Livre" — o "sair" que `_is_authenticated` tomava por login."""
+    assert gr._is_authenticated(URL_OK, VISITANTE) is False
+    assert gr.veredito_login(URL_OK, VISITANTE) == "login"
+
+
+def test_candidata_de_VISITANTE_e_recusada__nao_troca_a_sessao_boa(monkeypatch, worker):
+    _playwright_falso(monkeypatch, _Page(URL_OK, VISITANTE))
+    assert asyncio.run(gr.processa_candidata()) == "recusada"
+    assert worker.salvos() == [], "o jar de visitante chegou na sessao em uso"
+
+
 def test_veredito_de_TRES_valores__nao_autenticou_NAO_e_caiu_no_login():
     assert gr.veredito_login(URL_OK, "Bem-vindo Sair") == "logado"
     assert gr.veredito_login(URL_LOGIN, "Identifique-se no gov.br") == "login"

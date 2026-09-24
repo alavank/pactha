@@ -267,6 +267,25 @@ const chk = (cond, msg) => {
       "na tela de login o roteiro regrava `em` (login demorado não mata o roteiro no meio)");
   }
 
+  console.log("\n9b) VISITANTE («Acesso Livre») não é login — nem com o botão «Sair» na página");
+  {
+    const { ctx } = montar({});
+    const URL_TG = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/proposta/ConsultarProposta/ConsultarProposta.do";
+    // Como o Chrome do dono estava em 23/09/2026 (título e botão da página real).
+    const visitante = "<title>Transferegov - Consultar Proposta - Acesso Livre</title>"
+      + "<a href='#'>Sair do Acesso Livre</a> Consultar Proposta";
+    chk(ctx.vereditoLogin(URL_TG, visitante) === false, "página de visitante = deslogado (o jar não sai)");
+    chk(ctx.vereditoLogin(URL_TG, "<a>Sair</a> Consultar Proposta") === true, "página logada continua logada");
+  }
+
+  console.log("\n11b) salvar os tokens TESTA cada um no servidor e acusa o incompleto");
+  {
+    const pj = ler("popup.js");
+    chk(/a\.token\.length < 50/.test(pj), "token pactha_st_ curto (só o começo, da lista) é acusado como INCOMPLETO");
+    chk(/btn-save-config[\s\S]{0,4000}consultarSaude\(lista\)/.test(pj), "ao salvar, cada token é testado no servidor dele");
+    chk(/HTTP 40\[13\]/.test(pj), "401/403 viram «o servidor RECUSOU o token de: …»");
+  }
+
   console.log("\n12) o ROTEIRO da captura completa, rodando de verdade num Chrome falso");
   {
     // ⚠️ Travou em produção em 23/09/2026 ("só fica abrindo e não captura"). Estes
