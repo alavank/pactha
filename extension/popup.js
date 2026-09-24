@@ -328,6 +328,50 @@ async function desenharSaude() {
       : (todasVivas ? "✓ Sessão gov.br viva nos servidores" : "Sessão gov.br nos servidores"));
 }
 
+/** Onde está a «Captura completa»: porta N de 4 e o que ela espera — em vez de um
+ *  "abrindo…" parado que não diz se travou. */
+async function mostrarRoteiro() {
+  const d = await new Promise((r) => chrome.storage.local.get(
+    ["pactha_roteiro", "pactha_roteiro_fim", "pactha_last_capture"], r));
+  const rot = d.pactha_roteiro;
+  const morto = rot && (Date.now() - (rot.em || 0) > 20 * 60 * 1000
+    || Date.now() - (rot.inicio || rot.em || 0) > 60 * 60 * 1000);
+  if (morto) {
+    showStatus("A captura completa parou sem terminar (tempo esgotado). Clique de novo.", "error");
+    return;
+  }
+  if (rot) {
+    const seg = Math.round((Date.now() - (rot.faseEm || rot.em || Date.now())) / 1000);
+    showStatus(`Captura completa em andamento — porta ${rot.passo + 1} de ${PORTAS_GOVBR.length}: `
+      + `${rot.fase || "abrindo"} (há ${seg}s).`, "info");
+    return;
+  }
+  const fim = d.pactha_roteiro_fim;
+  if (fim && Date.now() - Date.parse(fim.quando) < 10 * 60 * 1000) {
+    if (fim.venceu) {
+      showStatus("A captura completa parou sem terminar (tempo esgotado). Clique de novo.", "error");
+      return;
+    }
+    if (fim.barrado) {
+      showStatus(`As 4 portas foram abertas, mas nada foi enviado: ${fim.barrado}. `
+        + "Faça o login no TransfereGov e clique de novo.", "error");
+      return;
+    }
+    const lc = d.pactha_last_capture;
+    const enviada = lc && lc.quando && /^captura_completa/.test(String(lc.reason || ""))
+      && Date.parse(lc.quando) >= Date.parse(fim.quando) - 1000;
+    if (!enviada) {
+      showStatus("As 4 portas foram abertas; enviando a captura…", "info");
+      return;
+    }
+    const ruins = (lc.falhas || []).length;
+    showStatus(`Captura completa enviada: ${lc.ambientes_ok} de ${lc.ambientes_total} ambiente(s)`
+      + (ruins ? ` — falharam: ${lc.falhas.join("; ")}` : ".")
+      + " Os servidores confirmam em até ~10 min.",
+      !lc.ambientes_ok ? "error" : (ruins ? "info" : "success"));
+  }
+}
+
 function desenharPortas() {
   const box = $("portas-lista");
   if (!box) return;
@@ -414,6 +458,13 @@ async function init() {
     showStatus("Abrindo as 4 portas na mesma aba. Se pedir login, faça — o roteiro "
                + "continua sozinho depois.", "info");
   });
+  mostrarRoteiro();
+  // O roteiro anda no service worker: o popup acompanha pelo storage, ao vivo.
+  chrome.storage.onChanged.addListener((mud, area) => {
+    if (area === "local" && (mud.pactha_roteiro || mud.pactha_roteiro_fim || mud.pactha_last_capture)) {
+      mostrarRoteiro();
+    }
+  });
   desenharPortas();
   desenharSaude();
 
@@ -467,10 +518,12 @@ async function init() {
     showStatus(`Sem token em: ${semToken.join(", ")} — a captura nao alcanca esses.`,
                "info");
   }
+  mostrarRoteiro();     // um roteiro em curso vale mais que o aviso de token
 
   refreshLastCapture();
   // Atualiza relógio do "última captura" a cada segundo
-  setInterval(refreshLastCapture, 2000);
+  // O roteiro também: o "(há Ns)" não pode congelar com o popup aberto.
+  setInterval(() => { refreshLastCapture(); mostrarRoteiro(); }, 2000);
 }
 
 init();
