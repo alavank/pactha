@@ -36,7 +36,7 @@ def _valor_proposta(v) -> float:
         return 0.0
 
 
-def propostas_saude_por_autor(linha_propostas) -> list[dict]:
+def propostas_saude_por_autor(linha_propostas, com_pagamento: bool = False) -> list[dict]:
     """As propostas de saude do FNS por AUTOR, RICAS, de `raw_data['linhaPropostas']`.
 
     ⚠️ POR QUE ESTE MODULO, E NAO CADA TELA. O autor da emenda de saude NAO esta
@@ -51,9 +51,27 @@ def propostas_saude_por_autor(linha_propostas) -> list[dict]:
     regra de "excluir FNS" ja ficou copiada em cinco lugares e foi esquecida num
     deles.
 
-    Devolve UM dict por proposta individual, com um por parlamentar quando a
-    proposta tem varios (rateio da agregacao por autor):
+    Devolve UM dict por (proposta, AUTOR): um por parlamentar DIFERENTE quando a
+    proposta tem varios, e UM SO quando o mesmo parlamentar aparece mais de uma
+    vez em `parlamentares[]` (duas emendas dele na mesma proposta):
         {"autor": str|None, "valor": float, "numero": str|None, "situacao": str|None}
+
+    ⚠️⚠️ `valor` E A PARTE DO AUTOR, NAO A PROPOSTA INTEIRA (24/09/2026, revisao
+    do PDF de Parlamentares). Antes saia um dict por ENTRADA de `parlamentares[]`,
+    cada um com o `vlProposta` INTEIRO: a proposta 36000679587202500 (R$ 450.000,
+    paga) com o mesmo autor duas vezes (coEmendaPolitica 37080010 com vlIndObjeto
+    250.000 e 37080011 com 200.000) virava DUAS linhas de 450.000 — R$ 900.000 no
+    PDF, "RECURSOS PAGOS" em cima de um dinheiro que nao existe. Agora:
+      - `valor` = soma dos `vlIndObjeto` das entradas DESTE autor — o que a
+        emenda dele pos na proposta (o FNS o entrega por parlamentar, ver
+        `routers/fns.py::_parlamentares`);
+      - sem NENHUM `vlIndObjeto` do autor, o `vlProposta` e a reserva (o de antes);
+      - nunca passa do `vlProposta` (quando ele veio): a parte de um autor nao e
+        maior que a proposta.
+    Dois autores na mesma proposta: cada um com o SEU `vlIndObjeto`. O RM
+    (`rm_builder`, laco do FNS) segue com UM item por proposta e o `vlProposta` —
+    la o recorte e o municipio, nao o parlamentar; o autor unico da proposta tem
+    aqui a soma dos seus `vlIndObjeto`, que e o `vlProposta` de la.
     `autor` e `None` quando a proposta nao tem parlamentar real — o chamador
     decide o fallback (o Fundo Municipal, para o valor nao se perder). Os campos
     `numero` (nuProposta) e `situacao` (situacao_desc) existem para a tela de
@@ -62,6 +80,15 @@ def propostas_saude_por_autor(linha_propostas) -> list[dict]:
     pela linha inteira, senao o total ao expandir divergiria do que o cabecalho
     atribuiu ao parlamentar. Tolera `linha_propostas` como lista JSONB ja
     parseada OU string.
+
+    `com_pagamento=True` (o PDF de Parlamentares, 24/09/2026) acrescenta o que
+    o coletor grava por proposta (`ingestion/run_fns_local.py`): `vl_pago`,
+    `vl_pagar` e `data_pagamento` (dd/mm/aaaa, a do ULTIMO pagamento), e o
+    `valor_proposta` (o `vlProposta` inteiro — o pagamento e da PROPOSTA, e "pago
+    em parte: X de Y" tem de dividir pelo total dela, nao pela parte do autor). ⚠️
+    `vl_pago`/`vl_pagar` saem None quando a fonte nao trouxe a chave — o FNS
+    omite `vlPago` tambem quando so nao informa, e None nao e zero. Desligado,
+    o dict e o de sempre (o agregado e o BI comparam por igualdade).
     """
     if isinstance(linha_propostas, str):
         try:
@@ -78,23 +105,53 @@ def propostas_saude_por_autor(linha_propostas) -> list[dict]:
         numero = str(prop.get("nuProposta") or prop.get("nuProcesso") or "").strip() or None
         situacao = str(prop.get("situacao_desc") or "").strip() or None
         parls = prop.get("parlamentares")
-        nomes = []
+        # chave do nome -> [nome como veio (o 1o), soma dos vlIndObjeto, veio algum?]
+        autores: dict[str, list] = {}
         if isinstance(parls, list):
             for pp in parls:
                 if not isinstance(pp, dict):
                     continue
                 nm = (pp.get("noApelidoPolitico") or pp.get("noParlamentar")
                       or pp.get("nome") or "").strip()
-                if e_parlamentar_real(nm):
-                    nomes.append(nm)
-        for nm in (nomes or [None]):
-            out.append({"autor": nm, "valor": val, "numero": numero, "situacao": situacao})
+                if not e_parlamentar_real(nm):
+                    continue
+                a = autores.setdefault(_chave(nm), [nm, 0.0, False])
+                # ⚠️ vlIndObjeto ZERO conta como AUSENTE (revisão de 24/09/2026): é
+                # a leitura da tela do FNS (`routers/fns.py::_parlamentares`, com
+                # `or`). Contado como "veio", a parte do autor numa proposta paga
+                # virava R$ 0,00 e o bloco saía "RECURSOS PAGOS … TOTAL 0,00".
+                ind = (_valor_proposta(pp.get("vlIndObjeto"))
+                       if pp.get("vlIndObjeto") is not None else 0.0)
+                if ind > 0:
+                    a[1] += ind
+                    a[2] = True
+        extra = {}
+        if com_pagamento:
+            extra = {
+                "vl_pago": (_valor_proposta(prop.get("vlPago"))
+                            if prop.get("vlPago") is not None else None),
+                "vl_pagar": (_valor_proposta(prop.get("vlPagar"))
+                             if prop.get("vlPagar") is not None else None),
+                "data_pagamento": str(prop.get("data_pagamento") or "").strip() or None,
+                "valor_proposta": val,
+            }
+        if not autores:
+            out.append({"autor": None, "valor": val, "numero": numero, "situacao": situacao,
+                        **extra})
+        for nm, soma, com_ind in autores.values():
+            parte = soma if com_ind else val
+            if com_ind and val > 0:
+                parte = min(parte, val)
+            out.append({"autor": nm, "valor": parte, "numero": numero, "situacao": situacao,
+                        **extra})
     return out
 
 
 def emendas_saude_por_autor(linha_propostas) -> list[tuple[str | None, float]]:
     """As emendas de saude do FNS por AUTOR, de `raw_data['linhaPropostas']`, como
-    `(autor, vlProposta)` — a forma enxuta que o AGREGADO (routers/parlamentares)
+    `(autor, parte do autor)` — a parte e a soma dos `vlIndObjeto` dele, com o
+    `vlProposta` de reserva (ver `propostas_saude_por_autor`) — a forma enxuta
+    que o AGREGADO (routers/parlamentares)
     e a aba do BI consomem. Delega a descida em `propostas_saude_por_autor` para
     a regra viver num lugar so; se as duas divergissem, a contagem e o detalhe
     voltariam a mostrar coisas diferentes. `autor` e `None` quando a proposta nao

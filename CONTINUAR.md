@@ -29,6 +29,93 @@
 
 ---
 
+## 1.41. PDF de Parlamentares no modelo da planilha, execução da Emenda Pix e o "36 de 37" (24/09/2026)
+
+Pedidos da Laiza (Nova Serrana/MG, cliente da Freitas) e do dono:
+
+- **PDF no MODELO DA PLANILHA** (pedido do dono: `EmendasNikolasFerreiraBomDespacho.xlsx`,
+  aba "Emendas por categoria"). `export_parlamentares_pdf` desenha; a LÓGICA é pura, em
+  `services/relatorio_parlamentares.py`. Um bloco por parlamentar, cada um numa folha:
+  barra "RECURSOS PAGOS|PARA <CIDADE> – EMENDAS INDICADAS POR <NOME>" (16pt, #1F4E78), a
+  linha pequena de filtros, e a tabela MUNICÍPIO | ANO | RECURSO | MINISTÉRIO DE ORIGEM |
+  VALOR GLOBAL (R$) | PLANO DE AÇÃO / PROPOSTA | SITUAÇÃO ATUAL com faixa por ÁREA
+  (#2E75B6), subtotal (#BDD7EE) e TOTAL GERAL – <CIDADE>; cabeçalho repetido a cada folha.
+  Cidade também no rodapé de toda folha, no `/Title` e no nome do arquivo (ASCII). O PDF
+  respeita `anos` e `tipo` da tela.
+  - **"PAGOS" só com tudo pago** e nada fora do total (TE com OB 100%, FNS pago sem saldo,
+    voluntária desembolsada, indicação paga na planilha da SEGOV; SIGCON/PAC nunca).
+  - **Não conta duas vezes:** instrumento vence a indicação por CHAVE (carteira×voluntária
+    e carteira×TE já em `detalhe_core`; indicação estadual×convênio SIGCON pelo nº da
+    indicação — ⚠️ só o convênio que CONTA no total e tem valor > 0 vence: o 002567/2026
+    de Araújos, SEAPA, R$ 0,00, Cadastramento, apagava a indicação; seleção PAC×voluntária
+    pelo "Número da Proposta Novo PAC"). **FNS: UMA linha por (município, nº da proposta)**
+    com a PARTE do autor = soma dos `vlIndObjeto` dele em `parlamentares[]` (`vlProposta`
+    só de reserva, nunca acima dele): a 36000679587202500 (R$ 450 mil) com o mesmo autor
+    duas vezes saía R$ 900 mil e "RECURSOS PAGOS". A regra mora em
+    `nome_parlamentar.propostas_saude_por_autor`, então o CABEÇALHO da tela e o BI também
+    passaram a dar a parte do autor (dois autores: cada um com o seu `vlIndObjeto`, não os
+    dois com a proposta inteira). O RM segue com um item por proposta e o `vlProposta`.
+    A carteira CGU que sobra pode ser o mesmo dinheiro do FNS/PAC, não casado pelo nº da
+    emenda nesta base (o PAC não traz o nº; o FNS traz `coEmendaPolitica`/`nuAnoExercicio`,
+    formato nunca medido) → seção "EMENDAS FEDERAIS SEM INSTRUMENTO IDENTIFICADO", FORA do
+    total. PAC não selecionado, TE IMPEDIDO, convênio SIGCON em Cadastramento
+    (`_em_cadastramento`), FNS rejeitada/bloqueada/ARQUIVADA (`_fns_classifica`, a regra
+    do RM para o FNS — `_fed_status` não conhece "arquivad") e cancelado/rejeitado
+    (`_fed_status` 'dead') → "PROPOSTAS NÃO SELECIONADAS, EM CADASTRAMENTO, CANCELADAS OU
+    IMPEDIDAS", fora do total (as chaves de `export_pdf._NOTA_FORA` têm de ser os
+    `GRUPOS_FORA`: teste).
+  - **Áreas:** FNS = SAÚDE; TE pela função orçamentária das finalidades (27 Desporto só de
+    investimento = INFRAESTRUTURA, a quadra do modelo); indicação estadual pela UO e só
+    sem ela pelo tipo ("SES" + "Obras" = SAÚDE, não OUTROS); o resto pelo nome do
+    ministério/secretaria. Duas áreas ou nenhuma = OUTROS. Ordem: soma, maior primeiro;
+    OUTROS por último.
+  - **Ministério da TE** vem de `detalhe->'programa'` (API oficial): ⚠️ NÃO é sempre Fazenda
+    — 2020-22 Economia, 2023-25 Fazenda, 2026 MGI (captura de 14/09/2026). Sem árvore, o de
+    outro plano do mesmo programa; sem nenhum, "—". PAC e carteira pelo órgão SIAFI;
+    voluntária ("36211 - FUNASA") pelo órgão SUPERIOR (`cod[:2]+'000'`, FNDE -> Educação),
+    o órgão cru quando o código não está em `ORGAOS_SIAFI`. MAC e PAP são siglas em
+    `texto_rm._SIGLAS` ("Incremento MAC" no PDF e no RM).
+  - **Situação por extenso** (`execucao_te.frase_execucao_te`): "Pagamento realizado em
+    dd/mm/aaaa." etc. O relatório de gestão da TE entra como a fonte diz ("Relatório de
+    gestão final: Disponibilizado em 30/12/2025; nenhuma análise registrada.") — a API
+    não tem "aguardando análise", que o modelo escreve. FNS: `data_pagamento` da proposta.
+- **Execução da Emenda Pix** (`services/execucao_te.py`): CIENTE é a situação do PLANO
+  (cadastro; só existem CIENTE e IMPEDIDO) e não anda com o dinheiro. A leitura única de
+  `pagamentos` + `detalhe->'empenhos'` dá Pago / Pago em parte / Empenhado, aguardando
+  pagamento / Sem empenho / Sem pagamento / Execução não consultada. `pagamentos` NULO
+  nunca vira "Sem empenho" nem R$ 0; "Sem empenho" exige o `detalhe` lido; minuta de
+  empenho (número nulo, valor cheio) não soma. Ligada em `parlamentares.detalhe_core`
+  (tela, PDF), no Consolidado e na aba Federais ("CIENTE · Pago em parte",
+  `situacao_e_execucao`) e no RM (`texto_rm_te`, texto byte a byte o de antes).
+  ⚠️ `detalhe_core` lê por ÍNDICE: coluna nova SEMPRE no fim do SELECT —
+  `tests/test_detalhe_core_ordem.py` monta a linha na ordem do SQL e reprova a troca.
+  Decisão do dono em aberto: o RM escrever "Pendente de desembolso" para empenho sem
+  documento hábil (hoje fica calado, porque o RM não lê `detalhe`).
+- **"Execução consultada em 36 de 37"**: é só aviso. A linha da carteira SEM nº da emenda
+  (`codigo_emenda` nulo) nunca entra na fila da CGU nem casa no JOIN — o aviso prometia
+  uma busca que não acontece nunca. Ela virou o grupo `sem_codigo` ("Sem nº da emenda na
+  fonte"), sai do "X de Y" (`classificar_emendas_federais(n_sem_codigo=)`) e o selo diz
+  "(1 sem nº da emenda na fonte, sem como consultar)". A frase do `parcial` também mentia: «—» não é sempre
+  "não buscado" (a «Sem registro na CGU» foi buscada). ⚠️ Que o 1 de Nova Serrana é a
+  linha sem código é leitura do código, não medição: confirmar com
+  `coalesce(q.agregados_em, q.consultado_em) IS NULL` no banco do tenant.
+
+Fora deste trabalho: `/export-pdf/dou` imprime "Município {id}" e recebe sempre `0` do
+frontend (403 para quem não é super-admin); clicar na linha `sem-codigo-N` dá 404 em
+`_detalhe_federal`; `routers/ai.py` ainda lê `pagamentos->>'valor_desembolsado'` direto.
+No PDF novo: o pagamento do convênio SIGCON (`transparencia_mg_empenhos`/SEGOV) não é lido
+— SIGCON nunca conta como "pago"; casar FNS×carteira pedia o `coEmendaPolitica` do FNS,
+cujo formato nunca foi medido; a lista ANTIGA `relatorios_gestao` da TE só é contada (os
+nomes de campo dela não estão em captura nenhuma).
+
+Revisão final (24/09/2026): o MINISTÉRIO DE ORIGEM da voluntária usa o NOME que a fonte deu
+(sem o código, com os acentos das palavras de ministério) — o mapa `ORGAOS_SIAFI` tem um nome
+por código e não muda com o ano ("39000 - MINISTERIO DOS TRANSPORTES" saía "Ministério da
+Infraestrutura"); o mapa só entra para entidade vinculada (FUNASA, FNDE) ou quando o nome é o
+mesmo. FNS ARQUIVADA/BLOQUEADA com repasse sai fora do total dizendo o motivo, e não "pago".
+`vlIndObjeto` zero = ausente (a leitura da tela do FNS). Teste da mesma proposta em duas linhas
+com DOIS autores (o de um autor só escondia a soma dobrada).
+
 ## 1.40. Relatório de vigências — o que a Freitas achou confuso (24/09/2026)
 
 Relato da Márcia (Freitas), com dois casos conferidos no dado aberto do Estado (CKAN `dm_convenio`

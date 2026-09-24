@@ -37,6 +37,7 @@ from services.audit import registrar
 from services.auth import ensure_tela, get_current_user
 from services.bi import anos_list, resolve_scope
 from services.cadastro_parlamentar import cadastros_por_nome
+from services.execucao_te import situacao_e_execucao
 from services.registro_rotas import exige
 
 router = APIRouter(prefix="/api/consolidado", tags=["consolidado"])
@@ -217,10 +218,19 @@ def por_municipio(det: dict) -> list[dict]:
 
 
 def lancamentos(det: dict) -> list[dict]:
-    """Todos os lançamentos do detalhe numa lista só, no formato da planilha. PURA."""
+    """Todos os lançamentos do detalhe numa lista só, no formato da planilha. PURA.
+
+    ⚠️ A EMENDA PIX sai "CIENTE · Pago em parte" (24/09/2026): CIENTE é a situação
+    do PLANO, não do dinheiro, e esta lista só tem UMA coluna de situação — a
+    tela, a planilha e o PDF do Consolidado mostravam só "CIENTE". O rótulo da
+    execução é o que `detalhe_core` já leu por `services/execucao_te.py` (a
+    mesma leitura do RM e da tela Parlamentares)."""
     saida = []
     for fonte, campo, rotulo in FONTES:
         for i in det.get(fonte) or []:
+            situacao = (i.get("situacao") or i.get("status_indicacao") or "")
+            if fonte == "plano_acao":
+                situacao = situacao_e_execucao(situacao, i.get("execucao"))
             saida.append({
                 "fonte": rotulo,
                 "municipio_id": i.get("municipio_id"),
@@ -230,7 +240,7 @@ def lancamentos(det: dict) -> list[dict]:
                 "ano": i.get("ano"),
                 "objeto": (i.get("objeto") or i.get("beneficiario") or i.get("programa")
                            or i.get("beneficiario_nome") or ""),
-                "situacao": (i.get("situacao") or i.get("status_indicacao") or ""),
+                "situacao": situacao,
                 "valor": float(i.get(campo) or 0),
             })
     return sorted(saida, key=lambda x: (x["municipio"], -x["valor"]))

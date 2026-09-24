@@ -50,6 +50,7 @@ from services.bi import anos_list
 from services.cadastro_parlamentar import cadastros_por_nome
 from services.conteudo_rs import AVISO_EMENDAS, EMENDAS
 from services.emendas_unificadas import filtrar, totais, unificar_federais
+from services.execucao_te import execucao_te, situacao_e_execucao
 from services.natureza import e_municipal
 from services.nome_parlamentar import e_pessoa
 from services.registro_rotas import declarado, exige
@@ -124,9 +125,14 @@ async def _fontes_federais(db: AsyncSession, municipio_id: int) -> dict:
     # ⚠️ O MESMO filtro de CNPJ da aba Parlamentares (bloco 4 do agregado): o
     # coletor da TE casa beneficiário por substring de nome, e sem isto a emenda
     # Pix de "Paraíso do Tocantins" cai no município mineiro "Tocantins".
+    # ⚠️ `situacao` da TE é a do PLANO (CIENTE/IMPEDIDO), e a aba mostrava só
+    # ela (24/09/2026). Com `pagamentos`, os empenhos da árvore e o carimbo de
+    # leitura, a execução sai da MESMA leitura do RM e da tela Parlamentares
+    # (`services/execucao_te.py`) e a situação vira "CIENTE · Pago em parte".
     te = await _consulta(db, """
         SELECT te.plano_acao_id, te.emenda, te.parlamentar, te.objeto, te.situacao,
-               te.valor_total
+               te.valor_total, te.pagamentos, te.detalhe->'empenhos' AS empenhos,
+               (te.detalhe IS NOT NULL) AS detalhe_coletado
           FROM transferegov_te te
           LEFT JOIN municipios mu ON mu.id = te.municipio_id
          WHERE te.municipio_id = :m
@@ -152,6 +158,10 @@ async def _fontes_federais(db: AsyncSession, municipio_id: int) -> dict:
          WHERE municipio_id = :m
            AND (parlamentar IS NOT NULL OR coalesce(valor_emenda, 0) > 0)
     """, m)
+    for r in te:
+        ex = execucao_te(r.pop("pagamentos", None), r.pop("empenhos", None),
+                         bool(r.pop("detalhe_coletado", False)))
+        r["situacao"] = situacao_e_execucao(r.get("situacao"), ex["rotulo"])
     for lst, cols in ((te, ("valor_total",)),
                       (parcerias, ("valor_emenda", "valor_total")),
                       (indicadas, ("valor_total",)),

@@ -25,6 +25,10 @@ from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.registro_rotas import exige
 from services.bi import anos_list, resolve_scope
+from services.execucao_te import execucao_te, frase_relatorio_gestao
+from services.relatorio_parlamentares import pares_de_funcao as _pares_funcao
+from services.rm_builder import _desembolso_ops_obs, _jsonb, _pac_da_voluntaria
+from services.voluntarias_dump import ops_obs_preferido
 from models.user import User
 
 router = APIRouter(prefix="/api/parlamentares", tags=["parlamentares"])
@@ -43,6 +47,78 @@ def _norm(s: str) -> str:
 def _money(v) -> float:
     try: return float(v or 0)
     except (TypeError, ValueError): return 0.0
+
+
+def _money_ou_none(v) -> Optional[float]:
+    """Como `_money`, mas NULO continua None: execução não medida não vira 0."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _jsonb_lista(v) -> list:
+    """JSONB (lista ou texto, conforme o driver) -> lista; o resto -> []."""
+    v = _jsonb(v)
+    return v if isinstance(v, list) else []
+
+
+def _indicacoes_do_convenio(escalar, lista) -> list[str]:
+    """Os números de indicação que o convênio SIGCON carrega — o escalar
+    `raw_data->>'nr_indicacao'` e a lista `raw_data->'indicacoes'` (um convênio
+    pode ter várias). A mesma leitura de `routers/convenios.py::_inds_do`."""
+    out: set[str] = set()
+    s = str(escalar or "").strip()
+    if s:
+        out.add(s)
+    for it in _jsonb_lista(lista):
+        if isinstance(it, dict):
+            v = str(it.get("nr_indicacao") or "").strip()
+            if v:
+                out.add(v)
+    return sorted(out)
+
+
+def _desembolso_voluntaria(aberto, raspado, detalhe) -> dict:
+    """O dinheiro da voluntária pela MESMA leitura do RM: o bloco `ops_obs` que
+    `ops_obs_preferido` escolhe (dump primeiro) lido por `_desembolso_ops_obs`, e
+    a seleção do Novo PAC que originou a proposta (`_pac_da_voluntaria`).
+
+    Sem bloco (proposta nunca medida), os três valores saem None — o PDF não
+    escreve "sem pagamento" do que não foi consultado. Nunca levanta: esta
+    consulta não está dentro de `try`, e um JSONB estranho derrubaria o
+    detalhe inteiro."""
+    try:
+        bloco = ops_obs_preferido(aberto, raspado)[0]
+        des = _desembolso_ops_obs(bloco) if isinstance(bloco, dict) and bloco else {}
+        pac = _pac_da_voluntaria(detalhe)
+    except Exception:
+        des, pac = {}, ""
+    return {
+        # "Consultado" = o bloco traz o desembolsado. Bloco vazio ou sem o valor
+        # é NULO, a mesma leitura de `execucao_te` para a TE.
+        "desembolso_consultado": des.get("valor_desembolsado") is not None,
+        "valor_desembolsado": des.get("valor_desembolsado"),
+        "valor_a_desembolsar": des.get("valor_a_desembolsar"),
+        "dt_ultimo_desembolso": des.get("dt_ultimo_desembolso"),
+        "pac_origem": pac or None,
+    }
+
+
+def _ano_do_plano(programa_codigo, emenda) -> Optional[int]:
+    """O ano do plano da TE: dígitos 5-8 do código do programa ('09032024-2' ->
+    2024) — o MESMO recorte do filtro de anos deste arquivo
+    (`substr(te.programa_codigo, 5, 4)`). Programa no formato antigo ('0903')
+    cai no ano da emenda (os 4 primeiros dos 12 dígitos)."""
+    p = str(programa_codigo or "")
+    if len(p) >= 8 and p[4:8].isdigit() and 2000 <= int(p[4:8]) <= 2100:
+        return int(p[4:8])
+    cod = str(emenda or "").split("-", 1)[0].strip()
+    if len(cod) >= 4 and cod[:4].isdigit() and 2000 <= int(cod[:4]) <= 2100:
+        return int(cod[:4])
+    return None
 
 
 def _fns_label(mun_nome: str) -> str:
@@ -412,8 +488,11 @@ async def aggregate_parlamentares(
     #
     # O RM ja le esse aninhamento (services/rm_builder.py, laco do FNS:
     # `ind.get("parlamentares")` -> noApelidoPolitico/noParlamentar/nome). Aqui a
-    # MESMA precedencia e o MESMO valor (o da PROPOSTA individual, `vlProposta`),
-    # para a tela, o Painel (que reusa esta funcao) e o RM nunca divergirem.
+    # MESMA precedencia, para a tela, o Painel (que reusa esta funcao) e o RM
+    # nunca divergirem. O VALOR e a PARTE DO AUTOR na proposta (soma dos
+    # `vlIndObjeto` dele, `vlProposta` de reserva) e o mesmo autor duas vezes na
+    # proposta conta UMA — a mesma regra do detalhe (24/09/2026), senao o
+    # cabecalho diria R$ 900 mil de uma proposta de R$ 450 mil.
     #
     # ⚠️ O FALLBACK PARA O FUNDO MUNICIPAL CONTINUA — mas so quando a proposta
     # REALMENTE nao tem autor: assim nenhum valor se perde, e o que tem autor
@@ -734,14 +813,23 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
         params["anos"] = _anos
         params["anos_txt"] = [str(a) for a in _anos]
 
-    # SIGCON
+    # ⚠️ AS COLUNAS NOVAS DE CADA SELECT DESTA FUNÇÃO VÃO NO FIM (24/09/2026, PDF
+    # no modelo da planilha): os laços leem por ÍNDICE, e uma coluna no meio
+    # deslocaria os r[N] seguintes em silêncio. `tests/test_detalhe_core_ordem.py`
+    # monta a linha NA ORDEM DO SELECT e confere o que sai.
+
+    # SIGCON — `nr_indicacao`/`indicacoes` (r[14], r[15]): as indicações da
+    # emenda ESTADUAL que o convênio executa (`_scrape_indicacoes`), o mesmo elo
+    # de `routers/emendas_estaduais.SQL_EMENDAS_COM_CONVENIO`. O PDF usa para não
+    # contar a indicação E o convênio dela como dois dinheiros.
     sql1 = f"""
         SELECT c.id, c.municipio_id, m.nome AS mun_nome,
                c.nr_sigcon, c.objeto, c.situacao,
                c.valor_total, c.valor_concedente,
                c.raw_data->>'responsaveis' AS responsaveis,
                c.dt_vigencia_inicial, c.dt_vigencia_atual, c.dt_vigencia_final,
-               c.ano, c.orgao_concedente
+               c.ano, c.orgao_concedente,
+               c.raw_data->>'nr_indicacao', c.raw_data->'indicacoes'
         FROM convenios_estadual c LEFT JOIN municipios m ON m.id = c.municipio_id
         WHERE c.raw_data->>'responsaveis' ILIKE :n
         {where_extra_sigcon}
@@ -756,17 +844,22 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
         "dt_vigencia_atual": str(r[10]) if r[10] else None,
         "dt_vigencia_final": str(r[11]) if r[11] else None,
         "ano": r[12], "orgao": r[13],
+        "indicacoes": _indicacoes_do_convenio(r[14], r[15]),
         "fonte": "sigcon",
     } for r in (await db.execute(text(sql1), params)).fetchall()]
 
-    # Voluntarias
+    # Voluntarias — no fim (r[15]..r[17]) o DESEMBOLSO (`ops_obs_aberto` do dump,
+    # `ops_obs` da raspagem: a MESMA escolha do RM, `ops_obs_preferido`) e o
+    # `detalhe`, de onde sai o nº da seleção do Novo PAC que originou a proposta
+    # (`_pac_da_voluntaria`, a regra do RM para não repetir o PAC).
     sql2 = f"""
         SELECT v.id, v.municipio_id,
                (SELECT nome FROM municipios WHERE id=v.municipio_id) AS mun_nome,
                v.numero_proposta, v.codigo_instrumento, v.objeto, v.situacao,
                v.valor_global, v.valor_repasse, v.parlamentar,
                v.dt_inicio_vigencia, v.dt_fim_vigencia, v.orgao,
-               v.situacao_contratacao, v.situacao_contratacao_detalhe
+               v.situacao_contratacao, v.situacao_contratacao_detalhe,
+               v.ops_obs_aberto, v.ops_obs, v.detalhe
         FROM transferegov_propostas v
         WHERE v.parlamentar ILIKE :n
           AND v.municipal IS NOT FALSE  -- so a prefeitura (services/natureza.py)
@@ -783,16 +876,20 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
         "orgao": r[12],
         "situacao_contratacao": r[13],
         "situacao_contratacao_detalhe": r[14] if isinstance(r[14], dict) else None,
+        **_desembolso_voluntaria(r[15], r[16], r[17]),
         "fonte": "voluntaria",
     } for r in (await db.execute(text(sql2), params)).fetchall()]
 
-    # Emendas
+    # Emendas — no fim (r[11]..r[14]) a EXECUÇÃO da planilha oficial da SEGOV
+    # (`emendas_mg.py`, 24/09/2026). NULO = a planilha não trouxe a indicação;
+    # zero = a SEGOV afirmou zero. Nunca `_money` (que faria de NULO um 0).
     sql3 = f"""
         SELECT e.id, e.municipio_id,
                (SELECT nome FROM municipios WHERE id=e.municipio_id) AS mun_nome,
                e.nr_indicacao, e.ano, e.beneficiario, e.tipo_atendimento,
                e.valor_indicacao, e.nome_responsavel, e.status_indicacao,
-               e.uo_sigla
+               e.uo_sigla,
+               e.valor_empenhado, e.valor_pago, e.execucao_em, e.grupo_despesa
         FROM emendas_estaduais e
         WHERE e.nome_responsavel ILIKE :n
         {where_extra_em}
@@ -805,6 +902,10 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
         "valor_indicacao": _money(r[7]),
         "nome_responsavel": r[8], "status_indicacao": r[9],
         "uo_sigla": r[10],
+        "valor_empenhado": _money_ou_none(r[11]),
+        "valor_pago": _money_ou_none(r[12]),
+        "execucao_em": r[13].isoformat() if hasattr(r[13], "isoformat") else (r[13] or None),
+        "grupo_despesa": r[14],
         "fonte": "emenda",
     } for r in (await db.execute(text(sql3), params)).fetchall()]
 
@@ -826,11 +927,63 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     try:
         ano_te_d = " AND substr(te.programa_codigo, 5, 4) = ANY(:anos_txt_te)" if _anos else ""
         mun_te_d = " AND te.municipio_id = ANY(:muns)"
+        # ⭐ A EXECUÇÃO (24/09/2026): `pagamentos`, os empenhos da árvore e o
+        # carimbo, lidos por `services/execucao_te.py` — a MESMA leitura do RM.
+        # Sem isto a tela e o PDF só tinham `situacao`, que é a do PLANO (CIENTE)
+        # e não anda com o dinheiro. ⚠️ NO FIM DO SELECT, de propósito: o laço lê
+        # por índice, e coluna no meio deslocaria os r[N] seguintes em silêncio.
+        # Só `detalhe->'empenhos'`, e não a árvore inteira (~8 KB por plano).
+        #
+        # ⭐ O PDF NO MODELO DA PLANILHA (24/09/2026), também no fim (r[15]..r[22]):
+        #   r[15] programa_codigo  -> o ANO do plano ('09032024-2' -> 2024), o mesmo
+        #         recorte do filtro de anos logo abaixo;
+        #   r[16] o ÓRGÃO do programa (`detalhe->'programa'`, da API oficial). ⚠️
+        #         NÃO é sempre o Ministério da Fazenda: na captura de 14/09/2026 os
+        #         programas de 2020-2022 são do Ministério da Economia, os de
+        #         2023-2025 da Fazenda e o de 2026 do MGI. Plano sem árvore lida
+        #         pega o órgão de OUTRO plano do MESMO programa (mesmo
+        #         `programa_codigo`) — dado medido, não palpite; COALESCE só roda a
+        #         subconsulta quando o próprio plano não tem;
+        #   r[17] os relatórios de gestão, ENXUTOS (tipo, situação, data e quantas
+        #         análises) — a lista crua carrega os documentos de liquidação;
+        #   r[18] quantos relatórios há na lista ANTIGA (`relatorios_gestao`);
+        #   r[19] o objeto de cada executor (o texto que a prefeitura escreveu);
+        #   r[20]/r[21] função/subfunção de cada finalidade (a ÁREA do plano);
+        #   r[22] as áreas de política pública da LISTAGEM (reserva sem árvore).
+        # ⚠️ Sem `::` (cast) neste SQL: o teste de gramática troca `:param` por `$n`.
         sql_pa = f"""
             SELECT te.plano_acao_id, te.municipio_id, m.nome, te.codigo, te.emenda,
                    te.parlamentar, te.objeto, te.situacao,
                    COALESCE(te.valor_total, 0), COALESCE(te.valor_custeio, 0),
-                   COALESCE(te.valor_investimento, 0)
+                   COALESCE(te.valor_investimento, 0),
+                   te.pagamentos, te.detalhe->'empenhos', (te.detalhe IS NOT NULL),
+                   te.pagamentos_atualizado_em,
+                   te.programa_codigo,
+                   COALESCE(te.detalhe->'programa'->>'nome_orgao_programa',
+                            (SELECT t2.detalhe->'programa'->>'nome_orgao_programa'
+                               FROM transferegov_te t2
+                              WHERE t2.programa_codigo = te.programa_codigo
+                                AND t2.detalhe->'programa'->>'nome_orgao_programa' IS NOT NULL
+                              LIMIT 1)),
+                   (SELECT jsonb_agg(jsonb_build_object(
+                               'tipo', rg->>'tipo_relatorio_gestao_novo',
+                               'situacao', rg->>'situacao_relatorio_gestao_novo',
+                               'data', rg->>'data_relatorio_gestao_novo',
+                               'analises', CASE WHEN jsonb_typeof(rg->'analises') = 'array'
+                                                THEN jsonb_array_length(rg->'analises')
+                                                ELSE 0 END))
+                      FROM jsonb_array_elements(
+                               CASE WHEN jsonb_typeof(te.detalhe->'relatorios_gestao_novos') = 'array'
+                                    THEN te.detalhe->'relatorios_gestao_novos'
+                                    ELSE jsonb_build_array() END) rg),
+                   CASE WHEN jsonb_typeof(te.detalhe->'relatorios_gestao') = 'array'
+                        THEN jsonb_array_length(te.detalhe->'relatorios_gestao') ELSE 0 END,
+                   jsonb_path_query_array(te.detalhe, '$.executores[*].objeto_executor'),
+                   jsonb_path_query_array(te.detalhe,
+                       '$.executores[*].finalidades[*].cd_area_politica_publica_tipo_pt'),
+                   jsonb_path_query_array(te.detalhe,
+                       '$.executores[*].finalidades[*].cd_area_politica_publica_pt'),
+                   te.raw_data->>'codigo_descricao_areas_politicas_publicas_plano_acao'
             FROM transferegov_te te
             LEFT JOIN municipios m ON m.id = te.municipio_id
             WHERE te.parlamentar IS NOT NULL AND te.municipio_id IS NOT NULL
@@ -849,6 +1002,30 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
             autor = (r[5] or "").strip()
             if not autor or alvo not in _norm(autor):
                 continue
+            # Try POR LINHA: a execução de um plano com JSONB estranho não pode
+            # derrubar o `except` de fora, que apagaria a seção inteira.
+            try:
+                ex = execucao_te(r[11], r[12], bool(r[13]))
+                ex_em = r[14].isoformat() if r[14] else None
+            except Exception:
+                ex, ex_em = execucao_te(None), None
+            # O modelo da planilha (24/09/2026). Try próprio pela mesma razão do
+            # de cima: JSONB estranho num plano não apaga a seção inteira.
+            try:
+                relatorios = _jsonb_lista(r[17])
+                extra_pa = {
+                    "ano": _ano_do_plano(r[15], r[4]),
+                    "orgao_programa": (r[16] or "").strip() or None,
+                    "relatorios_gestao": relatorios,
+                    "relatorio_gestao": frase_relatorio_gestao(
+                        relatorios, r[18] or 0, bool(r[13]), ex["estado"]),
+                    "objetos_executor": [str(o).strip() for o in _jsonb_lista(r[19])
+                                         if str(o or "").strip()],
+                    "funcoes": _pares_funcao(r[20], r[21], r[22]),
+                }
+            except Exception:
+                extra_pa = {"ano": None, "orgao_programa": None, "relatorios_gestao": [],
+                            "relatorio_gestao": "", "objetos_executor": [], "funcoes": []}
             plano_acao.append({
                 "id": r[0],
                 "municipio_id": r[1], "municipio_nome": r[2],
@@ -860,6 +1037,18 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
                 "valor_total": _money(r[8]),
                 "valor_custeio": _money(r[9]),
                 "valor_investimento": _money(r[10]),
+                # `situacao` continua sendo a do PLANO (CIENTE/IMPEDIDO); quem
+                # exibe rotula "Situação do plano". A execução vem ao lado, com
+                # None onde não foi medido — nunca R$ 0 inventado.
+                "execucao": ex["rotulo"],
+                "execucao_estado": ex["estado"],
+                "execucao_consultada": ex["consultada"],
+                "valor_empenhado": ex["valor_empenhado"],
+                "valor_pago": ex["valor_pago"],
+                "valor_a_pagar": ex["valor_a_pagar"],
+                "dt_ultimo_pagamento": ex["dt_ultimo_pagamento"],
+                "execucao_consultada_em": ex_em,
+                **extra_pa,
                 "fonte": "plano_acao",
             })
     except Exception:
@@ -869,11 +1058,14 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     # Selecao PAC / Novo PAC — proponente (ou emenda) como parlamentar
     pac_list: list = []
     try:
+        # `programa_codigo` no fim (r[10]): 13 dígitos = órgão SIAFI (5) + ano +
+        # sequencial — é de onde o PDF tira o MINISTÉRIO da seleção
+        # (`ingestion/portal_transparencia.orgao_do_programa`).
         pac_sql = """
             SELECT id, municipio_id,
                    (SELECT nome FROM municipios WHERE id=transferegov_pac.municipio_id) AS mun,
                    numero_proposta, programa, situacao, valor_total,
-                   emenda_parlamentar, proponente, objeto
+                   emenda_parlamentar, proponente, objeto, programa_codigo
             FROM transferegov_pac
             WHERE COALESCE(NULLIF(TRIM(emenda_parlamentar), ''), proponente) ILIKE :n
         """
@@ -888,7 +1080,8 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
                 "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
                 "numero_proposta": r[3], "programa": r[4], "situacao": r[5],
                 "valor_total": _money(r[6]), "emenda_parlamentar": r[7],
-                "proponente": r[8], "objeto": r[9], "fonte": "pac",
+                "proponente": r[8], "objeto": r[9], "programa_codigo": r[10],
+                "fonte": "pac",
             })
     except Exception:
         pass
@@ -907,15 +1100,29 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     # o comentario do RP9 acima existe para impedir. Sem autor real, a proposta
     # cai no Fundo Municipal (mesmo fallback do agregado, p/ o valor nao se
     # perder), e o drill-down do proprio Fundo segue funcionando.
+    #
+    # ⚠️⚠️ UMA LINHA POR (municipio, nº da proposta) — 24/09/2026, revisao do PDF.
+    # A proposta 36000679587202500 (R$ 450.000, paga) tinha o mesmo autor DUAS
+    # vezes em `parlamentares[]` e saia em duas linhas de R$ 450.000: TOTAL R$
+    # 900.000 e "RECURSOS PAGOS". O valor e a PARTE do autor
+    # (`propostas_saude_por_autor`: soma dos `vlIndObjeto` dele); a proposta que
+    # reaparece com o MESMO autor (outra linha do FNS) nao soma de novo, e a que
+    # reaparece com OUTRO autor que tambem casou a busca soma a parte dele — sem
+    # passar do `vlProposta`.
     fns_list: list = []
+    fns_por_chave: dict = {}      # (municipio_id, numero) -> item de fns_list
+    autores_da_chave: dict = {}   # (municipio_id, numero) -> {autor normalizado}
     try:
         alvo = _norm(nome_param)
+        # No fim (r[9], r[10]) o TIPO e o RECURSO da proposta ("INCREMENTO MAC"),
+        # o que o RM escreve como objeto do FNS (`rm_builder`, ramo FNS).
         fns_sql = """
             SELECT c.id, c.municipio_id,
                    (SELECT nome FROM municipios WHERE id=c.municipio_id) AS mun,
                    c.objeto, c.orgao_concedente, c.ano,
                    c.dt_vigencia_inicial, c.dt_vigencia_final,
-                   c.raw_data->'linhaPropostas'
+                   c.raw_data->'linhaPropostas',
+                   c.raw_data->>'coTipoProposta', c.raw_data->>'dsTipoRecurso'
             FROM convenios_estadual c
             WHERE c.fonte ILIKE '%FNS%'
               AND jsonb_typeof(c.raw_data->'linhaPropostas') = 'array'
@@ -928,7 +1135,7 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
             mun_nome = r[2] or ""
             label = _fns_label(mun_nome)
             label_key = _norm(label)
-            for p in propostas_saude_por_autor(r[8]):
+            for p in propostas_saude_por_autor(r[8], com_pagamento=True):
                 autor = p["autor"]
                 if autor:
                     if alvo and alvo not in _norm(autor):
@@ -938,14 +1145,39 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
                     if alvo and alvo not in label_key and label_key not in alvo:
                         continue
                     proponente = label
-                fns_list.append({
+                chave = (r[1], p["numero"]) if p["numero"] else None
+                ja = fns_por_chave.get(chave) if chave else None
+                if ja is not None:
+                    vistos = autores_da_chave[chave]
+                    if _norm(proponente) in vistos:
+                        continue          # a mesma proposta e o mesmo autor: já contada
+                    vistos.add(_norm(proponente))
+                    soma = ja["valor_total"] + _money(p["valor"])
+                    teto = _money(p.get("valor_proposta"))
+                    ja["valor_total"] = min(soma, teto) if teto > 0 else soma
+                    ja["proponente"] = f"{ja['proponente']}, {proponente}"
+                    continue
+                item = {
                     "id": r[0], "municipio_id": r[1], "municipio_nome": r[2],
                     "numero": p["numero"], "objeto": r[3], "situacao": p["situacao"],
+                    # A PARTE do autor na proposta (ver o topo deste bloco).
                     "valor_total": _money(p["valor"]), "orgao": r[4], "ano": r[5],
                     "dt_vigencia_inicial": str(r[6]) if r[6] else None,
                     "dt_vigencia_final": str(r[7]) if r[7] else None,
-                    "proponente": proponente, "fonte": "fns",
-                })
+                    "proponente": proponente,
+                    # O pagamento DA PROPOSTA (não da linha), None se não veio, e
+                    # o valor inteiro dela — "pago em parte: X de <proposta>".
+                    "vl_pago": p.get("vl_pago"), "vl_pagar": p.get("vl_pagar"),
+                    "data_pagamento": p.get("data_pagamento"),
+                    "valor_proposta": p.get("valor_proposta"),
+                    "tipo_proposta": (r[9] or "").strip() or None,
+                    "tipo_recurso": (r[10] or "").strip() or None,
+                    "fonte": "fns",
+                }
+                fns_list.append(item)
+                if chave:
+                    fns_por_chave[chave] = item
+                    autores_da_chave[chave] = {_norm(proponente)}
         fns_list.sort(key=lambda x: x["valor_total"], reverse=True)
     except Exception:
         pass
@@ -968,8 +1200,11 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
     # Transferencia Especial (`te.emenda` no formato '<codigo>-<Nome>'). Sem o
     # desconto, a mesma emenda apareceria DUAS VEZES ao expandir e o
     # `valor_total` daqui passaria o do cabecalho — que e onde o gestor confere.
-    # Onde nao ha chave (PAC, FNS) nao se tenta casar por nome, pela mesma razao
-    # de la: casamento por nome de autor apagaria emenda legitima.
+    # Onde nao ha chave casada nao se tenta casar por nome, pela mesma razao de
+    # la: casamento por nome de autor apagaria emenda legitima. O PAC nao traz o
+    # nº da emenda; o FNS traz (`coEmendaPolitica` + `nuAnoExercicio` em
+    # `parlamentares[]`), mas o formato dele contra o `codigo_emenda` de 12
+    # digitos nunca foi medido — por isso ainda nao se casa (CONTINUAR §1.41).
     ef_list: list = []
     try:
         where_ef = " AND ef.municipio_id = ANY(:muns)"
@@ -982,7 +1217,7 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
                    ef.beneficiario_nome, ef.e_prefeitura,
                    ef.parlamentar, ef.tipo_parlamentar,
                    COALESCE(ef.valor_repasse_emenda, 0),
-                   ef.qualif_proponente
+                   ef.qualif_proponente, ef.orgao_siafi
               FROM emendas_federais_carteira ef
              WHERE ef.parlamentar ILIKE :n
                AND NOT EXISTS (
@@ -1008,6 +1243,9 @@ async def detalhe_core(db: AsyncSession, nome_normalizado: str, muns: list[int],
             # que o cabecalho atribuiu ao parlamentar.
             "valor_total": _money(r[10]),
             "qualif_proponente": r[11],
+            # No fim do SELECT (r[12]): o órgão SIAFI da emenda — o MINISTÉRIO
+            # no PDF (`routers/emendas_federais.ORGAOS_SIAFI`).
+            "orgao_siafi": r[12],
             "fonte": "emenda_federal",
         } for r in (await db.execute(text(sql_ef_det), params)).fetchall()]
     except Exception:

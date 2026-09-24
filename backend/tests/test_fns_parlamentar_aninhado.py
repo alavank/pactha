@@ -124,6 +124,8 @@ def test_proposta_rica_sem_autor_vira_None_para_o_fundo():
 
 
 def test_varios_autores_rateiam_cada_um_com_a_proposta_inteira():
+    # SEM `vlIndObjeto`: a reserva é o `vlProposta`. Com ele, cada autor leva a
+    # SUA parte (ver os testes da revisão do PDF, no fim do arquivo).
     r = propostas_saude_por_autor(
         [{"nuProposta": "7", "vlProposta": 100000.0,
           "parlamentares": [{"nome": "Ana Silva"}, {"nome": "Bruno Costa"}]}])
@@ -166,3 +168,67 @@ def test_as_TRES_superficies_usam_o_modulo_compartilhado():
     assert "emendas_saude_por_autor" in router      # bloco 6 (agregado)
     assert "propostas_saude_por_autor" in router     # detalhe (drill-down)
     assert "emendas_saude_por_autor" in bi           # aba do BI
+
+
+# ---------------------------------------------------------------------------
+# A PARTE DO AUTOR, não a proposta inteira (24/09/2026, revisão do PDF)
+# ---------------------------------------------------------------------------
+# Achado 1 da revisão do 248361f: a proposta 36000679587202500 (R$ 450.000,
+# paga) com o MESMO autor duas vezes em `parlamentares[]` (coEmendaPolitica
+# 37080010 com vlIndObjeto 250.000 e 37080011 com 200.000) saía em DUAS linhas
+# de R$ 450.000 — TOTAL R$ 900.000 no PDF.
+def _parl(nome, emenda, parte):
+    return {"noApelidoPolitico": nome, "coEmendaPolitica": emenda,
+            "nuAnoExercicio": 2025, "vlIndObjeto": parte}
+
+
+def test_mesmo_autor_duas_vezes_e_uma_entrada_com_a_soma_das_partes():
+    props = [{"nuProposta": "36000679587202500", "vlProposta": 450000.0,
+              "parlamentares": [_parl("NIKOLAS FERREIRA", "37080010", 250000.0),
+                                _parl("NIKOLAS FERREIRA", "37080011", 200000.0)]}]
+    assert propostas_saude_por_autor(props) == [
+        {"autor": "NIKOLAS FERREIRA", "valor": 450000.0,
+         "numero": "36000679587202500", "situacao": None}]
+    # O agregado (cabeçalho) e o BI contam o mesmo — uma vez, R$ 450 mil.
+    assert emendas_saude_por_autor(props) == [("NIKOLAS FERREIRA", 450000.0)]
+
+
+def test_o_mesmo_autor_e_reconhecido_sem_caixa_e_sem_acento():
+    props = [{"nuProposta": "1", "vlProposta": 450000.0,
+              "parlamentares": [_parl("Luis Tibé", "1", 250000.0),
+                                _parl("LUIS TIBE", "2", 200000.0)]}]
+    assert emendas_saude_por_autor(props) == [("Luis Tibé", 450000.0)]
+
+
+def test_dois_autores_cada_um_com_o_seu_vlIndObjeto():
+    props = [{"nuProposta": "36000679587202500", "vlProposta": 450000.0,
+              "parlamentares": [_parl("NIKOLAS FERREIRA", "37080010", 250000.0),
+                                _parl("IGOR TIMO", "40200001", 200000.0)]}]
+    assert emendas_saude_por_autor(props) == [("NIKOLAS FERREIRA", 250000.0),
+                                              ("IGOR TIMO", 200000.0)]
+
+
+def test_sem_vlIndObjeto_a_reserva_e_o_vlProposta_uma_vez_so():
+    props = [{"nuProposta": "1", "vlProposta": 450000.0,
+              "parlamentares": [{"noApelidoPolitico": "NIKOLAS FERREIRA"},
+                                {"noApelidoPolitico": "NIKOLAS FERREIRA"}]}]
+    assert emendas_saude_por_autor(props) == [("NIKOLAS FERREIRA", 450000.0)]
+
+
+def test_a_parte_do_autor_nunca_passa_da_proposta():
+    props = [{"nuProposta": "1", "vlProposta": 450000.0,
+              "parlamentares": [_parl("NIKOLAS FERREIRA", "1", 300000.0),
+                                _parl("NIKOLAS FERREIRA", "2", 300000.0)]}]
+    assert emendas_saude_por_autor(props) == [("NIKOLAS FERREIRA", 450000.0)]
+
+
+def test_com_pagamento_traz_o_valor_inteiro_da_proposta():
+    """O pagamento é da PROPOSTA: quem escreve "pago em parte: X de Y" divide
+    pelo `valor_proposta`, não pela parte do autor."""
+    props = [{"nuProposta": "1", "vlProposta": 450000.0, "vlPago": 200000.0,
+              "vlPagar": 250000.0,
+              "parlamentares": [_parl("NIKOLAS FERREIRA", "1", 250000.0),
+                                _parl("IGOR TIMO", "2", 200000.0)]}]
+    r = propostas_saude_por_autor(props, com_pagamento=True)
+    assert [(p["autor"], p["valor"], p["valor_proposta"]) for p in r] == [
+        ("NIKOLAS FERREIRA", 250000.0, 450000.0), ("IGOR TIMO", 200000.0, 450000.0)]

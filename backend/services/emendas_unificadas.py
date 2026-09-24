@@ -19,10 +19,12 @@ valor indicado da mesma emenda é contar o mesmo dinheiro duas vezes. O que NÃO
 casa vira linha própria — perder a emenda Pix porque a carteira não a viu seria
 o erro oposto, e o mais caro dos dois (é o que o gestor procura).
 
-⚠️ PAC e FNS FICAM FORA DESTA LISTA, de propósito. Nenhum dos dois traz código de
+⚠️ PAC e FNS FICAM FORA DESTA LISTA, de propósito. O PAC não traz código de
 emenda — só o NOME do parlamentar —, e casar por nome apagaria emenda legítima
-(a regra já escrita em `routers/parlamentares.py`, bloco 7). Eles continuam na
-aba Parlamentares, que é a soma por autor.
+(a regra já escrita em `routers/parlamentares.py`, bloco 7). O FNS traz
+(`coEmendaPolitica` + `nuAnoExercicio` em `linhaPropostas[].parlamentares[]`),
+mas o formato dele contra o código de 12 dígitos nunca foi medido — até ser,
+não se casa. Os dois continuam na aba Parlamentares, que é a soma por autor.
 """
 from __future__ import annotations
 
@@ -275,7 +277,11 @@ def totais(linhas: list[dict]) -> dict:
         # pagamento" sem dizer "de 33" é lido como "todas as 354 pagas".
         if l["grupo"] in GRUPOS_COM_EXECUCAO:
             t["com_execucao_n"] += 1
-        if l["origem"] == "federal" and not l.get("execucao_consultada"):
+        # ⚠️ A linha SEM Nº DA EMENDA fica fora (24/09/2026): não há consulta
+        # possível, e o cartão dizia "1 da carteira ainda não consultada(s)"
+        # para sempre. Ela tem grupo e motivo próprios (`sem_codigo`).
+        if (l["origem"] == "federal" and not l.get("execucao_consultada")
+                and l.get("grupo") != "sem_codigo"):
             t["nao_consultadas_n"] += 1
         ex = l["execucao"] or {}
         if (ex.get("valor_pago") or 0) + (ex.get("valor_resto_pago") or 0) > 0:

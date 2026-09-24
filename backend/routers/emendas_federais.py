@@ -106,7 +106,21 @@ def classificar(e: dict) -> dict:
     ⚠️ E «não consultada» NÃO entra em «precisa de cobrança». Se entrasse, um
     município recém-ligado abriria com metade da carteira "urgente", que é o
     mesmo que nenhuma — o defeito medido e documentado em `routers/obrasgov.py`.
+
+    ⚠️ «SEM Nº DA EMENDA» VEM ANTES DE «NÃO CONSULTADA» (24/09/2026). A linha da
+    carteira sem `codigo_emenda` (o dump traz NR_EMENDA vazio ou num formato de
+    que não se deriva o código) nunca entra na fila da CGU nem casa no JOIN — nem
+    pela planilha nem pela API. Chamá-la de «ainda não consultada» prometia uma
+    busca que nunca vai acontecer, e o aviso «consultada em 36 de 37» não saía
+    nunca (pergunta da Laiza, Nova Serrana: "é só um aviso ou ainda não está
+    puxando todos os dados?").
     """
+    if not e.get("codigo_emenda"):
+        return {"grupo": "sem_codigo", "alertas": [],
+                "motivo": "Os dados abertos do TransfereGov trazem esta emenda sem um "
+                          "número de emenda utilizável, e é pelo número que a CGU "
+                          "publica a execução. Por isso ela não tem como ser "
+                          "consultada — não é R$ 0 nem coleta pendente."}
     if not e["execucao_consultada"]:
         return {"grupo": "nao_consultada", "alertas": [],
                 "motivo": "A execução desta emenda ainda não foi consultada no "
@@ -236,6 +250,9 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
     tot = {"emendas": 0, "indicado": 0.0, "indicado_prefeitura": 0.0,
            "indicado_outros": 0.0, "com_empenho_n": 0, "com_pagamento_n": 0,
            "com_resto_n": 0, "parado_n": 0, "nao_consultadas_n": 0,
+           # Linha sem nº da emenda na fonte: fora da conta das "não consultadas"
+           # — não há consulta possível (ver `classificar`).
+           "sem_codigo_n": 0,
            "impositivas_n": 0,
            # O ÚNICO valor de execução que soma: é por município (favorecidos).
            "recebido_municipio": 0.0}
@@ -318,6 +335,8 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
                 tot["com_pagamento_n"] += 1
             if (e["valor_resto_inscrito"] or 0) > 0:
                 tot["com_resto_n"] += 1
+        elif e["grupo"] == "sem_codigo":
+            tot["sem_codigo_n"] += 1
         else:
             tot["nao_consultadas_n"] += 1
         if e["grupo"] == "parado":
@@ -390,10 +409,13 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
     estado = classificar_emendas_federais(
         chave_configurada=chave_ok, houve_coleta=houve_coleta,
         tem_cnpj=tem_cnpj, n_emendas=tot["emendas"],
-        n_execucao_consultada=consultadas)
+        n_execucao_consultada=consultadas, n_sem_codigo=tot["sem_codigo_n"])
     aviso = FRASE_EMENDAS_FEDERAIS.get(estado, "")
     if estado == "parcial":
-        aviso = aviso.format(consultadas=consultadas, total=tot["emendas"])
+        # O denominador é o que PODE ser consultado: a linha sem nº da emenda
+        # tem grupo e motivo próprios na lista, e não entra no "X de Y".
+        aviso = aviso.format(consultadas=consultadas,
+                             total=tot["emendas"] - tot["sem_codigo_n"])
 
     coleta_em, falhas = await frescor_coleta(db, municipio_id,
                                              ("portal_transparencia",))
@@ -402,7 +424,8 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
         "estado": estado, "aviso": aviso, "fonte_ligada": chave_ok,
         "municipio_nome": mun_nome,
         "coleta_em": coleta_em, "coleta_falhas": falhas,
-        "execucao": {"consultadas": consultadas, "total": tot["emendas"]},
+        "execucao": {"consultadas": consultadas, "total": tot["emendas"],
+                     "sem_codigo": tot["sem_codigo_n"]},
         "escopo": {"cnpjs": sorted(benefs.values(),
                                    key=lambda b: (not b["prefeitura"], b["nome"] or ""))},
         "totais": tot,
