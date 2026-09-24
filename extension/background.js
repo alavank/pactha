@@ -174,6 +174,15 @@ async function getAllCookiesForDomain(host) {
   return out;
 }
 
+/* A captura FINAL do roteiro que desiste sem enviar deixa o motivo para o popup —
+   senão ele mostrava "enviando…" por 10 min sobre uma captura que nunca saiu. */
+async function _fimDoRoteiroSemEnvio(reason, motivo) {
+  if (!/^captura_completa/.test(String(reason || ""))) return;
+  const { pactha_roteiro_fim: fim } = await chrome.storage.local.get(["pactha_roteiro_fim"]);
+  await chrome.storage.local.set({ pactha_roteiro_fim: {
+    ...(fim || { quando: new Date().toISOString() }), barrado: motivo } });
+}
+
 async function capture(host, reason, opts) {
   const forcar = !!(opts && opts.forcar);   // a captura FINAL do roteiro fura o debounce
   const cfg = await getConfig();
@@ -189,6 +198,7 @@ async function capture(host, reason, opts) {
   const ambientes = await lerAmbientes();
   if (!ambientes.some((a) => a.token && a.ativo !== false)) {
     console.log("[PACTHA] nenhum ambiente com token, ignorando captura");
+    await _fimDoRoteiroSemEnvio(reason, "nenhum ambiente com token");
     return;
   }
   // ⚠️ `forcar` (o fim da "Captura completa") é AÇÃO DA PESSOA, como a captura
@@ -219,6 +229,7 @@ async function capture(host, reason, opts) {
     const logado = await chromeEstaLogado();
     if (logado === false) {
       console.log(`[PACTHA] Chrome sem login gov.br — nada enviado [${reason}@${host}]`);
+      await _fimDoRoteiroSemEnvio(reason, "o Chrome não está logado no TransfereGov");
       return;
     }
   }
@@ -227,6 +238,7 @@ async function capture(host, reason, opts) {
   const cookies = await getAllCookiesForDomain(host);
   if (!cookies.length) {
     console.log(`[PACTHA] nenhum cookie pra ${host}`);
+    await _fimDoRoteiroSemEnvio(reason, "nenhum cookie para enviar");
     return;
   }
   const httpOnlyCount = cookies.filter((c) => c.httpOnly).length;
@@ -374,7 +386,15 @@ async function _concluiPasso(rot, url) {
     const proximo = rot.passo + 1;
     if (proximo < PORTAS_GOVBR.length) {
       await _gravaRoteiro({ ...atual, passo: proximo, em: Date.now() }, `abrindo a porta ${proximo + 1}`);
-      chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[proximo].url });
+      try {
+        await chrome.tabs.update(rot.tabId, { url: PORTAS_GOVBR[proximo].url });
+      } catch (e) {
+        // A navegação não saiu ("Tabs cannot be edited right now"): devolve o passo;
+        // o próximo alarme refaz o avanço. Sem isto o tick creditaria a página da
+        // porta anterior ao passo novo e pularia uma porta.
+        await chrome.storage.local.set({ pactha_roteiro: atual });
+        console.warn("[PACTHA] roteiro: a aba não navegou (" + (e && e.message || e) + ") — tento de novo");
+      }
     } else {
       let host = "discricionarias.transferegov.sistema.gov.br";
       try { host = new URL(url).hostname || host; } catch (_) { /* ignore */ }
@@ -403,8 +423,9 @@ async function avancarRoteiro(details) {
     // Esperando a PESSOA logar (reCAPTCHA, 2FA, telefone). O prazo de 20 min conta
     // do ÚLTIMO carregamento da tela de login, não do clique — senão um login
     // demorado fazia o roteiro morrer calado no meio, sem abrir as portas 2–4.
-    if (!String(rot.fase || "").startsWith("esperando o login")) {
-      await _gravaRoteiro({ ...rot, em: Date.now() }, `esperando o login (porta ${rot.passo + 1})`);
+    if (!String(rot.fase || "").startsWith("passando pelo login")) {
+      await _gravaRoteiro({ ...rot, em: Date.now() },
+        `passando pelo login gov.br (porta ${rot.passo + 1}) — se pedir login, faça`);
     } else {
       await chrome.storage.local.set({ pactha_roteiro: { ...rot, em: Date.now() } });
     }
@@ -420,12 +441,21 @@ async function avancarRoteiro(details) {
      e confere que a aba continua NA MESMA URL. `status` "complete" confirma na
      hora; na mesma URL por ~20s também vale (ver o cabeçalho deste bloco). */
   const semFragmento = (u) => String(u || "").split("#")[0];
-  const conferir = async (tentativa) => {
+  const conferir = async (tentativa, pendentes = 0) => {
     try {
       const tab = await chrome.tabs.get(rot.tabId);
       if (!tab || semFragmento(tab.url) !== semFragmento(details.url)) return;  // navegou: o próximo sinal decide
+      /* ⚠️ NAVEGAÇÃO EM VOO NÃO É PÁGINA ASSENTADA. Enquanto o main frame navega
+         (POST do muro ao idp, porta seguinte lenta), `tab.url` ainda é a URL
+         anterior e `pendingUrl` diz para onde vai. Contar isso como "20s na mesma
+         URL" abortava o SAML no meio ou pulava uma porta (revisão de 23/09). Espera
+         sem gastar tentativa; o commit (onCompleted) ou o alarme decide. */
+      if (tab.pendingUrl) {
+        if (pendentes < 30) setTimeout(() => conferir(tentativa, pendentes + 1), ROTEIRO_PASSO_MS);
+        return;
+      }
       if (tab.status !== "complete" && tentativa < ROTEIRO_TENTATIVAS) {
-        setTimeout(() => conferir(tentativa + 1), ROTEIRO_PASSO_MS);
+        setTimeout(() => conferir(tentativa + 1, pendentes), ROTEIRO_PASSO_MS);
         return;
       }
       await _concluiPasso(rot, details.url);
@@ -444,6 +474,7 @@ async function tickRoteiro() {
   let tab = null;
   try { tab = await chrome.tabs.get(rot.tabId); } catch (_) { tab = null; }
   if (!tab) { await _encerraRoteiro("a aba do roteiro foi fechada"); return; }
+  if (tab.pendingUrl) return;     // navegando: `tab.url` ainda é a da porta anterior
   await avancarRoteiro({ tabId: rot.tabId, url: tab.url, frameId: 0 });
 }
 
@@ -451,6 +482,16 @@ chrome.webNavigation.onCompleted.addListener((details) => {
   if (details.frameId !== 0) return;
   avancarRoteiro(details).catch((e) => console.warn("[PACTHA] roteiro: " + (e && e.message || e)));
 }, { url: [{ schemes: ["https"] }] });
+
+/* Roteiro que sobrou de antes (o travado da 2.4.1, extensão recarregada, Chrome
+   reaberto): sem o alarme, nada o limparia e o popup o mostraria "em andamento"
+   para sempre. O tick encerra se a aba sumiu ou se o prazo venceu. */
+chrome.storage.local.get(["pactha_roteiro"]).then(({ pactha_roteiro: r }) => {
+  if (!r) return;
+  Promise.resolve(chrome.alarms.get(ROTEIRO_TICK)).then((a) => {
+    if (!a) chrome.alarms.create(ROTEIRO_TICK, { periodInMinutes: 0.5 });
+  }).catch(() => {});
+}).catch(() => {});
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name !== ROTEIRO_TICK) return;

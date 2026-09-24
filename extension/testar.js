@@ -271,8 +271,9 @@ const chk = (cond, msg) => {
   {
     // ⚠️ Travou em produção em 23/09/2026 ("só fica abrindo e não captura"). Estes
     // cenários rodam o background.js inteiro com abas, eventos e alarme simulados.
-    const montarBg = (cenario) => {
-      const store = { pactha_ambientes: [{ nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true }] };
+    const montarBg = (cenario, inicial) => {
+      const store = { pactha_ambientes: [{ nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true }],
+        ...(inicial || {}) };
       const ouvintes = { nav: [], alarme: [], msg: [] };
       const abas = new Map();
       const posts = [];
@@ -281,13 +282,17 @@ const chk = (cond, msg) => {
       const ecoa = (v, cb) => { if (cb) cb(v); return Promise.resolve(v); };
       const nada = () => {};
       const navegar = (aba, url) => {
-        aba.url = url; aba.status = "loading";
         const plano = cenario(url, aba) || {};
-        setTimeout(() => {
-          if (plano.url) aba.url = plano.url;
+        aba.status = "loading";
+        aba.pendingUrl = url;                    // como no Chrome: a URL velha fica até o commit
+        const commit = () => {
+          delete aba.pendingUrl;
+          aba.url = plano.url || url;
+          (aba.visitas = aba.visitas || []).push(aba.url);
           if (!plano.carregando) aba.status = "complete";
           if (!plano.semEvento) ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: aba.url, frameId: 0 }));
-        }, 1);
+        };
+        setTimeout(commit, plano.pendenteMs || 1);
       };
       const chromeFalso = {
         storage: { local: {
@@ -298,9 +303,16 @@ const chk = (cond, msg) => {
         tabs: {
           create: (o, cb) => { const aba = { id: proxId++, url: o.url, status: "complete" }; abas.set(aba.id, aba); if (cb) cb(aba); },
           get: (id) => abas.has(id) ? Promise.resolve({ ...abas.get(id) }) : Promise.reject(new Error("No tab with id")),
-          update: (id, o) => { const aba = abas.get(id); if (aba && o.url) navegar(aba, o.url); },
+          update: (id, o) => {
+            const aba = abas.get(id);
+            if (aba && aba.recusa) { aba.recusa--; return Promise.reject(new Error("Tabs cannot be edited right now")); }
+            if (aba && o.url) navegar(aba, o.url);
+            return Promise.resolve(aba);
+          },
         },
-        alarms: { create: (n) => alarmes.add(n), clear: (n) => alarmes.delete(n), onAlarm: { addListener: (f) => ouvintes.alarme.push(f) } },
+        alarms: { create: (n) => alarmes.add(n), clear: (n) => alarmes.delete(n),
+          get: (n) => Promise.resolve(alarmes.has(n) ? { name: n } : undefined),
+          onAlarm: { addListener: (f) => ouvintes.alarme.push(f) } },
         webNavigation: { onCompleted: { addListener: (f) => ouvintes.nav.push(f) } },
         cookies: { onChanged: { addListener: nada },
           getAll: (q, cb) => cb(q.domain === "idp.transferegov.sistema.gov.br"
@@ -361,7 +373,7 @@ const chk = (cond, msg) => {
       let logado = false;
       const bg = montarBg((url) => (url === PORTA(0) && !logado) ? { url: "https://sso.acesso.gov.br/login?client_id=x" } : {});
       bg.clicar(); await bg.esperar(200);
-      chk(bg.store.pactha_roteiro && /esperando o login/.test(bg.store.pactha_roteiro.fase), "(d) diz que está esperando o login");
+      chk(bg.store.pactha_roteiro && /passando pelo login/.test(bg.store.pactha_roteiro.fase), "(d) diz que está no login (e que é para logar se pedir)");
       chk(govbrPosts(bg).length === 0, "(d) nada enviado antes do login");
       logado = true;
       const aba = [...bg.abas.values()][0];
@@ -378,6 +390,58 @@ const chk = (cond, msg) => {
       await bg.tick();
       chk(!bg.store.pactha_roteiro && !bg.alarmes.has("pactha_roteiro_tick"), "(e) aba fechada encerra o roteiro e o alarme");
       chk(govbrPosts(bg).length === 0, "(e) a captura do roteiro não sai");
+    }
+    // (g) porta LENTA (navegação pendente por muito tempo): não é pulada nem cortada
+    {
+      const bg = montarBg((url) => url === PORTA(1) ? { pendenteMs: 400 } : {});
+      bg.clicar(); await bg.esperar(150);
+      await bg.tick(); await bg.tick();          // o alarme cai no meio da navegação pendente
+      await bg.esperar(700);
+      const aba = [...bg.abas.values()][0];
+      chk(JSON.stringify(aba.visitas) === JSON.stringify([PORTA(0), PORTA(1), PORTA(2), PORTA(3)]),
+        "(g) porta lenta: as 4 portas, em ordem, nenhuma pulada");
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "(g) e a captura saiu no fim");
+    }
+    // (h) recurso que nunca termina E evento perdido: o alarme resolve sozinho
+    {
+      const bg = montarBg((url) => url === PORTA(2) ? { carregando: true, semEvento: true } : {});
+      bg.clicar(); await bg.esperar(200);
+      chk(bg.store.pactha_roteiro && bg.store.pactha_roteiro.passo === 2, "(h) parado na porta 3");
+      await bg.tick(); await bg.esperar(400);
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "(h) o alarme destravou");
+    }
+    // (i) a aba recusa navegar uma vez: o passo volta e o alarme refaz
+    {
+      const bg = montarBg(() => ({}));
+      bg.clicar(); await bg.esperar(20);
+      const aba = [...bg.abas.values()][0];
+      aba.recusa = 1;                            // a próxima tabs.update falha
+      await bg.esperar(200);
+      await bg.tick(); await bg.esperar(400);
+      chk(JSON.stringify(aba.visitas) === JSON.stringify([PORTA(0), PORTA(1), PORTA(2), PORTA(3)]),
+        "(i) navegação recusada não pula porta");
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "(i) e a captura saiu");
+    }
+    // (j) roteiro ÓRFÃO de antes (2.4.1, sem alarme): o service worker rearma e limpa
+    {
+      const bg = montarBg(() => ({}), { pactha_roteiro: { tabId: 999, passo: 1, em: Date.now() } });
+      await bg.esperar(30);
+      chk(bg.alarmes.has("pactha_roteiro_tick"), "(j) ao subir, o alarme do roteiro que sobrou é rearmado");
+      await bg.tick();
+      chk(!bg.store.pactha_roteiro, "(j) e o roteiro órfão (aba 999 não existe) é encerrado");
+    }
+    // (k) o Chrome está DESLOGADO no fim: o popup fica sabendo que nada foi enviado
+    {
+      const bg = montarBg(() => ({}));
+      bg.ctx.fetch = async (url, opt) => {
+        if (opt && opt.method === "POST") { bg.posts.push(JSON.parse(opt.body)); return { ok: true, status: 200, json: async () => ({}) }; }
+        if (String(url).includes("/session-capture/saude")) return { ok: true, status: 200, json: async () => ({}) };
+        return { ok: true, status: 200, url, text: async () => '<TITLE>HTTP Post Binding (Request)</TITLE><FORM ACTION="https://idp.transferegov.sistema.gov.br/idp/"><INPUT NAME="SAMLRequest" VALUE="x"/></FORM>' };
+      };
+      bg.clicar(); await bg.esperar(400);
+      chk(govbrPosts(bg).length === 0, "(k) Chrome deslogado: nada enviado");
+      chk(bg.store.pactha_roteiro_fim && /não está logado/.test(bg.store.pactha_roteiro_fim.barrado || ""),
+        "(k) e o motivo fica para o popup (não mais «enviando…» por 10 min)");
     }
     // (f) o estado existe ANTES de a aba navegar (a corrida que perdia o 1º evento)
     {
