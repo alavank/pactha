@@ -390,7 +390,7 @@ async function mostrarRoteiro() {
     // Só uma captura do TRANSFEREGOV com a sonda dizendo LOGADO: a do FNS/SIMEC (o
     // keepalive de 12 min) também "chega a um servidor" e não diz nada da sessão gov.br.
     const saiuDepois = ult && ult.quando && ult.ambientes_ok > 0
-      && ult.automation_key === "govbr" && ult.sonda === "logado"
+      && ult.automation_key === "govbr" && (ult.sonda === "logado" || ult.sonda === "visitante_com_login")
       && Date.parse(ult.quando) >= Date.parse(fim.quando) - 1000;
     if ((fim.barrado || fim.venceu) && saiuDepois) {
       const ruinsDepois = (ult.falhas || []).length;
@@ -555,6 +555,13 @@ async function init() {
     // esta tela existe para evitar.
     const incompletos = lista.filter((a) => a.token && /^pacth?a_st_/.test(a.token)
       && a.token.length < 50).map((a) => a.nome);
+    /* ⚠️ TOKEN DE LOGIN DA WEB (24/09/2026, o Juranda de novo): o valor colado não
+       começava com "pactha_", então ia como JWT (Bearer). O JWT da web vale 60 min:
+       o teste de salvar PASSAVA e, uma hora depois, o servidor respondia "JWT
+       inválido ou expirado" — o popup acusava na próxima captura, sem dizer por quê.
+       O token da extensão é o SERVICE TOKEN ("pactha_st_…", não expira). */
+    const deLoginWeb = lista.filter((a) => a.token && !/^pacth?a_/.test(a.token))
+      .map((a) => a.nome);
     let recusados = [];
     try {
       const itens = await consultarSaude(lista);
@@ -565,7 +572,12 @@ async function init() {
       avisos.push(`Token INCOMPLETO em: ${incompletos.join(", ")} — copie o token inteiro (~64 caracteres) `
         + "da janela que aparece ao criar; a lista mostra só o começo.");
     }
-    const soRecusados = recusados.filter((n) => !incompletos.includes(n));
+    if (deLoginWeb.length) {
+      avisos.push(`Token de LOGIN DA WEB em: ${deLoginWeb.join(", ")} — ele vence em 1 hora. Use o `
+        + "SERVICE TOKEN (começa com «pactha_st_»): no PACTHA desse cliente, Configurações › Service "
+        + "Tokens › criar, scope session:write, e cole o valor inteiro.");
+    }
+    const soRecusados = recusados.filter((n) => !incompletos.includes(n) && !deLoginWeb.includes(n));
     if (soRecusados.length) {
       avisos.push(`O servidor RECUSOU o token de: ${soRecusados.join(", ")} — token errado, revogado `
         + "ou só o começo dele. Crie outro e cole o valor inteiro.");

@@ -18,13 +18,16 @@
       + "visitante não conecta os servidores.";
     // ⛔ Sem mandar clicar em «Sair do Acesso Livre»: ele desloga TAMBÉM o gov.br deste
     // Chrome (medido em 24/09/2026) — e, com ele, a sessão que os servidores usam.
-    var TEXTO_LIVRE = "PACTHA: este Chrome está no Acesso Livre (visitante) — os servidores não "
-      + "conectam assim. Use «Captura completa» no PACTHA: ela sai do Acesso Livre sozinha e abre "
-      + "o login. Evite «Sair do Acesso Livre»: ele desliga o gov.br deste Chrome.";
-    // Com a «Captura completa» em curso é ELA quem sai do Acesso Livre: mandar a
-    // pessoa clicar à mão atropelaria o roteiro (e outra «Captura completa», pior).
-    var TEXTO_LIVRE_ROTEIRO = "PACTHA: a «Captura completa» está tirando este Chrome do Acesso Livre "
-      + "(visitante) — aguarde a tela de login e, nela, clique em «Entrar com gov.br».";
+    // ⚠️ SÓ COM VISITANTE CONFIRMADO PELA EXTENSÃO (24/09/2026 ~16h). A conta do dono
+    // não tem perfil no Discricionárias: com o login gov.br valendo, TODA página dele é
+    // "Acesso Livre" — e isso não barra a captura (o /private/ do mandatárias abre). A
+    // faixa só aparece com `pactha_visitante` recente, que o porteiro grava quando o
+    // visitante é PURO (sem login nenhum). Com a «Captura completa» em curso, nada: o
+    // roteiro segue para a porta 2, que é quem pede o login.
+    var TEXTO_LIVRE = "PACTHA: este Chrome está no Acesso Livre (visitante) e SEM login gov.br — "
+      + "os servidores não conectam assim. Use «Captura completa» no PACTHA e, na tela de login, "
+      + "«Entrar com gov.br». Evite «Sair do Acesso Livre»: ele desliga o gov.br deste Chrome.";
+    var VISITANTE_VALE_MS = 6 * 60 * 60 * 1000;   // o mesmo prazo do background/popup
     // O mesmo prazo do roteiro no background (20 min sem avançar / 60 min no total):
     // roteiro vencido que ficou no storage não acende a faixa.
     var ROTEIRO_TTL_MS = 20 * 60 * 1000;
@@ -89,12 +92,16 @@
       try {
         var livre = ehAcessoLivre();
         if (!livre && !ehTelaDeLogin()) return;
-        chrome.storage.local.get(["pactha_roteiro"], function (d) {
+        chrome.storage.local.get(["pactha_roteiro", "pactha_visitante"], function (d) {
           try {
             var r = d && d.pactha_roteiro;
             var ativo = roteiroAtivo(r);
-            // Visitante vale com ou sem roteiro: é o estado que barra toda captura.
-            if (livre) { faixa(ativo ? TEXTO_LIVRE_ROTEIRO : TEXTO_LIVRE); return; }
+            if (livre) {
+              var v = d && d.pactha_visitante;
+              var puro = !!(v && v.quando && Date.now() - Date.parse(v.quando) < VISITANTE_VALE_MS);
+              if (puro && !ativo) faixa(TEXTO_LIVRE);
+              return;
+            }
             // Na tela de login, só com a «Captura completa» em curso: fora dela, uma
             // faixa em todo login do TransfereGov seria ruído (e deixaria de ser lida).
             if (ativo) faixa(TEXTO_LOGIN);

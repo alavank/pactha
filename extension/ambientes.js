@@ -353,15 +353,51 @@ let _sondaCache = { em: 0, valor: null };
  * guardar o `false` descartaria a captura BOA que chega 2s depois da página de
  * auto-envio do SAML, no meio de um login.
  */
+/** A área PRIVADA do mandatárias (porta 2) abre com o login deste Chrome?
+ *  true = abriu (login gov.br REAL no idp) | false = caiu na tela de login |
+ *  null = não sei (o mandatárias ainda não tem sessão e devolveu o muro SAML de
+ *  auto-envio, que o `fetch` não segue; ou erro de rede).
+ *
+ *  ⭐ MEDIDO no Chrome do dono (24/09/2026 ~16h): com o login gov.br valendo, o
+ *  /private/ do mandatárias abriu ("ERRO — Proposta não Informada", a área logada),
+ *  e o discricionárias continuou em ACESSO LIVRE mesmo com a sessão dele zerada — a
+ *  conta não tem perfil no módulo Discricionárias. Visitante na porta 1 NÃO é prova
+ *  de "sem login": o que prova login é o /private/ abrir. */
+async function sondaMandatarias() {
+  try {
+    const r = await fetch(PORTAS_GOVBR[1].url, { method: "GET", credentials: "include", cache: "no-store" });
+    if (!r.ok) return null;
+    if (pareceLogin(r.url)) return false;
+    const html = await r.text();
+    if (/<title>\s*HTTP Post Binding/i.test(html)) return null;   // sem sessão no SP: não sei
+    if (corpoEhLogin(html)) return false;      // inclui a página de visitante (corpoEhAcessoLivre)
+    return /\/private\//i.test(r.url) ? true : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function chromeEstadoLogin() {
   const agora = Date.now();
-  if (_sondaCache.valor === true && agora - _sondaCache.em < 5000) return { valor: true, motivo: "logado" };
+  if (_sondaCache.valor === true && agora - _sondaCache.em < 5000) {
+    return { valor: true, motivo: _sondaCache.motivo || "logado" };
+  }
   let estado = { valor: null, motivo: "nao_sei" };
   try {
     const r = await fetch(PORTAS_GOVBR[0].url, { method: "GET", credentials: "include", cache: "no-store" });
     if (r.ok) estado = estadoLogin(r.url, await r.text());
   } catch (_) { estado = { valor: null, motivo: "nao_sei" }; }
-  _sondaCache = { em: agora, valor: estado.valor };
+  /* ⚠️ VISITANTE NO DISCRICIONÁRIAS COM LOGIN DE VERDADE (24/09/2026). A conta do
+     dono não tem perfil no módulo Discricionárias: com o login gov.br valendo, a
+     porta 1 continua "Acesso Livre". Até a 2.4.3 isso passava (o "Sair do Acesso
+     Livre" tinha "Sair") e era o estado "conectado" de sempre; a trava de visitante
+     da 2.4.4 passou a barrar TODA captura dessa conta. O que separa o visitante
+     PURO (sem login nenhum — o jar que não pode ir aos servidores) do visitante
+     com login é o /private/ do mandatárias abrir. */
+  if (estado.motivo === "visitante" && (await sondaMandatarias()) === true) {
+    estado = { valor: true, motivo: "visitante_com_login" };
+  }
+  _sondaCache = { em: agora, valor: estado.valor, motivo: estado.motivo };
   return estado;
 }
 
