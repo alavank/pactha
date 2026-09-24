@@ -427,6 +427,18 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     chk(/a\.token\.length < 50/.test(pj), "token pactha_st_ curto (só o começo, da lista) é acusado como INCOMPLETO");
     chk(/btn-save-config[\s\S]{0,4000}consultarSaude\(lista\)/.test(pj), "ao salvar, cada token é testado no servidor dele");
     chk(/HTTP 40\[13\]/.test(pj), "401/403 viram «o servidor RECUSOU o token de: …»");
+    // 24/09/2026: o Juranda colou o token de LOGIN DA WEB (JWT, vence em 60 min) — o
+    // teste de salvar passava e, uma hora depois, "JWT inválido ou expirado".
+    const m = /const deLoginWeb = (lista\.filter\([\s\S]*?\)\s*\.map\(\(a\) => a\.nome\));/.exec(pj);
+    const deLoginWeb = m ? vm.runInNewContext(m[1], {
+      lista: [{ nome: "Web", token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.x" },
+              { nome: "Servico", token: "pactha_st_" + "x".repeat(54) },
+              { nome: "Legado", token: "pacta_st_" + "y".repeat(54) },
+              { nome: "Vazio", token: "" }] }) : null;
+    chk(JSON.stringify(deLoginWeb) === JSON.stringify(["Web"]),
+      "token que não começa com «pactha_» é acusado como LOGIN DA WEB (e só ele)");
+    chk(/Token de LOGIN DA WEB em: [\s\S]{0,200}vence em 1 hora[\s\S]{0,200}SERVICE TOKEN \(começa com «pactha_st_»\)/.test(pj),
+      "a mensagem diz que vence em 1 hora e aponta o SERVICE TOKEN (pactha_st_)");
   }
 
   console.log("\n12) o ROTEIRO da captura completa, rodando de verdade num Chrome falso");
