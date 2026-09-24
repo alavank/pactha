@@ -5,8 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **29 official data sources** (federal +
-MG/ES/GO/RS/PR/TO state). The newest (23/09/2026) is Tocantins' **TRANSFERE.TO**
+emendas) for Brazilian municipalities, tracking **30 official data sources** (federal +
+MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is MG's **official emendas
+spreadsheet** (`emendas_mg.py`, SEGOV's `DADOS_EMENDAS_*.xlsx` at emendas.mg.gov.br, no
+login): it COMPLETES `emendas_estaduais` (same indicação number as SIGCON) with
+empenhado/liquidado/pago, the Resolução SES health transfers and the municípios without a
+SIGCON password — SIGCON keeps its own fields. ⚠️ The spreadsheet is NOT bimonthly: it
+sat at 12/05/2026 for months, so `execucao_em` carries its date to the screen. Before it,
+Tocantins' **TRANSFERE.TO**
 (`convenios_to.py`): the State's convênio system has a PUBLIC "pesquisa externa" hidden
 behind a button of the transparency portal — one page per convênio, walked by id (~3.200,
 ~25 min from the VPS) — with the convenente's CNPJ and the **ordens bancárias** of each

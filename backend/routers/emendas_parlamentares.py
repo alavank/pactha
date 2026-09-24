@@ -258,7 +258,7 @@ async def estaduais(
             ORDER BY ano DESC NULLS LAST, valor_indicacao DESC NULLS LAST
         """, p)
         for it in itens:
-            it["valor_indicacao"] = _f(it.get("valor_indicacao"))
+            _execucao_mg(it)
             it["origem"], it["chave"] = "sigcon", f"sigcon:{it['id']}"
             it["autores"] = [n.strip() for n in str(it.get("nome_responsavel") or "").split(",")
                              if len(n.strip()) >= 3]
@@ -495,6 +495,15 @@ async def _detalhe_federal(db: AsyncSession, municipio_id: int, codigo: str) -> 
     }
 
 
+def _execucao_mg(it: dict) -> None:
+    """Decimal/date da indicação de MG -> JSON (valores da planilha da SEGOV)."""
+    for k in ("valor_indicacao", "valor_empenhado", "valor_liquidado", "valor_pago",
+              "valor_resto_saldo"):
+        it[k] = _f(it.get(k))
+    if it.get("execucao_em") is not None:
+        it["execucao_em"] = it["execucao_em"].isoformat()
+
+
 async def _detalhe_sigcon(db: AsyncSession, municipio_id: int, emenda_id: int) -> dict:
     """A indicação do SIGCON-MG e o convênio que ela gerou, quando já casado.
 
@@ -507,7 +516,7 @@ async def _detalhe_sigcon(db: AsyncSession, municipio_id: int, emenda_id: int) -
     if not linhas:
         raise HTTPException(404, "Emenda não encontrada neste município")
     e = linhas[0]
-    e["valor_indicacao"] = _f(e.get("valor_indicacao"))
+    _execucao_mg(e)
     convenio = None
     if e.get("conv_id"):
         conv = await _consulta(db, """
@@ -524,9 +533,15 @@ async def _detalhe_sigcon(db: AsyncSession, municipio_id: int, emenda_id: int) -
                 convenio[c] = str(convenio[c]) if convenio.get(c) else None
     return {
         "dados": {"emenda": e, "convenio": convenio,
-                  "sem_pagamento_motivo": ("O SIGCON-MG não publica o pagamento por "
-                                           "emenda; o valor e a vigência são os do "
-                                           "convênio ligado.")},
+                  # A planilha oficial da SEGOV (emendas_mg.py) traz o pago DESTA
+                  # indicação; sem ela, o que existe é o convênio ligado.
+                  "sem_pagamento_motivo": (
+                      f"O pagamento vem da planilha oficial da SEGOV "
+                      f"(emendas.mg.gov.br), com dados de {e['execucao_em']}."
+                      if e.get("valor_pago") is not None and e.get("execucao_em") else
+                      "O SIGCON-MG não publica o pagamento por emenda, e esta "
+                      "indicação não está na planilha da SEGOV; o valor e a "
+                      "vigência são os do convênio ligado.")},
         "autores": [n.strip() for n in str(e.get("nome_responsavel") or "").split(",")
                     if len(n.strip()) >= 3],
     }

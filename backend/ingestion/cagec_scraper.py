@@ -298,11 +298,17 @@ def _texto_do_pdf(dados: bytes) -> str:
 # Portal
 # --------------------------------------------------------------------------
 def _municipios_alvo() -> list[dict]:
-    """Municipios ativos + CNPJ descoberto nos dados que ja temos.
+    """Municipios ativos + o CNPJ da PREFEITURA.
 
-    O CNPJ nao esta na tabela `municipios` (nao existe a coluna), entao vem das
-    fontes ja coletadas: as emendas estaduais trazem `cnpj_beneficiario` do
-    proprio municipio, e o PAC traz `cnpj`."""
+    Primeiro `municipios.cnpj` (a coluna existe desde o SICONFI, que a preenche
+    do cadastro de entes do Tesouro); na falta dele, as fontes ja coletadas — as
+    emendas estaduais e o PAC.
+
+    ⚠️ DESDE 24/09/2026 `emendas_estaduais` TEM FUNDO MUNICIPAL (a planilha da
+    SEGOV traz a Resolucao SES ao Fundo Municipal de Saude). O filtro antigo era
+    `beneficiario ILIKE '%MUNIC%'` com LIMIT 1 sem ordem — e "FUNDO MUNICIPAL DE
+    SAUDE" casa com ele: a consulta do CAGEC sairia com o CNPJ do FUNDO. Agora so
+    nome que COMECA por PREFEITURA ou MUNICIPIO."""
     import psycopg2
     url = os.getenv("DATABASE_URL_SYNC", "")
     url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
@@ -311,10 +317,12 @@ def _municipios_alvo() -> list[dict]:
     _sql = """
         SELECT m.id, m.nome, m.uf,
                COALESCE(
+                 NULLIF(regexp_replace(coalesce(m.cnpj, ''), '\\D', '', 'g'), ''),
                  (SELECT regexp_replace(e.cnpj_beneficiario, '\\D', '', 'g')
                     FROM emendas_estaduais e
                    WHERE e.municipio_id = m.id
-                     AND e.beneficiario ILIKE '%MUNIC%'
+                     AND (e.beneficiario ILIKE 'PREFEITURA%'
+                          OR e.beneficiario ILIKE 'MUNIC%')
                      AND e.cnpj_beneficiario IS NOT NULL
                    LIMIT 1),
                  (SELECT regexp_replace(p.cnpj, '\\D', '', 'g')

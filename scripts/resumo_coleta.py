@@ -54,6 +54,7 @@ ONDE_OLHAR = {
     "sigcon": "portal SIGCON-MG (login por municipio; senha revogada = 'Esqueci minha senha')",
     "sigcon_scraper": "portal SIGCON-MG (login por municipio)",
     "sigcon_emendas": "portal SIGCON-MG > Emendas",
+    "emendas_mg": "emendas.mg.gov.br/transparencia (DADOS_EMENDAS_*.xlsx da SEGOV)",
     "cagec": "cagec.mg.gov.br/convenente-web (consulta publica por CNPJ)",
     "cauc": "CAUC/Tesouro (consulta por CNPJ)",
     "acordofes": "Acordo FES-MG",
