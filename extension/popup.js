@@ -10,7 +10,9 @@ const $ = (id) => document.getElementById(id);
    três telas que o mostram (roteiro barrado, aviso do modo automático, manual). */
 const PASSO_A_PASSO_LIVRE = "O que fazer: 1) clique em «Captura completa» — ela sai do Acesso "
   + "Livre sozinha; 2) na tela de login do TransfereGov, clique em «Entrar com gov.br» (NUNCA em "
-  + "«Acesso livre») e faça o login; 3) o roteiro segue sozinho pelas 4 portas.";
+  + "«Acesso livre») e faça o login; 3) o roteiro segue sozinho pelas 4 portas. Se mesmo "
+  + "entrando com gov.br o TransfereGov voltar como visitante, a conta gov.br deste Chrome não "
+  + "tem perfil no TransfereGov: saia do gov.br e entre com a conta cadastrada.";
 const AVISO_LIVRE_VALE_MS = 6 * 60 * 60 * 1000;   // o mesmo prazo do selo, no background
 
 // Ver nota em background.js: config salva no dominio morto vence o DEFAULT_API,

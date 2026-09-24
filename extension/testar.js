@@ -718,6 +718,10 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
         "(b) saiu do Acesso Livre 3 vezes (porta 1 reaberta 3×), e não uma 4ª — e nunca pelo LLO");
       chk(fim && fim.visitante === true && /voltou ao Acesso Livre/.test(fim.barrado || "")
         && /«Entrar com gov\.br»/.test(fim.barrado || ""), "(b) o motivo fica para o popup: voltou ao Acesso Livre; «Entrar com gov.br»");
+      // medido em 24/09/2026: o visitante voltou MESMO com «Entrar com gov.br» (a conta do Chrome)
+      chk(/conta gov\.br deste Chrome/.test(fim.barrado || "") && /conta gov\.br cadastrada no TransfereGov/.test(fim.barrado || "")
+        && /servidores sem sessão/.test(fim.barrado || ""),
+        "(b) e o caso da CONTA: sair de tudo só com os servidores sem sessão, e entrar com a conta cadastrada");
       chk(govbrPosts(bg).length === 0 && !bg.posts.some((p) => p.automation_key === "govbr"), "(b) nada enviado");
       chk(!bg.alarmes.has("pactha_roteiro_tick"), "(b) o alarme do roteiro foi desligado");
       chk(bg.selo.texto === "!" && /ACESSO LIVRE/.test(bg.selo.titulo), "(b) selo «!» dizendo Acesso Livre");
@@ -1000,6 +1004,8 @@ const TIT_LOGADA = "Transferegov - Consultar Proposta";
     const passo = m ? vm.runInNewContext(m[1]) : "";
     chk(/«Captura completa»/.test(passo) && /«Entrar com gov\.br» \(NUNCA em «Acesso livre»\)/.test(passo),
       "popup: o passo a passo diz «Captura completa» e «Entrar com gov.br», nunca «Acesso livre»");
+    chk(/voltar como visitante/.test(passo) && /conta cadastrada/.test(passo),
+      "popup: e o que fazer se, mesmo com gov.br, voltar como visitante (a conta)");
     chk(/pactha_visitante/.test(pj) && /AVISO_LIVRE_VALE_MS = 6 \* 60 \* 60 \* 1000/.test(pj) && /recente && !rot/.test(pj),
       "popup: aviso de Acesso Livre com pactha_visitante < 6h e sem roteiro ativo");
     chk(/id="aviso-livre"/.test(ph), "popup.html: o lugar do aviso de Acesso Livre");

@@ -119,6 +119,13 @@ barraria a captura boa para sempre.
   em «Acesso livre»**: esse link leva a `www.gov.br/transferegov/…/acesso-livre`, e o
   roteiro volta à porta 1 contando uma saída. Mais de 3 saídas encerram o roteiro com
   esse motivo no popup.
+- ⚠️ **Medido no Chrome do dono (24/09/2026, ~11h):** apagar a sessão de visitante NÃO
+  bastou — o servidor de login devolveu "Acesso Livre" de novo, inclusive depois de
+  «Entrar com gov.br» com a conta gov.br logada (nível ouro). Aí a causa é a conta gov.br
+  do Chrome (sem perfil no TransfereGov) ou a sessão de visitante presa no servidor de
+  login, e só sair de tudo resolve. Depois de 3 saídas o roteiro para e o popup diz isso:
+  com os servidores sem sessão, «Sair do Acesso Livre» na página e entrar com a conta
+  cadastrada.
 - ⛔ **Nunca o "Sair do Acesso Livre" da página** (`/voluntarias?LLO=true`): ele roda
   o logout de mandatárias, acompanhamento, habilitação **e do gov.br**
   (`sso.acesso.gov.br/logout`) — derruba a sessão que os servidores usam quando ela é

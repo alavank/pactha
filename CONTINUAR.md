@@ -2375,7 +2375,11 @@ link `/voluntarias?LLO=true` dentro de `<div id="info">`. ⛔ **O LLO NÃO é "s
 a sessão dos servidores quando ela é a mesma do Chrome. (Eu abri o LLO no Chrome do dono em 24/09 ~08:05
 BRT, antes de saber; a sessão dos servidores já estava morta desde 23:41.) **Sair do visitante sem
 logout = apagar o `JSESSIONID` do discricionarias** e reabrir a porta 1 — medido num navegador isolado:
-cai em "Login do Transferegov". A tela do idp tem «Entrar com gov.br» e, logo abaixo, o link
+cai em "Login do Transferegov". ⚠️ **No Chrome do dono (24/09 ~11h) isso NÃO bastou:** o servidor de
+login devolveu "Acesso Livre" de novo, inclusive depois de «Entrar com gov.br» com a conta gov.br logada
+(nível ouro) — a conta do Chrome sem perfil no TransfereGov, ou a sessão de visitante presa no idp. Só
+sair de tudo (o LLO, feito por mim às ~11h com os servidores já sem sessão) e entrar com a conta
+cadastrada resolve; o roteiro diz isso depois de 3 saídas. A tela do idp tem «Entrar com gov.br» e, logo abaixo, o link
 «Acesso livre» (`www.gov.br/transferegov/…/acesso-livre`) — a armadilha, que devolve ao visitante. A
 2.4.4 já barrava a captura de visitante (certo), mas calada: o roteiro abria as 4 portas sem nunca ver
 login e terminava "nada enviado", sem dizer o que fazer. **Não medido:** a página LOGADA (título e HTML)

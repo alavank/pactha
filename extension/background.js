@@ -448,9 +448,20 @@ const FASE_SAINDO_DO_LIVRE = "o Chrome estava no Acesso Livre (visitante): a ses
   + "foi apagada — na tela de login, clique em «Entrar com gov.br», NÃO em «Acesso livre»";
 const FASE_VOLTOU_DA_ARMADILHA = "você clicou em «Acesso livre» (visitante não conecta os "
   + "servidores): voltando à tela de login — clique em «Entrar com gov.br»";
+/* ⚠️ MEDIDO no Chrome do dono (24/09/2026, ~11h): o visitante pode voltar MESMO com
+   «Entrar com gov.br» — o servidor de login do TransfereGov devolveu "Acesso Livre"
+   depois do login gov.br (conta nível ouro), e apagar a sessão de visitante do
+   discricionarias não bastou. Aí o problema é a conta gov.br logada neste Chrome (sem
+   perfil no TransfereGov) ou a sessão de visitante presa no servidor de login — e só
+   sair de TUDO resolve. A extensão não faz isso sozinha (o «Sair do Acesso Livre»
+   desloga o gov.br, e com ele a sessão dos servidores quando é a mesma): diz à pessoa. */
 const BARRADO_VOLTOU_AO_LIVRE = `o TransfereGov voltou ao Acesso Livre (visitante) depois de `
-  + `${ROTEIRO_LIVRE_MAX} saídas — na tela de login é preciso clicar em «Entrar com gov.br», `
-  + "NÃO em «Acesso livre»";
+  + `${ROTEIRO_LIVRE_MAX} saídas. Se você clicou «Acesso livre» na tela de login, clique em `
+  + "«Captura completa» de novo e use «Entrar com gov.br», NÃO «Acesso livre». Se você já "
+  + "entrou com gov.br e mesmo assim voltou como visitante, a conta gov.br deste Chrome não "
+  + "abre o TransfereGov com perfil: com os servidores sem sessão (selo «!»), clique em «Sair do "
+  + "Acesso Livre» na página (desloga o gov.br deste Chrome) e entre com a conta gov.br cadastrada "
+  + "no TransfereGov";
 
 const _semFragmento = (u) => String(u || "").split("#")[0];
 
