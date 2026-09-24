@@ -53,6 +53,12 @@ _SOURCES = [
     ("FNS — Fundo a fundo (saúde)",
      "SELECT max(updated_at), count(*) FROM fns_repasse_faf",
      "fns_faf"),
+    # ⚠️ A DATA É A DO SALDO (`dt_saldo`), NÃO A DA RODADA: o Portal FNS publica o
+    # arquivo uma vez por ano (o de 2025 saiu em 16/01/2026 com saldo de
+    # 30/11/2025). A rodada diária carimbaria "hoje" num número de meses atrás.
+    ("FNS — Saldo das contas do Fundo Municipal (arquivo anual)",
+     "SELECT max(dt_saldo)::timestamptz, count(*) FROM fns_saldo_conta",
+     "fns_saldo"),
     # ⚠️ CONTA SÓ OS QUE ESTÃO NO AR. O radar guarda o programa que saiu de
     # cartaz (marcado com `ausente_desde`, e não apagado); somá-los aqui faria o
     # monitor crescer para sempre e nunca acusar um radar que parou de achar
@@ -226,6 +232,13 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("Emendas estaduais (MG)",
          "SELECT max(updated_at), count(*) FROM emendas_estaduais",
          None),
+        # ⚠️ A DATA É A DA PLANILHA (`execucao_em`), NÃO A DA RODADA: a SEGOV
+        # ficou de 12/05 a (pelo menos) 24/09/2026 sem regerar o arquivo, e é
+        # isso que a tela precisa mostrar — a rodada diária carimbaria "hoje".
+        ("Execução das emendas estaduais — planilha SEGOV (MG)",
+         "SELECT max(execucao_em)::timestamptz, count(*) FILTER (WHERE execucao_em IS NOT NULL) "
+         "FROM emendas_estaduais",
+         "emendas_mg"),
         # ⚠️ FILTRA POR FONTE. Desde que `cagec_situacao` passou a guardar o
         # cadastro estadual de outros estados (CHE-RS), contar a tabela inteira
         # aqui creditaria a Minas linha coletada no Rio Grande do Sul — o mesmo

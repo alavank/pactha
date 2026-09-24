@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **29 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **31 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -29,7 +29,7 @@
 
 ---
 
-## 1.38. Relatório de vigências — o que a Freitas achou confuso (24/09/2026)
+## 1.40. Relatório de vigências — o que a Freitas achou confuso (24/09/2026)
 
 Relato da Márcia (Freitas), com dois casos conferidos no dado aberto do Estado (CKAN `dm_convenio`
 de 22/09, `fl_convenio_alteracao`, e o CSV da SEGOV de 23/09):
@@ -75,6 +75,58 @@ de 22/09, `fl_convenio_alteracao`, e o CSV da SEGOV de 23/09):
   do relatório o convênio já vencido com aditivo em tramitação; no CKAN `dt_vigencia_inicial` e
   `dt_vigencia_final` são o FIM ORIGINAL, e o backfill os grava em colunas de outro sentido.
 
+## 1.39. Saldo das contas do Fundo Municipal de Saúde — Portal FNS (24/09/2026)
+
+Oitava fonte, trazida pelo dono como link (`portalfns.saude.gov.br/downloads/`). A página
+tem PDFs institucionais (prestação de contas 1994-2002, relatórios de gestão) e um arquivo
+por ano, `REPASSE-FAF-COM-POPULACAO-<ANO>` (2002-2022 e 2025; **2023 e 2024 não estão
+lá**). O repasse fundo a fundo nós já tínhamos (`fns_faf.py`, API do ConsultaFNS); o que o
+arquivo tem e nada mais tem é o **SALDO DA CONTA** do Fundo Municipal, por conta.
+
+- **A API do ConsultaFNS não tem saldo** — medido abrindo a tela, como manda a lição do
+  `fns_faf`: o extrato da conta (`recursos/conta-corrente/extrato-movimentacao`) dá 404 e o
+  botão está comentado no código; "Saldo PAB/MAC" é o saldo do TETO, não da conta.
+- **O arquivo é anual e atrasado** (o de 2025 saiu em 16/01/2026, com saldo de 30/11/2025):
+  a tela InvestSUS mostra a data no título do bloco. A rodada é diária, mas só baixa quando
+  há ano novo ou município novo.
+- **Um saldo por conta:** o arquivo repete o saldo em cada estratégia da conta (nenhuma das
+  52.885 contas tem dois saldos). `fns_saldo_conta` tem uma linha por conta.
+- Conferido num Postgres real com o arquivo real: Monte Sião, 12 contas com R$ 4,51 mi em
+  30/11/2025; Nova Palma, 7 contas com R$ 1,16 mi.
+
+## 1.38. Emendas estaduais de MG pela planilha oficial da SEGOV (24/09/2026)
+
+Sétima fonte do relatório do dono ("emendas.mg.gov.br — emendas impositivas e TE
+estadual", prioridade 1). O cartão dizia que o PACTHA "deriva o parlamentar do texto do
+convênio" — era o extrator antigo; a aba de MG já lia `emendas_estaduais`, raspada do
+SIGCON ("Pesquisar Emendas por Convenente", com a SENHA da prefeitura). O que faltava:
+
+- **execução** (empenhado, liquidado, pago, saldo de restos) — o SIGCON só dá o indicado;
+- **Resolução SES** (o fundo a fundo da saúde por emenda, ~3 mil/ano no Estado), que o
+  SIGCON não lista à prefeitura — Monte Sião: 50 indicações, R$ 6,35 mi, R$ 4,09 mi pagos;
+- **o município sem senha do SIGCON** (20 de 42 na Freitas em 29/08).
+
+Coletor `ingestion/emendas_mg.py` lê os dois `DADOS_EMENDAS_*.xlsx` (dois layouts: 26
+colunas sem IBGE até 2022, 49 com IBGE depois) e casa pelo NÚMERO DA INDICAÇÃO, o mesmo
+do SIGCON. Decisões:
+
+- **Completa, não substitui:** numa linha do SIGCON a planilha só preenche o vazio e grava
+  a execução; `raw_data` e situação continuam do SIGCON (ele é diário, a planilha tem meses).
+- **Entidade fora das contas:** OSC, caixa escolar (escola ESTADUAL), órgão estadual e
+  consórcio vão para `emendas_estaduais_outros` (bloco recolhido na aba), no molde de
+  `convenios_estadual_outros`.
+- ⚠️ **A planilha NÃO é bimestral:** parou em 12/05/2026 (aba "12-05"). `execucao_em`
+  leva a data à tela ("Pago até 12/05/2026") e a rodada sai `partial` passados 90 dias.
+- ⚠️ **Conserto de carona no CAGEC:** ele tirava o CNPJ da prefeitura de
+  `emendas_estaduais` com `ILIKE '%MUNIC%'` — e FUNDO MUNICIPAL casa. Agora usa
+  `municipios.cnpj` primeiro e só nome que começa por PREFEITURA/MUNICÍPIO.
+- Tipo normalizado para a grafia do SIGCON ("Transferência Especial", não CAIXA ALTA),
+  senão PDF e BI agrupariam o mesmo tipo em duas linhas.
+
+Conferido num Postgres 16 real com as duas planilhas reais e uma linha simulando o
+SIGCON: Monte Sião com 79 indicações ao município e 24 a entidades, duas rodadas
+idênticas, a linha do SIGCON preservada.
+
 ## 1.37. Execução das emendas federais pela planilha aberta da CGU (24/09/2026)
 
 Sexta fonte do relatório do dono: "Portal da Transparência — aba Transferências
@@ -93,7 +145,9 @@ a vir dela **nos sete**.
   casar o código exato já garante o autor. Os 279 nomes "divergentes" na base nacional
   eram todos a mesma pessoa com outro nome.
 - Conferido num Postgres 16 real com a planilha e a carteira reais: Nova Palma passa a
-  ter execução em 57 das 59 emendas; Monte Sião, 23 de 24.
+  ter execução em 57 das 59 emendas. Monte Sião (CNPJ da prefeitura 22.646.525/0001-31):
+  31 códigos na carteira, 23 com execução publicada. ⚠️ O PR #549 dizia "23 de 24" —
+  era a carteira de POUSO ALEGRE (18.675.983/0001-21), CNPJ que usei por engano no teste.
 - **Falta (PR 2):** os outros dois arquivos do mesmo zip — `_Convenios.csv` (emenda →
   número do convênio, o vínculo que a API não tem) e `_PorFavorecido.csv` (quem recebeu,
   mês a mês, com CNPJ).

@@ -124,6 +124,10 @@ FRESCOR_HORAS_NACIONAL = {
     # Sao fontes diferentes, com coletores diferentes, e uma parada nao diz nada
     # sobre a outra.
     "fns_faf": 30,
+    # SALDO DAS CONTAS do Fundo Municipal (arquivo anual do Portal FNS). A rodada
+    # e diaria e quase sempre so confere a pagina ("ja carregado") e grava
+    # `success`: o que se vigia e a RODADA; a idade do arquivo esta na tela.
+    "fns_saldo": 30,
     # RADAR DE CAPTACAO (siconv_programa.zip). Pendurado no
     # run_dadosabertos_cron.run_all(), que o cron do sigcon chama 4x/dia -> 6h
     # entre rodadas. 30h = quase cinco janelas perdidas, o mesmo criterio do
@@ -235,6 +239,10 @@ FRESCOR_HORAS_POR_UF = {
         # estado tem prazo em UM lugar — `test_frescor_vs_cron.py` agora reprova
         # a mesma fonte nos dois mapas.
         "acordofes": 30,
+        # Planilha oficial de emendas da SEGOV (emendas.mg.gov.br), 1x/dia. O
+        # que se vigia aqui é a RODADA; a idade da PLANILHA (parada desde maio em
+        # 24/09/2026) vira `partial` com a data na nota, pelo próprio coletor.
+        "emendas_mg": 30,
     },
     "ES": {"gconv_es": 30},
     "GO": {"transfvol_go": 30, "cofin_ses_go": 30, "tcm_go": 30},

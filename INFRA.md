@@ -528,6 +528,19 @@ O desenho atual (13/09/2026, "coleta noturna"):
   1020 s. **Criada nos sete em 23/09/2026 ~01:25 UTC** por
   `scripts/criar_task_cgu_convenios.sh` (idempotente), depois do deploy do #539 — a
   migration conferida "143/143 em dia" no log das sete APIs.
+- **`fns-saldo` (24/09/2026), escada de 5 min de 06:00 (freitas) a 06:30 UTC
+  (juranda):** um GET da página de downloads do Portal FNS; o arquivo anual (~16 MB) só é
+  baixado quando sai o ano novo ou entra município novo. Kill 900 s, timeout da task
+  1020 s. Migration `add_fns_saldo_conta.sql` (tabela nova). A criar nos sete por
+  `scripts/criar_task_fns_saldo.sh` (idempotente) depois do deploy.
+- **`emendas-mg` (24/09/2026), escada de 10 min de 07:40 (freitas) a 08:40 UTC
+  (juranda):** os dois `DADOS_EMENDAS_*.xlsx` da SEGOV (~14 MB, ~1 min de leitura) nos
+  tenants com município de MG; nos outros sai antes de baixar (`success`, 0). Kill 900 s,
+  timeout da task 1020 s. Migration `add_emendas_estaduais_execucao.sql` (DDL) entrou no
+  deploy do #550 às 03:33 UTC de 24/09/2026 — fora da regra "depois das 10:00", mas com as
+  coletas PAUSADAS pelo botão de parada, que é o que a regra protege: "145/145 em dia"
+  nas sete APIs, sem `falhou`. **Task criada nos sete em 24/09/2026 ~03:40 UTC** por
+  `scripts/criar_task_emendas_mg.sh`.
 - **`convenios-to` (23/09/2026), escada de UMA HORA de 01:00 (freitas) a 07:00 UTC
   (juranda):** varre todos os ids do TRANSFERE.TO (~3.200 páginas, ~0,45 s cada da VPS,
   ~25 min) no worker que tem município do TO; nos outros sai em segundos (`success`, 0).
