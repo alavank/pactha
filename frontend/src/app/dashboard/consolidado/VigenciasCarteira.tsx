@@ -69,7 +69,10 @@ function numeroDoAlerta(i: Alerta): string {
   const siafi = (i.nr_siafi || "").trim();
   if (i.esfera === "estadual") {
     if (conv) return siafi && siafi !== conv ? `${conv} (SIAFI ${siafi})` : conv;
-    return siafi || sig ? `SIAFI ${siafi || sig}` : "";
+    // SIAFI só quando É SIAFI (mesma regra de `vigencias_export._numero`): a chave
+    // interna de RS/PR/TO/ES e o nº do plano do SIGCON saem como estão.
+    if (siafi) return `SIAFI ${siafi}`;
+    return /^\d+$/.test(sig) ? `SIAFI ${sig}` : sig;
   }
   if (conv && conv !== sig) return conv;
   return sig ? `Proposta ${sig}` : conv;

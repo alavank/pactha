@@ -128,6 +128,19 @@ def test_alertas__estadual_com_numero_SIAFI_e_alteracao__federal_so_instrumento_
     assert "valor_global" in sql_fed
 
 
+def test_prestacao_de_contas_federal_usa_o_MESMO_recorte_do_card():
+    """Revisão de 24/09/2026: o card de prestação federal (`voluntarias_por_fase`)
+    passou a contar só instrumento; a lista ao lado continuava trazendo proposta em
+    análise e rejeitada — card e lista divergiam."""
+    venceu = (date.today() - timedelta(days=200)).strftime("%d/%m/%Y")
+    fed = [("012345/2022", "900001", "Pavimentação", "MINISTÉRIO", "Prestação de Contas", venceu, 7)]
+    db = _Db([], fed)
+    alertas = asyncio.run(cv.query_prestacao_contas(db, None, 90, None, municipio_ids=[7]))
+    assert [a.esfera for a in alertas] == ["voluntaria"]
+    sql_fed = next(s for s in db.sqls if "transferegov_propostas" in s)
+    assert INSTRUMENTO_VIGENTE_SQL in sql_fed, "a lista tem de bater com o card"
+
+
 def test_o_que_vence_HOJE_vai_para_o_TOPO_do_arquivo():
     """`0 or 9999` = 9999 em Python: o instrumento de 0 dias ia para o fim da lista
     "menor prazo primeiro" do arquivo exportado."""

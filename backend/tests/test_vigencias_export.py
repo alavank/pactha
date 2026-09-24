@@ -119,6 +119,22 @@ def test_o_caso_de_Martinho_Campos__numero_do_convenio_e_SIAFI_ao_lado():
     assert ln2["numero"] == "SIAFI 9342516" and ln2["siafi"] == "", "o SIAFI não sai duas vezes"
 
 
+def test_chave_interna_de_outro_Estado_e_plano_do_SIGCON_NUNCA_saem_como_SIAFI():
+    """Revisão de 24/09/2026: a queda rotulava QUALQUER `nr_sigcon` de "SIAFI" —
+    CAGE-RS-…, PR-…, TO-…, GCONV-ES-… e o nº do plano de MG viravam "SIAFI <chave>"."""
+    chaves = ["CAGE-RS-4314100-2023-0017", "PR-12345", "TO-778", "GCONV-ES-123", "002294/2022"]
+    d = vx.normalizar([_A("X", nr_convenio=None, nr_sigcon=k) for k in chaves], None)
+    numeros = [l["numero"] for l in d["linhas"]]
+    assert numeros == chaves and not any("SIAFI" in n for n in numeros)
+    # o SIAFI de verdade continua rotulado: o campo próprio, ou o MG legado só de dígitos
+    com = _A("X", nr_convenio=None, nr_sigcon="CAGE-RS-1")
+    com.nr_siafi = "1512345"
+    assert vx.normalizar([com], None)["linhas"][0]["numero"] == "SIAFI 1512345"
+    assert vx.normalizar([_A("X", nr_convenio=None, nr_sigcon="9342516")], None)["linhas"][0]["numero"] \
+        == "SIAFI 9342516"
+    assert vx.normalizar([_A("X", nr_convenio=None, nr_sigcon=None)], None)["linhas"][0]["numero"] == "—"
+
+
 def test_federal_sem_instrumento_sai_rotulada_como_PROPOSTA():
     d = vx.normalizar([_A("X", esfera="voluntaria", nr_convenio="941314", nr_sigcon="012345/2024"),
                        _A("X", esfera="voluntaria", nr_convenio="012345/2024", nr_sigcon="012345/2024")],

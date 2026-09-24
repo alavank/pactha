@@ -86,15 +86,24 @@ def _numero(a) -> str:
     ⚠️ Quando ele não existe, a queda sai ROTULADA (23/09/2026). O relatório da
     Freitas mostrava 9342516 no "Nº" de Martinho Campos — o SIAFI — e a cliente
     leu, com razão, como se fosse o número do convênio. Estadual sem número de
-    convênio sai "SIAFI 9342516"; federal sem instrumento sai "Proposta 012345/2024"."""
+    convênio sai "SIAFI 9342516"; federal sem instrumento sai "Proposta 012345/2024".
+
+    O rótulo SIAFI só vai em SIAFI de verdade: o `nr_siafi` preenchido, ou o
+    `nr_sigcon` só de dígitos (o MG legado guardava o SIAFI ali). A chave interna
+    dos outros Estados (CAGE-RS-…, PR-…, TO-…, GCONV-ES-…) e o nº do plano do
+    SIGCON ("002294/2022") saem como estão — chamá-los de SIAFI seria o mesmo erro
+    ao contrário."""
     conv = str(getattr(a, "nr_convenio", None) or "").strip()
     sig = str(getattr(a, "nr_sigcon", None) or "").strip()
     siafi = str(getattr(a, "nr_siafi", None) or "").strip()
     if str(getattr(a, "esfera", "") or "").strip().casefold() == "estadual":
         if conv:
             return conv
-        resto = siafi or sig
-        return f"SIAFI {resto}" if resto else "—"
+        if siafi:
+            return f"SIAFI {siafi}"
+        if sig.isdigit():
+            return f"SIAFI {sig}"
+        return sig or "—"
     if conv and conv != sig:
         return conv
     if sig:

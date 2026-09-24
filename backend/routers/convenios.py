@@ -917,11 +917,15 @@ async def query_prestacao_contas(
     _vsql = "AND split_part(numero_proposta, '/', 2) = ANY(:anos_txt)" if _anos else ""
     if _anos:
         _vp["anos_txt"] = [str(a) for a in _anos]
+    # Só INSTRUMENTO (23/09/2026): o card de prestação federal conta pelo mesmo
+    # recorte (`voluntarias_por_fase`); sem ele a lista trazia proposta em análise
+    # e rejeitada, e o número do card não batia com a lista ao lado.
+    from services.fases_voluntaria import INSTRUMENTO_VIGENTE_SQL
     vol = await db.execute(text(f"""
         SELECT numero_proposta, codigo_instrumento, objeto, orgao, situacao, dt_fim_vigencia,
                municipio_id
         FROM transferegov_propostas
-        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql}
+        WHERE {_mun_sql} AND municipal IS NOT FALSE {_vsql} AND {INSTRUMENTO_VIGENTE_SQL}
     """), _vp)
     for row in vol.fetchall():
         dtf = None

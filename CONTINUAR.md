@@ -41,7 +41,10 @@ de 22/09, `fl_convenio_alteracao`, e o CSV da SEGOV de 23/09):
   (dado aberto, gravado pelo backfill numa chave SÓ dele) > `numOriginal` (GConv-ES) > `nr_sigcon`
   com forma 8-12/aaaa; nunca FNS, nunca o plano. Sem número de convênio, o relatório escreve
   **"SIAFI 9342516"** (rotulado) e a federal sem instrumento **"Proposta 012345/2024"**; o SIAFI
-  sai numa coluna própria.
+  sai numa coluna própria. ⚠️ O rótulo SIAFI só vai em SIAFI de verdade (`nr_siafi`, ou
+  `nr_sigcon` só de dígitos = MG legado): a chave interna de RS/PR/TO/ES (`CAGE-RS-…`, `PR-…`,
+  `TO-…`, `GCONV-ES-…`) e o plano do SIGCON saem como estão — mesma regra no export
+  (`vigencias_export._numero`) e na tela (`VigenciasCarteira.tsx`, `numeroDoAlerta`).
 - **Arapuá** (SEAPA, SIAFI 9485644): o relatório dizia 25/11/2026 (63 dias) e a cliente, 24/11/2027.
   **Medido: o Estado publica 25/11/2026 e nenhuma alteração** — os 63 dias batem com o dado oficial;
   a prorrogação não está publicada. MAS havia um defeito nosso: o backfill do CKAN usava
@@ -59,8 +62,10 @@ de 22/09, `fl_convenio_alteracao`, e o CSV da SEGOV de 23/09):
   medidos) e com vazio ≠ "sem alteração" (pode ser convênio que o rodízio ainda não abriu).
 - **"Confuso"**: (1) propostas federais **em análise** entravam como instrumento vencendo — a data
   delas é a vigência PROPOSTA. Recorte único `fases_voluntaria.INSTRUMENTO_VIGENTE_SQL` (categoria
-  'geral' e não cancelada) usado pela lista, pelo relatório **e** pelos cards (`voluntarias_por_fase`)
-  — senão o card diria N e a lista, menos. (2) Federal saía sempre sem valor (`None` fixo): agora
+  'geral' e não cancelada) usado pela lista, pelo relatório, pelos cards (`voluntarias_por_fase`)
+  **e** pela lista de prestação de contas federal (`query_prestacao_contas`) — os cards de
+  prestação contam pelo mesmo `voluntarias_por_fase`; sem o recorte nas duas listas, card e
+  lista divergem. (2) Federal saía sempre sem valor (`None` fixo): agora
   `valor_global`. (3) Município sem valor coletado aparecia "R$ 0,00": agora vazio / "sem valor
   coletado (N)", inclusive no TOTAL. (4) Cabeçalhos cortados (linha 1 sem altura + botão do filtro),
   rótulos novos ("Próximo vencimento", "Valor total (dos com valor)"), autofiltro no intervalo dos
