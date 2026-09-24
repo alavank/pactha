@@ -662,6 +662,9 @@ MIGRATION_FILES = [
     # (24/09/2026): colunas de EXECUCAO em `emendas_estaduais` (ADD COLUMN IF NOT
     # EXISTS) e a tabela das indicacoes a entidade, fora das contas.
     "add_emendas_estaduais_execucao.sql",
+    # Saldo das contas do Fundo Municipal de Saúde pelo arquivo anual do Portal
+    # FNS (24/09/2026). Tabela nova, só com FK para `municipios`.
+    "add_fns_saldo_conta.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

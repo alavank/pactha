@@ -144,6 +144,46 @@ async def _faf(db: AsyncSession, municipio_id: int, ano: int | None) -> dict | N
     }
 
 
+async def _saldo_contas(db: AsyncSession, municipio_id: int) -> dict | None:
+    """O saldo das contas do Fundo Municipal no arquivo anual mais recente do
+    Portal FNS (`ingestion/fns_saldo.py`). None = nunca carregado.
+
+    ⚠️ A DATA VAI JUNTO, SEMPRE: o arquivo é anual e sai com meses de atraso (o de
+    2025, publicado em 16/01/2026, tem saldo de 30/11/2025). É a única fonte
+    pública deste número — a API do ConsultaFNS não o expõe."""
+    try:
+        rows = (await db.execute(text("""
+            SELECT ano, cnpj, entidade, banco, agencia, conta, saldo, dt_saldo,
+                   repassado_ano, estrategias
+              FROM fns_saldo_conta
+             WHERE municipio_id = :m
+               AND ano = (SELECT max(ano) FROM fns_saldo_conta WHERE municipio_id = :m)
+             ORDER BY saldo DESC NULLS LAST
+        """), {"m": municipio_id})).all()
+    except Exception:
+        await db.rollback()
+        return None
+    if not rows:
+        return None
+    contas = [{
+        "cnpj": r[1], "entidade": r[2], "banco": r[3], "agencia": r[4], "conta": r[5],
+        "saldo": float(r[6]) if r[6] is not None else None,
+        "dt_saldo": r[7].isoformat() if r[7] else None,
+        "repassado_ano": float(r[8]) if r[8] is not None else None,
+        # Só os nomes das estratégias: a lista inteira fica no banco.
+        "estrategias": [e.get("estrategia") for e in (r[9] or [])[:12] if e.get("estrategia")],
+    } for r in rows]
+    datas = sorted({c["dt_saldo"] for c in contas if c["dt_saldo"]})
+    return {
+        "ano": rows[0][0],
+        # O saldo é UM por conta (o arquivo o repete por estratégia; a gravação já
+        # deduplicou) — então somar as contas é somar dinheiro diferente.
+        "total": sum(c["saldo"] or 0 for c in contas),
+        "dt_saldo": datas[-1] if datas else None,
+        "contas": contas,
+    }
+
+
 @router.get("", dependencies=[exige("investsus.ver")])
 async def investsus(
     municipio_id: int = Query(...),
@@ -175,6 +215,7 @@ async def investsus(
     do_municipio, da_instancia = (cred[0] or 0), (cred[1] or 0)
 
     faf = await _faf(db, municipio_id, ano)
+    saldo = await _saldo_contas(db, municipio_id)
 
     return {
         "tem_dados": True,
@@ -190,6 +231,9 @@ async def investsus(
         "links": LINKS,
         # ⭐ O DINHEIRO. None enquanto o coletor não rodou neste tenant.
         "faf": faf,
+        # Saldo das contas do Fundo Municipal (arquivo ANUAL do Portal FNS, com a
+        # data). None enquanto não carregado.
+        "saldo_contas": saldo,
         # Agora É automática — mas só do consolidado por bloco. A tela é obrigada
         # a manter essa distinção visível; ver o cabeçalho do módulo.
         "coleta_automatica": faf is not None,

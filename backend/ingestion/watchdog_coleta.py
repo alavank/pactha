@@ -124,6 +124,10 @@ FRESCOR_HORAS_NACIONAL = {
     # Sao fontes diferentes, com coletores diferentes, e uma parada nao diz nada
     # sobre a outra.
     "fns_faf": 30,
+    # SALDO DAS CONTAS do Fundo Municipal (arquivo anual do Portal FNS). A rodada
+    # e diaria e quase sempre so confere a pagina ("ja carregado") e grava
+    # `success`: o que se vigia e a RODADA; a idade do arquivo esta na tela.
+    "fns_saldo": 30,
     # RADAR DE CAPTACAO (siconv_programa.zip). Pendurado no
     # run_dadosabertos_cron.run_all(), que o cron do sigcon chama 4x/dia -> 6h
     # entre rodadas. 30h = quase cinco janelas perdidas, o mesmo criterio do
