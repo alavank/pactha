@@ -282,6 +282,11 @@ FRESCOR_HORAS_POR_UF = {
         # frescor É o dado: 30h parado é regularidade que deixou de ser afirmada.
         "regularidade_pr": 30,
     },
+    "TO": {
+        # Convênios do Estado pelo TRANSFERE.TO (pesquisa externa, 23/09/2026).
+        # Rodada diária que varre todos os ids (~25 min da VPS): 30h, a regra.
+        "convenios_to": 30,
+    },
 }
 
 

@@ -308,7 +308,7 @@ _RECURSOS: tuple = (
     # cabecalho pelos mapas de `estadual.ts`.
     _Recurso("convenios", SEC_CONVENIOS, "Convênios Estaduais",
              "os convênios estaduais", "", ("ver", "exportar", "atualizar"),
-             ufs=("MG", "ES", "PR"), tela="convenios"),
+             ufs=("MG", "ES", "PR", "TO"), tela="convenios"),
 
     # --- ESTADUAIS: as OUTRAS oito telas do grupo -------------------------
     # ⚠️⚠️ ELAS SAIRAM DE DENTRO DE `convenios` EM 05/09/2026, e a saida e o

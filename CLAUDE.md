@@ -5,8 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **28 official data sources** (federal +
-MG/ES/GO/RS/PR state). The newest (23/09/2026) is the **CGU convênios spreadsheet**
+emendas) for Brazilian municipalities, tracking **29 official data sources** (federal +
+MG/ES/GO/RS/PR/TO state). The newest (23/09/2026) is Tocantins' **TRANSFERE.TO**
+(`convenios_to.py`): the State's convênio system has a PUBLIC "pesquisa externa" hidden
+behind a button of the transparency portal — one page per convênio, walked by id (~3.200,
+~25 min from the VPS) — with the convenente's CNPJ and the **ordens bancárias** of each
+repasse, plus the emenda that originated it. -> `convenios_estadual` with
+`fonte='TRANSFERE-TO'`; fundos/entities matched by name against the IBGE list, longest
+name wins. Before it, the **CGU convênios spreadsheet**
 (`cgu_convenios.py`): the federal money that does NOT go through TransfereGov — the
 Defesa Civil *transferências legais* (Nova Palma: 8 active, R$ 22,9 mi, R$ 20,8 mi still
 to be released) and the pre-2009 SIAFI history — from the Portal da Transparência's open

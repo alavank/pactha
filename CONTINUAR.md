@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **28 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **29 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -26,6 +26,38 @@
 - `C:\projetos\PACTA` → clone do repo do Matheus (`MattMatiins/PACTA`), usado só para colaboração com ele. **NUNCA** pushe cruzado entre os dois.
 
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
+
+---
+
+## 1.36. TRANSFERE.TO — os convênios do Estado do Tocantins (23/09/2026)
+
+Quinta fonte do relatório do dono ("Transparência TO — convênios e parcerias (CGE-TO)",
+prioridade 2). A quarta, "SIGEF/SC", foi medida e **não construída**: nenhum cliente tem
+município de SC — o que se mediu está no `docs/BACKLOG_POR_ESTADO.md` §3.6.
+
+- **O cartão apontava duas portas erradas**: `gestao.cge.to.gov.br/convenioseparcerias`
+  é LOGIN, e o Portal da Transparência é Vaadin e dá 403 a navegador headless. A porta
+  boa é a **pesquisa externa do TRANSFERE.TO**, atrás do botão "Consulta de Emendas" do
+  portal: `VisualizarConvenio.aspx?idConvenio=N`, GET simples, sem login. O backlog de
+  25/08 dizia "atrás de login, dificuldade alta" — estava errado.
+- **Coleta por varredura de ids** (~3.200, ~25 min da VPS, uma hora de escada entre
+  tenants): a listagem é WebForms com VIEWSTATE e ~24 s por página de 10. Base inteira
+  baixada em 23/09/2026: **3.083 convênios, ids 60 a 3.163**, buracos de no máximo 3 ids;
+  1.607 de prefeitura/fundo (todos casaram com município), 2.194 com emenda de origem.
+- O que só esta fonte estadual tem: **as ordens bancárias de cada repasse** (o repassado
+  é a soma delas) e **a emenda que originou o convênio** (grade "Origem", em
+  `raw_data.emendas`). A tela ainda não mostra a lista de OBs nem as emendas — estão
+  no raw, prontas para o modal.
+- **Sem município na página**: prefeitura pelo CNPJ (`municipios.cnpj`); fundo municipal
+  e entidade pelo nome contra os 139 municípios do IBGE, o mais longo vence
+  ("São Valério da Natividade" ≠ "Natividade"), com apelido sem "do Tocantins"
+  ("MARIANÓPOLIS"). Entidade vai para `convenios_estadual_outros` (§1.35).
+- `valor_concedente` fica vazio: o "Valor do Convênio" já inclui a contrapartida e é o
+  ORIGINAL (emenda posterior soma recurso sem atualizá-lo — o repassado pode passar dele).
+  Todos os leitores que somam usam `valor_total` primeiro.
+- As 9 armadilhas estão no topo de `ingestion/convenios_to.py`, cobertas por
+  `test_convenios_to.py` com páginas reais (a mistura UTF-8 + Latin-1 na mesma resposta
+  é uma delas).
 
 ---
 

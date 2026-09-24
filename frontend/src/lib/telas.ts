@@ -78,8 +78,8 @@ export const TELAS: TelaDef[] = [
   // ⚠️ AS DEZ ERAM UMA CHAVE SÓ (`convenios`) até 05/09/2026, e as UFs de
   // `convenios` eram a UNIÃO do grupo inteiro justamente por isso. Cada uma
   // carrega agora o próprio estado — o de onde a fonte existe de verdade.
-  // FONTE_CONVENIOS_ESTADUAIS: MG=SIGCON, ES=GConv/SEGER, PR=SIT.
-  { key: "convenios", label: "Convênios Estaduais", ufs: ["MG", "ES", "PR"] },
+  // FONTE_CONVENIOS_ESTADUAIS: MG=SIGCON, ES=GConv/SEGER, PR=SIT, TO=TRANSFERE.TO.
+  { key: "convenios", label: "Convênios Estaduais", ufs: ["MG", "ES", "PR", "TO"] },
   // Só MG tem coletor de emenda estadual (FONTE_EMENDAS_ESTADUAIS). No RS a
   // emenda nem é impositiva — oferecer a caixinha lá prometeria um direito que
   // não existe naquele estado.

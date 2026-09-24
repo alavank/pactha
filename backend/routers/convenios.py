@@ -279,8 +279,8 @@ async def outros_convenentes(
     current: User = Depends(get_current_user),
 ):
     """Convênios ESTADUAIS de quem está no município e NÃO é a prefeitura (APAE,
-    associação, câmara) — `convenios_estadual_outros`, preenchida pelo coletor do
-    PR desde 23/09/2026.
+    associação, câmara) — `convenios_estadual_outros`, preenchida pelos coletores do
+    PR e do TO desde 23/09/2026.
 
     ⚠️ Rota PRÓPRIA, fora da listagem e dos totais: é a regra do dono ("nada é
     descartado, nada entra na conta como se fosse da prefeitura"). A tela mostra
@@ -290,7 +290,7 @@ async def outros_convenentes(
     rows = (await db.execute(text("""
         SELECT chave, fonte, convenente_nome, orgao_concedente, objeto, situacao,
                valor_concedente, valor_repassado, dt_assinatura, dt_vigencia_final,
-               raw_data->>'nr_instrumento'
+               raw_data->>'nr_instrumento', valor_total
           FROM convenios_estadual_outros
          WHERE municipio_id = :m
          ORDER BY dt_vigencia_final DESC NULLS LAST, valor_concedente DESC NULLS LAST
@@ -303,6 +303,9 @@ async def outros_convenentes(
         "dt_assinatura": r[8].isoformat() if r[8] else None,
         "dt_vigencia_final": r[9].isoformat() if r[9] else None,
         "numero": r[10],
+        # O TO publica só o valor TOTAL (com a contrapartida dentro); a tela usa
+        # este quando `valor_concedente` vem vazio.
+        "valor_total": float(r[11]) if r[11] is not None else None,
     } for r in rows]
 
 

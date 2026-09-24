@@ -1,0 +1,888 @@
+
+
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head><title>
+	TRANSFERE.TO
+</title><meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <!-- Meta, title, CSS, favicons, etc. -->
+        <meta charset="utf-8" /><meta http-equiv="X-UA-Compatible" content="IE=edge" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+	    
+
+        <!-- Bootstrap -->
+        <link href="/Styles/vendors/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet" />
+        <!-- Font Awesome -->
+        <link href="/Styles/vendors/font-awesome/css/font-awesome.min.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/pnotify/dist/pnotify.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.buttons.css" rel="stylesheet" />
+        <link href="/Styles/vendors/pnotify/dist/pnotify.nonblock.css" rel="stylesheet" />
+
+        <!-- Custom Theme Style -->
+        <link href="/Styles/build/css/custom.min.css" rel="stylesheet" />
+
+        <link href="/Styles/Site.css" rel="stylesheet" />
+    
+        <script src="/js/jquery-3.3.1.min.js"></script>
+        <script src="/js/jquery.mask.min.js"></script>
+    
+        <link rel="stylesheet" href="/Styles/jquery-confirm.min.css" />    
+        <script src="/js/jquery-confirm.min.js"></script>
+
+        <!-- Switchery -->
+        <link href="/Styles/vendors/switchery/dist/switchery.min.css" rel="stylesheet" />
+
+        <link rel="stylesheet" href="/Styles/jquery-ui.css" />
+        <script src="/js/jquery-ui.js"></script>
+
+        <script src="/js/funcao.js"></script>    
+    
+        <script src="/js/moment.js"></script>
+        <script src="/js/moment-with-locales.js"></script>
+
+        <!-- bootstrap-datetimepicker -->
+        <link href="/Styles/vendors/bootstrap-datetimepicker/build/css/bootstrap-datetimepicker.css" rel="stylesheet" />
+        <script src="/Styles/vendors/bootstrap-datetimepicker/build/js/bootstrap-datetimepicker.min.js"></script>
+
+        <!-- bootstrap-progressbar -->
+        <link href="/Styles/vendors/bootstrap-progressbar/css/bootstrap-progressbar-3.3.4.min.css" rel="stylesheet" />
+
+        <link href="/Styles/style.css" rel="stylesheet" />
+        <link href="/Styles/prism.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+        <link href="/Styles/chosen.css" rel="stylesheet" />
+
+        <link href="/Styles/vendors/select2/dist/css/select2.css" rel="stylesheet" />
+
+        <!-- iCheck -->
+        <link href="/Styles/vendors/iCheck/skins/flat/green.css" rel="stylesheet" />         
+
+        <script type="text/javascript">       
+            (function ($) {
+                $(function () {
+                    $('.data').mask('00/00/0000', { reverse: false });
+                    $('.dinheiro').mask('000.000.000.000,00', { reverse: true, maxlength: 18 });
+                    $('.cpf').mask('000.000.000-00', { reverse: false });
+                    $('.cnpj').mask('00.000.000/0000-00', { reverse: false });
+                    $('.cep').mask('00000-000', { reverse: false });
+                    $('.numero').mask('000', { reverse: true });
+                    $('.numero_dez').mask('0000000000', { reverse: true});
+                    $('.rg').mask('0000000', { reverse: false, maxlength: 7 });
+                    $('.telefone').mask(behavior, options);
+                    $('.agencia').mask('0000-0', { reverse: false });
+                    $('.conta').mask('00000-0', { reverse: false });
+                    $('.numero_decimal').mask('00,0', { reverse: true, maxlength: 4 });
+                    $('.numero_decimal_2').mask('00,00', { reverse: true, maxlength: 4 });
+                    $('.natureza_despesa').mask('0.0.00.00', { reverse: false, maxlength: 9 });
+                    $('.numero_sgd').mask('0000/00000/000000', { reverse: false });
+                });
+            })(jQuery);
+
+            var behavior = function (val) {
+                return val.replace(/\D/g, '').length === 11 ? '(00) 00000-0000' : '(00) 0000-00009';
+            },
+                options = {
+                    onKeyPress: function (val, e, field, options) {
+                        field.mask(behavior.apply({}, arguments), options);
+                    }
+                };
+        </script>
+
+        <script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+        
+</head>
+    <body class="nav-md">
+        <form method="post" action="./VisualizarConvenio.aspx?idConvenio=104" id="frm1" data-parsley-validate="">
+<div class="aspNetHidden">
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" />
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" />
+<input type="hidden" name="__LASTFOCUS" id="__LASTFOCUS" value="" />
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="ez9x6WUUPdC86DhfOGgeVnSc1fiU9MWcjlyTil7ZK7YDhDJMDHjDNsuLdBf1xLAkVYOI6/I1lRyxuc2GuMkNcZybrooMpAD5kLFJSO9Gj3RtiBGLK0P2bSYfOcMbWFd5M3TYoDYKe1aktsRhKVfR8nJQhsJvJhtK3MAe4e3WKI+ZDtuhx4mhOOWZSJ9Do9p0E2mLwORqtKtfa72R1VaM9H2csZcuazSqlnAnuOclKtBgVOMEKeigRVe5158d3LOrbvczzq9b/PLN/52JiSt4mhYeTYjOLccU/4JwBi+CIB2sRgsJPW8xzMOLuTCOpb0v9bxU+trQHyv1Y12LmabhH7MfE42eu/GhMKPCx80Plz0jaZwev+F/jSk/FdmjMVuRMuxBLhHqVGxM6EN4YnfWD6qaFGojlP5zz5PwD9HqtVHf9E2vu5IHidpg6VHuWNd6qbJumd7eqJe3uqDa17ugtXNqmo+oKDCcQoCAm7jXthsemSMgls6tqxTfYr2Og71c+qh9T4pMU6LuwNWWdlk49IAG5EPECPAnUQQehCyI65QSfKJjV+gVGNb2e/VSJ1JfnsHqVeTn4k3LjTVd/E0qdB+PySwSDcqbMQO5HoXi8LVcwwSCtpHDdH82UA+gmvtCodUUIMbBhkM0APryvSwXbYc379bk8sxjQEVoL1yr1ysgVPT0Emze6VenE3e5p3SJg+Qw09htypshGViQas1tO1gdftpTmdJGu7mzQ0GpxJ3wzW9LE2F6Agm3FOamfKGdPBP+t/fizfrwHewr66o7F0qk1mvgh9AY8ekOTHf2TPZLR7lYvHtNbuF+XZnfbCSfzDJxW6/4dkIMAf5pmKuWpaouiQ47ePeAOLEPe7PKNLcMjbborue06eIQrVZPh63Y6GgTt/GJefteV5hnBZc9DqXN+KyJG3CXM9YEY3FwySeaKPuJmPJ6jAZNN+aj02omBG7svunGaCN55ZTX/vYxskAWyZvYfvNiLN7nknDZrfsotbXnGPcLnNFdDPL8FvVpZiwvqxTcVvj5w0PL+0cLd8COZAd4nVqrrNBizHK6lfTdBbzM8FioB13qHzpH1HDq/oosbNW19Iq7ikOoeqoSmwrfJN4wTOOocbIz+PZ5JZgxX2nbLMRjGmUS5b3ZKZgXbOv+OfGl8/dVBoAiUb6j6MzMhb+pKTJyPxqDA6tJ5IwuI3ZdRM1n/p5oxBmeeAZFzwF6ZdFySzQCpntvfZl3R7n1/fXfeGQqRvTG8W8pv3jL8JWwXt2tNLkYNH8pNQ9jgGyuJmfNFrno3d13OaiaEsHCkekgcB4QUVb4TjWUrLZGkYGxoXvnTK1UeqJN5OFz+FYN1uj7sFdYDjHIrvp2MsJ58m/rRrPUVd1vOY034BIVtNBM+GgXCe6hpq6lt1RV6XwpaZeDCq4GHkTgYyYxyPRZ6hMlU0KiRU8lg3QNXpoJp5S5FUA556kdpjXNqy+QoDHNj5VGhDNwszdJh9vKK0BfkhB4FK481HG4Jrh7RogYHm0kbfyMJHgIw5x8MAfkC4qX6P1NwcLRb1QjwsCbOTHp5lT36uqhXzFOEtYYyMwYjGudAvxSYEc1zSdbQJxj695GCBO1rVGSbbFyNbC+Vg1tvPuoqaYIO73xo+nodNGpXijZ7G/8T1ixwNmfvvNZrvGC2/XXGSJ1r+Nxs0We1eTVQvdjkB9gdl6M+ucSGFWeh8X4re9l9a1+Xj+5DuzZfS56jWnkpkMkBvMI7itPqpqnBetYLc7vSuOyD10L0gOypvwzWUylMwSBnNrKstWgzMd2whvlT8nZUszMnL/rWtF2q/wCZIlP6yro6eHHsY396ZH/+FWsjvfM5SmvKQirpxyp6QFeNDvYDL3TWnP3mI3bSCuZj49LQeOfSibs2j4=" />
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['frm1'];
+if (!theForm) {
+    theForm = document.frm1;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<div class="aspNetHidden">
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="F1EDBA79" />
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="gtVnc3IQ/O+l411LbQq3anQdbiOQToahemyZsG33lPpdgJ02r+ZXwxa54cyWPyvwnd7ddYaeT2RBwKli89XhanYfyTFGGDn59+fg4Wf07sGl4qwNyNew9Qmzhy4a6DDXcnfmPFiyHQCbcAZ7uukXLDw/8C4nI/hgrR+EZEiN3gI=" />
+</div>
+            <input type="hidden" name="ctl00$class_body" id="class_body" />
+            <input type="hidden" name="ctl00$txtEnderecoSistema" id="txtEnderecoSistema" />
+            <div class="container body">
+                <div class="main_container">  
+                    
+                    
+
+<div class="col-md-3 left_col">
+    <div class="left_col scroll-view">
+    <div class="navbar nav_title" style="border: 0;">
+        <a href="/Default.aspx" class="site_title"><i class="glyphicon glyphicon-home"></i> <span>TRANSFERE.TO</span></a>
+    </div>
+
+    <div class="clearfix"></div>
+    
+    <br />
+
+    <!-- sidebar menu -->
+    <div id="sidebar-menu" class="main_menu_side hidden-print main_menu">
+        <div class="menu_section">            
+                       
+        </div>        
+    </div>
+    <!-- /sidebar menu -->
+  
+    <!-- /menu footer buttons -->
+    <div class="sidebar-footer hidden-small">
+        
+    </div>
+    <!-- /menu footer buttons -->
+
+    </div>
+</div>        
+                    
+<!-- top navigation -->
+<div class="top_nav">
+    <div class="nav_menu">
+        <nav>
+            <div class="nav toggle">
+                <a id="menu_toggle"><i class="fa fa-bars"></i></a>
+            </div>         
+            
+        </nav>
+    </div>
+</div>
+<!-- /top navigation -->
+                
+                    
+    <input type="hidden" name="ctl00$MainContent$id" id="id" value="104" />
+    <div class="right_col" role="main">
+        <div class="row">
+            <div class="col-md-12 col-sm-12 col-xs-12">
+                <div class="x_panel">
+                    <div class="x_title">
+                        <h2>Convênio > Visualizar</h2>
+                        <div class="clearfix"></div>
+                    </div>
+                    <div class="x_content">
+                        <!-- Dados básicos do convênio -->
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Número</label><br />
+                                <span id="MainContent_lblNumero">29010.000015/2020</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Data de Abertura</label><br />
+                                <span id="MainContent_lblDataAbertura">10/11/2020 17:53:16</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Situação</label><br />
+                                <span id="MainContent_lblSituacao">PRESTAÇÃO DE CONTAS EM ANÁLISE</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label>Órgão Concedente</label><br />
+                                <span id="MainContent_lblOrgaoConcedente">SECRETARIA DA SAÚDE</span>
+                            </div>
+                            
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Convenente</label><br />
+                                <span id="MainContent_lblConveniado">11.326.203/0001-99 - FUNDO MUNICIPAL DE SAÚDE DE AXIXÁ DO TOCANTINS</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Objeto</label><br />
+                                <span id="MainContent_lblFinalidade">AQUISIÇÃO DE MEDICAMENTOS</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-12">
+                                <label>Ação Orçamentária</label><br />
+                                <span id="MainContent_lblAcaoOrcamentaria">4156 - QUALIFICAÇÃO DO PROCESSO DE TRABALHO DA ATENÇÃO PRIMÁRIA</span>
+                            </div>
+                        </div>
+                        <br />
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>Data de Vigência</label><br />
+                                <span id="MainContent_lblDataVigencia">30/04/2020 - 31/12/2023 (1340 dias)</span>
+                            </div>
+                            <div class="col-md-4">
+                                <label>Valor do Convênio</label><br />
+                                <span id="MainContent_lblValorConvenio">R$120.000,00</span>
+                            </div>
+                        </div>
+                        <div class="ln_solid"></div>
+                        <br />
+                        <!-- Abas -->
+                        <div class="" role="tabpanel" data-example-id="togglable-tabs">
+                            <ul id="myTab" class="nav nav-tabs bar_tabs" role="tablist">
+                                <li role="presentation" class="active"><a href="#tab_content_celebracao" id="tab_celebracao" role="tab" data-toggle="tab" aria-expanded="true"><b>Celebração</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_execucao" id="tab_execucao" role="tab" data-toggle="tab" aria-expanded="false"><b>Execução</b></a></li>
+                                <li role="presentation" class=""><a href="#tab_content_prestacao_contas" id="tab_prestacao_contas" role="tab" data-toggle="tab" aria-expanded="false"><b>Prestação de Contas</b></a></li>
+                            </ul>
+                            <div id="myTabContent" class="tab-content">
+                                
+                                <!-- ABA CELEBRAÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade active in" id="tab_content_celebracao" aria-labelledby="aria-labelledby">
+                                    <br />
+                                    <!-- Tabela Origem -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Origem</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_origem" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo</th><th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Data de Abertura</th>
+		</tr><tr>
+			<td class="alinha_centro">PROCESSO</td><td class="alinha_centro">2020/30551/000225</td><td class="alinha_centro">31/03/2020 12:29:36</td>
+		</tr><tr>
+			<td class="alinha_centro">EMENDA</td><td class="alinha_centro">010402.00119/2020</td><td class="alinha_centro">09/03/2020 11:35:37</td>
+		</tr><tr>
+			<td class="alinha_centro">EMENDA</td><td class="alinha_centro">010412.00140/2022</td><td class="alinha_centro">16/02/2022 14:54:03</td>
+		</tr><tr>
+			<td class="alinha_centro">EMENDA</td><td class="alinha_centro">010412.00140/2022</td><td class="alinha_centro">16/02/2022 14:54:03</td>
+		</tr><tr>
+			<td class="alinha_centro">PROJETO</td><td class="alinha_centro">010402.00167/2020</td><td class="alinha_centro">31/03/2020 12:29:36</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Assinatura -->
+                                    <div id="MainContent_divAssinatura" class="row">
+                                        <div class="col-md-12">
+                                            <label>Registro de Assinatura</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_assinaturas" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Data da Assinatura</th><th class="alinha_centro" scope="col">Tipo de Assinatura</th>
+		</tr><tr>
+			<td class="alinha_centro">11/12/2020 11:25:02</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">10/12/2020 23:32:23</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">21/12/2022 18:43:35</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">21/12/2022 18:06:42</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">24/11/2022 13:22:22</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">22/11/2022 11:29:30</td><td class="alinha_centro">
+                                                            LOGIN/SENHA
+                                                        </td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Publicação -->
+                                    
+                                </div>
+                                
+                                <!-- ABA EXECUÇÃO -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_execucao" aria-labelledby="profile-tab">
+                                    <br />
+                                    
+                                    <!-- Solicitações de Adequações -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Solicitações de Adequações</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_adequacoes" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Tipo de Solicita&#231;&#227;o</th><th class="alinha_centro" scope="col">Descri&#231;&#227;o</th><th class="alinha_centro" scope="col">Data de Inclusão</th><th class="alinha_centro" scope="col">Situação</th>
+		</tr><tr>
+			<td class="alinha_centro">00143</td><td>ADITIVAR PROCESSO</td><td>ALTERA&#199;&#195;O DO PLANO DE TRABALHO PARA FINS DE JUNTADA DOS VALORES, PARECER JUR&#205;DICO &#218;NICO, CONTROLE, ACOMPANHAMENTO, E PRESTA&#199;&#195;O DE CONTAS UNIFICADA, CONFORME DETERMINA&#199;&#213;ES CONTIDAS NO ARTIGO 22 DO DECRETO ESTADUAL N&#186; 5.815/2018.</td><td class="alinha_centro">
+                                                            17/02/2022 16:55:56
+                                                        </td><td class="alinha_centro">
+                                                            CONCLUÍDA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">00041</td><td>ADITIVAR PROCESSO</td><td>ALTERA&#199;&#195;O DO PLANO DE TRABALHO PARA FINS DE JUNTADA DOS VALORES, PARECER JUR&#205;DICO &#218;NICO, CONTROLE, ACOMPANHAMENTO, E PRESTA&#199;&#195;O DE CONTAS UNIFICADA, CONFORME DETERMINA&#199;&#213;ES CONTIDAS NO ARTIGO 22 DO DECRETO ESTADUAL N&#186; 5.815/2018.</td><td class="alinha_centro">
+                                                            09/07/2021 14:10:12
+                                                        </td><td class="alinha_centro">
+                                                            CONCLUÍDA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">00023</td><td>ADITIVAR PROCESSO</td><td>ALTERA&#199;&#195;O DO PLANO DE TRABALHO PARA FINS DE JUNTADA DOS VALORES, PARECER JUR&#205;DICO &#218;NICO, CONTROLE, ACOMPANHAMENTO, E PRESTA&#199;&#195;O DE CONTAS UNIFICADA, CONFORME DETERMINA&#199;&#213;ES CONTIDAS NO ARTIGO 22 DO DECRETO ESTADUAL N&#186; 5.815/2018.</td><td class="alinha_centro">
+                                                            27/05/2021 22:15:08
+                                                        </td><td class="alinha_centro">
+                                                            CONCLUÍDA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">00022</td><td>ADITIVAR PROCESSO</td><td>ALTERA&#199;&#195;O DO PLANO DE TRABALHO PARA FINS DE JUNTADA DOS VALORES, PARECER JUR&#205;DICO &#218;NICO, CONTROLE, ACOMPANHAMENTO, E PRESTA&#199;&#195;O DE CONTAS UNIFICADA, CONFORME DETERMINA&#199;&#213;ES CONTIDAS NO ARTIGO 22 DO DECRETO ESTADUAL N&#186; 5.815/2018.</td><td class="alinha_centro">
+                                                            27/05/2021 22:12:10
+                                                        </td><td class="alinha_centro">
+                                                            REPROVADA
+                                                        </td>
+		</tr><tr>
+			<td class="alinha_centro">00021</td><td>ADITIVAR PROCESSO</td><td>ALTERA&#199;&#195;O DO PLANO DE TRABALHO PARA FINS DE JUNTADA DOS VALORES, PARECER JUR&#205;DICO &#218;NICO, CONTROLE, ACOMPANHAMENTO, E PRESTA&#199;&#195;O DE CONTAS UNIFICADA, CONFORME DETERMINA&#199;&#213;ES CONTIDAS NO ARTIGO 22 DO DECRETO ESTADUAL N&#186; 5.815/2018.</td><td class="alinha_centro">
+                                                            27/05/2021 22:12:08
+                                                        </td><td class="alinha_centro">
+                                                            REPROVADA
+                                                        </td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Aditivos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Aditivos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroAditivo">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Prorrogações de Ofício -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Prorrogações de Ofício</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_prorroga_oficio" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">#</th><th class="alinha_centro" scope="col">Vig&#234;ncia</th><th class="alinha_centro" scope="col">Data da Inclus&#227;o</th><th class="alinha_centro" scope="col">Homologado Em</th>
+		</tr><tr>
+			<td class="alinha_centro">001</td><td class="alinha_centro">11/12/2020 - 26/11/2022</td><td class="alinha_centro">07/06/2021 17:49:50</td><td class="alinha_centro">07/06/2021 17:48:34</td>
+		</tr><tr>
+			<td class="alinha_centro">002</td><td class="alinha_centro">30/04/2020 - 31/12/2023</td><td class="alinha_centro">24/11/2022 13:22:38</td><td class="alinha_centro">24/11/2022 13:24:49</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contrapartidas -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contrapartida</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_contrapartidas" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Data do Dep&#243;sito</th><th class="alinha_centro" scope="col">Valor do Dep&#243;sito</th><th class="alinha_centro" scope="col">Forma de Dep&#243;sito</th><th class="alinha_centro" scope="col">Data de Inclus&#227;o</th>
+		</tr><tr>
+			<td class="alinha_centro">03/05/2023</td><td>R$3.875,00</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td><td class="alinha_centro">22/01/2026 00:27:41</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Programação Financeira -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Programação Financeira</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_programacao_financeira" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo</th><th class="alinha_centro" scope="col">N&#250;mero</th><th class="alinha_centro" scope="col">Data de Emiss&#227;o</th><th class="alinha_centro" scope="col">Valor</th>
+		</tr><tr>
+			<td class="alinha_centro">DETALHAMENTO DE DOTAÇÃO</td><td class="alinha_centro">2020DD05839</td><td class="alinha_centro">13/11/2020</td><td>R$50.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE EMPENHO</td><td class="alinha_centro">2020NE06686</td><td class="alinha_centro">13/11/2020</td><td>R$50.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE LIQUIDAÇÃO</td><td class="alinha_centro">2020NL11057</td><td class="alinha_centro">22/12/2020</td><td>R$50.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">PROGRAMA DE DESEMBOLSO</td><td class="alinha_centro">2021PD00091</td><td class="alinha_centro">27/01/2021</td><td>R$50.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">ORDEM BANCÁRIA</td><td class="alinha_centro">2021OB06122</td><td class="alinha_centro">26/04/2021</td><td>R$50.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">DETALHAMENTO DE DOTAÇÃO</td><td class="alinha_centro">2022DD08627</td><td class="alinha_centro">06/12/2022</td><td>R$71.125,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE EMPENHO</td><td class="alinha_centro">2022NE27811</td><td class="alinha_centro">06/12/2022</td><td>R$1.125,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE EMPENHO</td><td class="alinha_centro">2022NE27806</td><td class="alinha_centro">06/12/2022</td><td>R$70.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE LIQUIDAÇÃO</td><td class="alinha_centro">2022NL29483</td><td class="alinha_centro">27/12/2022</td><td>R$70.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">NOTA DE LIQUIDAÇÃO</td><td class="alinha_centro">2022NL29484</td><td class="alinha_centro">27/12/2022</td><td>R$1.125,00</td>
+		</tr><tr>
+			<td class="alinha_centro">PROGRAMA DE DESEMBOLSO</td><td class="alinha_centro">2022PD32544</td><td class="alinha_centro">27/12/2022</td><td>R$70.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">PROGRAMA DE DESEMBOLSO</td><td class="alinha_centro">2022PD32545</td><td class="alinha_centro">27/12/2022</td><td>R$1.125,00</td>
+		</tr><tr>
+			<td class="alinha_centro">ORDEM BANCÁRIA</td><td class="alinha_centro">2022OB28771</td><td class="alinha_centro">27/12/2022</td><td>R$70.000,00</td>
+		</tr><tr>
+			<td class="alinha_centro">ORDEM BANCÁRIA</td><td class="alinha_centro">2022OB28772</td><td class="alinha_centro">27/12/2022</td><td>R$1.125,00</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Rendimentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Rendimentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            <div id="MainContent_panSemRegistroRendimentos">
+	
+                                                NÃO HÁ REGISTROS CADASTRADOS.
+                                            
+</div>
+                                            <div>
+
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Relatório de Execução -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Relatório de Execução</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_relatorios_execucao" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Tipo de Relat&#243;rio</th><th class="alinha_centro" scope="col">Descri&#231;&#227;o</th><th class="alinha_centro" scope="col">Data de Inclus&#227;o</th><th class="alinha_centro" scope="col">Avalia&#231;&#227;o</th><th class="alinha_centro" scope="col">Avaliado Em</th>
+		</tr><tr>
+			<td>CONCILIAÇÃO BANCÁRIA</td><td>CONCILIA&#199;&#195;O BANCARIA</td><td class="alinha_centro">27/01/2026 17:27:14</td><td></td><td></td>
+		</tr><tr>
+			<td>EXECUÇÃO RECEITA E DESPESA</td><td>ANEXO_III_RECEITA_E_DESPESAS</td><td class="alinha_centro">27/01/2026 17:27:37</td><td></td><td></td>
+		</tr><tr>
+			<td>RELAÇÃO DE PAGAMENTOS</td><td>RELA&#199;&#195;O DE PAGAMENTOS</td><td class="alinha_centro">27/01/2026 17:28:09</td><td></td><td></td>
+		</tr><tr>
+			<td>RELATÓRIO DE EXECUÇÃO FÍSICO FINANCEIRA</td><td>ANEXO_IV_-_FISICO_FINACEIRO</td><td class="alinha_centro">27/01/2026 17:28:38</td><td></td><td></td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Processos de Compras -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Processos de Compras</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_processo_compra" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Processo de Compra</th><th class="alinha_centro" scope="col">Data</th>
+		</tr><tr>
+			<td class="alinha_centro">000093/2026</td><td class="alinha_centro">22/01/2026 00:31:42</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Contratos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Contratos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_contrato" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Data</th>
+		</tr><tr>
+			<td class="alinha_centro">000122/2026</td><td class="alinha_centro">27/01/2026 17:02:43</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Notas Fiscais -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Notas Fiscais</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_notas_fiscais" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Nota Fiscal</th><th class="alinha_centro" scope="col">Data de Emiss&#227;o</th><th class="alinha_centro" scope="col">Valor da Nota</th>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">1923</td><td class="alinha_centro">01/06/2023</td><td>R$17.376,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">2.170</td><td class="alinha_centro">06/09/2023</td><td>R$4.922,50</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">2.167</td><td class="alinha_centro">05/09/2023</td><td>R$7.051,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">2.168</td><td class="alinha_centro">05/09/2023</td><td>R$7.101,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">2.166</td><td class="alinha_centro">05/09/2023</td><td>R$5.946,81</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">2.226</td><td class="alinha_centro">29/09/2023</td><td>R$20.550,40</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">2.169</td><td class="alinha_centro">06/09/2023</td><td>R$11.151,30</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">1.925</td><td class="alinha_centro">01/06/2023</td><td>R$14.509,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">1.924</td><td class="alinha_centro">01/06/2023</td><td>R$18.115,00</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            000122/2026
+                                                        </td><td class="alinha_centro">2.171</td><td class="alinha_centro">06/09/2023</td><td>R$3.185,50</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                    
+                                    <!-- Pagamentos -->
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <label>Pagamentos</label>
+                                        </div>
+                                        <div class="col-md-12">
+                                            
+                                            <div>
+	<table class="table-responsive table table-striped jambo_table bulk_action" cellspacing="0" rules="all" border="1" id="MainContent_grd_pagamentos" style="border-collapse:collapse;">
+		<tr>
+			<th class="alinha_centro" scope="col">Nota Fiscal</th><th class="alinha_centro" scope="col">Contrato</th><th class="alinha_centro" scope="col">Valor da Nota</th><th class="alinha_centro" scope="col">Valor Pago</th><th class="alinha_centro" scope="col">Pagamento</th><th class="alinha_centro" scope="col">Data do Pagamento</th><th class="alinha_centro" scope="col">Forma de Pagamento</th>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            1923
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$17.376,00
+                                                        </td><td>R$17.376,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">01/06/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            2.170
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$4.922,50
+                                                        </td><td>R$4.922,50</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/10/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            2.167
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$7.051,00
+                                                        </td><td>R$7.051,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/10/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            2.168
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$7.101,00
+                                                        </td><td>R$7.101,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/10/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            2.166
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$5.946,81
+                                                        </td><td>R$5.946,81</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/10/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            2.226
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$20.550,40
+                                                        </td><td>R$20.550,40</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/10/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            2.169
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$11.151,30
+                                                        </td><td>R$11.151,30</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/10/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            1.925
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$14.509,00
+                                                        </td><td>R$14.509,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">05/06/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            1.924
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$18.115,00
+                                                        </td><td>R$18.115,00</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">02/06/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr><tr>
+			<td class="alinha_centro">
+                                                            2.171
+                                                        </td><td>
+                                                            000122/2026
+                                                        </td><td>
+                                                            R$3.185,50
+                                                        </td><td>R$3.185,50</td><td class="alinha_centro">
+                                                            TOTAL
+                                                        </td><td class="alinha_centro">10/10/2023</td><td class="alinha_centro">TRANSFERÊNCIA BANCÁRIA</td>
+		</tr>
+	</table>
+</div>
+                                        </div>
+                                    </div>
+                                    <br />
+                                </div>
+                                
+                                <!-- ABA PRESTAÇÃO DE CONTAS -->
+                                <div role="tabpanel" class="tab-pane fade" id="tab_content_prestacao_contas" aria-labelledby="profile-tab">
+                                    <div id="MainContent_divPrestacaoContas" class="row">
+                                        <div class="col-md-12">
+                                            <table class="table-responsive table table-striped jambo_table bulk_action" border="1" style="border-collapse: collapse;">
+                                                <tbody>
+                                                    <tr>
+                                                        <th class="alinha_centro" scope="col">Número</th>
+                                                        <th class="alinha_centro" scope="col">Data de Abertura</th>
+                                                        <th class="alinha_centro" scope="col">Tipo de Execução</th>
+                                                        <th class="alinha_centro" scope="col">Prazo de Prestação</th>
+                                                        <th class="alinha_centro" scope="col">Situação</th>
+                                                    </tr>
+                                                    <tr>
+                                                        <td id="MainContent_td_prestacao_contas_numero" class="alinha_centro"><a href='VisualizarPrestacaoContas.aspx?idPrestacaoContas=2016' target='_blank'>001851/2026</a></td>
+
+                                                        <td id="MainContent_td_prestacao_contas_data_abertura" class="alinha_centro">27/01/2026 17:29:40</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_tipo_execucao" class="alinha_centro">ADIANTAMENTO</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_prazo_execucao" class="alinha_centro">30/01/2024</td>
+
+                                                        <td id="MainContent_td_prestacao_contas_situacao" class="alinha_centro">PRESTAÇÃO DE CONTAS EM ANÁLISE</td>
+
+                                                    </tr>
+                                                    <tr>
+                                                        <td id="MainContent_td_prestacao_contas_obs" colspan="5"><b>OBSERVAÇÃO: </b>NÃO</td>
+
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+                    
+
+<!-- jQuery -->
+<script src="/Styles/vendors/jquery/dist/jquery.min.js"></script>
+<!-- Bootstrap -->
+<script src="/Styles/vendors/bootstrap/dist/js/bootstrap.min.js"></script>    
+    
+<!-- PNotify -->
+
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.buttons.js"></script> 
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.nonblock.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.callbacks.js"></script>
+<script type="text/javascript" src="/Styles/vendors/pnotify/dist/pnotify.confirm.js"></script>  
+
+<!-- Switchery -->
+<script src="/Styles/vendors/switchery/dist/switchery.min.js"></script>
+
+
+<!-- footer content -->
+<footer>
+    <div class="pull-right">    
+        quarta-feira, 23 de setembro de 2026
+    </div>
+    <div class="clearfix"></div>
+</footer>
+<!-- /footer content -->
+
+<!-- validator -->
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+
+<!-- bootstrap-progressbar -->
+<script src="/Styles/vendors/bootstrap-progressbar/bootstrap-progressbar.min.js"></script>
+
+<!-- jQuery Smart Wizard -->
+<script src="/Styles/vendors/jQuery-Smart-Wizard/js/jquery.smartWizard.js"></script>
+
+<!-- Custom Theme Scripts -->
+<script src="/Styles/build/js/custom.js"></script>
+
+<script src="/js/chosen.jquery.js"></script>
+<script src="/js/prism.js"></script>
+<script src="/js/init.js"></script>
+
+<script src="/Styles/vendors/parsleyjs/dist/parsley.min.js"></script>
+<script src="/Styles/vendors/parsleyjs/dist/i18n/pt-br.js"></script>
+
+<script src="/Styles/vendors/select2/dist/js/select2.min.js"></script>
+
+<script type="text/javascript" src="/js/lacuna/jquery.blockUI.js"></script>    
+<script type="text/javascript" src="/js/lacuna/lacuna-web-pki-2.9.0.js"></script>    
+<script type="text/javascript" src="/js/lacuna/assinatura-js/batch-signature-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-complete-form.js"></script>
+<script type="text/javascript" src="/js/lacuna/assinatura-js/signature-start-form.js"></script>
+
+<!-- iCheck -->
+<script src="/Styles/vendors/iCheck/icheck.min.js"></script>
+
+<script type="text/javascript">
+    window.Parsley.setLocale('pt-br');
+
+    $(".select2").select2();
+
+    var c = 0;
+
+    $("#frm1").parsley().on('form:validate', function (formInstance) {
+        if (!formInstance.isValid())
+            c = 0;
+    });
+
+    jQuery.fn.preventDoubleSubmission = function () {
+        $(this).on('submit', function (e) {
+            var $form = $(this);
+
+            if ($form.data('submitted') === true) {
+                if (c >= 1) {
+                    e.preventDefault();
+                }
+            } else {
+                // Mark it so that the next submit can be ignored
+                c++;
+                $form.data('submitted', true);
+            }
+            //console.log(c);
+        });
+
+        //console.log(c);
+
+        // Keep chainability
+        return this;
+    };
+    $('#frm1').preventDoubleSubmission();
+</script>  
+
+                </div>
+            </div>
+        </form>                      
+    </body>
+    
+</html>
