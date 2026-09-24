@@ -226,6 +226,13 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("Emendas estaduais (MG)",
          "SELECT max(updated_at), count(*) FROM emendas_estaduais",
          None),
+        # ⚠️ A DATA É A DA PLANILHA (`execucao_em`), NÃO A DA RODADA: a SEGOV
+        # ficou de 12/05 a (pelo menos) 24/09/2026 sem regerar o arquivo, e é
+        # isso que a tela precisa mostrar — a rodada diária carimbaria "hoje".
+        ("Execução das emendas estaduais — planilha SEGOV (MG)",
+         "SELECT max(execucao_em)::timestamptz, count(*) FILTER (WHERE execucao_em IS NOT NULL) "
+         "FROM emendas_estaduais",
+         "emendas_mg"),
         # ⚠️ FILTRA POR FONTE. Desde que `cagec_situacao` passou a guardar o
         # cadastro estadual de outros estados (CHE-RS), contar a tabela inteira
         # aqui creditaria a Minas linha coletada no Rio Grande do Sul — o mesmo

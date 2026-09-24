@@ -77,8 +77,12 @@ async def list_emendas_estaduais(
     items = [dict(row._mapping) for row in r.all()]
     # Convert valores Decimal -> float
     for it in items:
-        if it.get("valor_indicacao") is not None:
-            it["valor_indicacao"] = float(it["valor_indicacao"])
+        for k in ("valor_indicacao", "valor_empenhado", "valor_liquidado", "valor_pago",
+                  "valor_resto_saldo"):
+            if it.get(k) is not None:
+                it[k] = float(it[k])
+        if it.get("execucao_em") is not None:
+            it["execucao_em"] = it["execucao_em"].isoformat()
 
     # Frescor do DATASET de emendas (fonte='sigcon_emendas', carimbo proprio no
     # scraper: a falha de _scrape_emendas e engolida com warning e o carimbo
@@ -100,6 +104,10 @@ SQL_EMENDAS_COM_CONVENIO = """
         SELECT id, municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
                uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
                grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao, ano,
+               -- Execução pela planilha oficial da SEGOV (emendas_mg.py, 24/09/2026).
+               -- NULO = a planilha não trouxe esta indicação; ZERO = afirmou zero.
+               valor_empenhado, valor_liquidado, valor_pago, valor_resto_saldo,
+               execucao_em,
                c.conv_id, c.conv_nr, c.conv_objeto
         FROM emendas_estaduais
         LEFT JOIN LATERAL (
@@ -191,7 +199,13 @@ async def stats(
             count(*) AS total,
             COALESCE(SUM(valor_indicacao), 0) AS valor_total,
             count(DISTINCT nome_responsavel) AS responsaveis,
-            count(*) FILTER (WHERE status_indicacao ILIKE '%aprovad%') AS aprovadas
+            count(*) FILTER (WHERE status_indicacao ILIKE '%aprovad%') AS aprovadas,
+            -- ⚠️ O PAGO só soma o que a planilha informou, e a tela diz de QUANDO
+            -- é a planilha: ela pode ficar meses sem ser regerada (a de 24/09/2026
+            -- era de 12/05), e "pago" parado em maio não é "não foi pago".
+            SUM(valor_pago) AS valor_pago,
+            count(*) FILTER (WHERE valor_pago IS NOT NULL) AS com_execucao,
+            max(execucao_em) AS execucao_em
         FROM emendas_estaduais WHERE {where}
     """), params)
     row = r.first()
@@ -200,4 +214,39 @@ async def stats(
         "valor_total": float(row[1]) if row[1] else 0,
         "responsaveis": row[2],
         "aprovadas": row[3],
+        "valor_pago": float(row[4]) if row[4] is not None else None,
+        "com_execucao": row[5],
+        "execucao_em": row[6].isoformat() if row[6] else None,
     }
+
+
+@router.get("/outros", dependencies=[exige("emendas.ver")])
+async def outros_beneficiarios(
+    municipio_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """Indicações estaduais a quem está no município e NÃO é o município (OSC,
+    caixa escolar, órgão estadual, consórcio) — `emendas_estaduais_outros`,
+    preenchida pela planilha da SEGOV desde 24/09/2026.
+
+    ⚠️ Rota PRÓPRIA, fora da listagem e dos totais: é a regra do dono ("nada é
+    descartado, nada entra na conta como se fosse da prefeitura"). A tela mostra
+    num bloco recolhido, embaixo, e nenhum outro leitor soma esta tabela."""
+    ensure_municipio_access(current, municipio_id)
+    ensure_tela(current, "emendas")
+    rows = (await db.execute(text("""
+        SELECT nr_indicacao, ano, nome_responsavel, tipo_indicacao, tipo_beneficiario,
+               beneficiario, cnpj_beneficiario, valor_indicacao, valor_pago,
+               status_indicacao, execucao_em
+          FROM emendas_estaduais_outros
+         WHERE municipio_id = :m
+         ORDER BY ano DESC NULLS LAST, valor_indicacao DESC NULLS LAST
+    """), {"m": municipio_id})).fetchall()
+    return [{
+        "nr_indicacao": r[0], "ano": r[1], "autor": r[2], "tipo_indicacao": r[3],
+        "tipo_beneficiario": r[4], "beneficiario": r[5], "cnpj": r[6],
+        "valor_indicacao": float(r[7]) if r[7] is not None else None,
+        "valor_pago": float(r[8]) if r[8] is not None else None,
+        "status": r[9], "execucao_em": r[10].isoformat() if r[10] else None,
+    } for r in rows]

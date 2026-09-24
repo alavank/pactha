@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
-import { ChevronLeft, ChevronRight, Search as SearchIcon, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search as SearchIcon, ChevronDown, ChevronUp, Users } from "lucide-react";
 import api from "@/lib/api";
 import { useAnoCorrentePadrao } from "@/lib/anoPadrao";
 import { useMunicipio } from "@/contexts/MunicipioContext";
@@ -30,6 +30,8 @@ const TIPOS_INDICACAO = [
   "Transferência Especial",
   "Aplicação Direta",
   "Convênio",
+  // Só a planilha da SEGOV traz (24/09/2026): o fundo a fundo da saúde por emenda.
+  "Resolução SES",
 ];
 
 interface Emenda {
@@ -51,6 +53,31 @@ interface Emenda {
    *  scraper (#2) popular a indicação no convênio. */
   conv_nr?: string | null;
   conv_objeto?: string | null;
+  /** Execução pela planilha oficial da SEGOV (emendas.mg.gov.br). `null` = a
+   *  planilha não trouxe esta indicação; 0 = a SEGOV afirmou zero. */
+  valor_empenhado?: number | null;
+  valor_pago?: number | null;
+  execucao_em?: string | null;
+}
+
+interface Stats {
+  total: number; valor_total: number; responsaveis: number; aprovadas: number;
+  valor_pago?: number | null; com_execucao?: number; execucao_em?: string | null;
+}
+
+/** "2026-05-12" -> "12/05/2026" (sem fuso: é uma data, não um instante). */
+function diaBR(iso?: string | null): string {
+  if (!iso) return "—";
+  const [a, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
+}
+
+/** A planilha da SEGOV ficou de 12/05 a 24/09/2026 sem ser regerada: passou de
+ *  90 dias, o "pago" dela está defasado e a tela precisa dizer. */
+function planilhaVelha(iso?: string | null): boolean {
+  if (!iso) return false;
+  const dias = (Date.now() - new Date(`${iso.slice(0, 10)}T00:00:00`).getTime()) / 86400000;
+  return dias > 90;
 }
 
 const PER_PAGE = 100; // todos por ano
@@ -61,6 +88,7 @@ function siglaTipo(t?: string): string {
   if (u.includes("TRANSFER") && u.includes("ESPECIAL")) return "TE";
   if (u.includes("APLICA")) return "AD";
   if (u.includes("CONV")) return "CV";
+  if (u.includes("RESOLU")) return "SES";
   return t.slice(0, 4).toUpperCase();
 }
 
@@ -80,7 +108,7 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
   const [anosSel, setAnosSel] = useState<string[]>([]);
   const [responsavel, setResponsavel] = useState("");
   const [tiposSel, setTiposSel] = useState<string[]>([]);
-  const [stats, setStats] = useState<{ total: number; valor_total: number; responsaveis: number; aprovadas: number } | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [anos, setAnos] = useState<number[]>([]);
   const [collapsedYears, setCollapsedYears] = useState<Set<number>>(new Set());
   // Frescor da coleta SIGCON (as emendas vem do mesmo scrape dos convenios).
@@ -230,6 +258,17 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
               Atualizado em {formatDataHora(coleta.em)}
             </p>
           ) : null)}
+          {/* ⚠️ A DATA DA PLANILHA, e não a da coleta: a SEGOV pode ficar meses
+              sem regerar o arquivo, e "pago R$ 0" de uma planilha de maio não é
+              "não foi pago". */}
+          {stats?.execucao_em && (
+            <p className="text-[11px]"
+               style={{ color: planilhaVelha(stats.execucao_em) ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}>
+              Empenhado e pago: planilha oficial da SEGOV (emendas.mg.gov.br) com dados
+              de {diaBR(stats.execucao_em)}
+              {planilhaVelha(stats.execucao_em) ? " — o Estado não a atualiza desde então" : ""}
+            </p>
+          )}
         </div>
         <Button onClick={exportPdf} size="sm" variant="outline" title="Exportar para PDF">
           📄 PDF
@@ -237,11 +276,15 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
       </div>
 
       {stats && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className={`grid gap-3 ${stats.execucao_em ? "grid-cols-2 lg:grid-cols-5" : "grid-cols-4"}`}>
           <StatCard label="Total Indicações" value={stats.total.toLocaleString("pt-BR")} />
           <StatCard label="Valor Total Indicado" value={formatCurrency(stats.valor_total)} />
           <StatCard label="Parlamentares" value={stats.responsaveis.toString()} />
           <StatCard label="Aprovadas" value={stats.aprovadas.toLocaleString("pt-BR")} />
+          {stats.execucao_em && (
+            <StatCard label={`Pago até ${diaBR(stats.execucao_em)}`}
+                      value={stats.valor_pago == null ? "—" : formatCurrency(stats.valor_pago)} />
+          )}
         </div>
       )}
 
@@ -363,6 +406,12 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
                               title: [em.uo_codigo, em.uo_sigla].filter(Boolean).join(" · ") },
                             { rotulo: "Grupo de despesa", valor: em.grupo_despesa || "—" },
                             { rotulo: "Ano", valor: em.ano ?? "—" },
+                            // «—» = a planilha da SEGOV não trouxe esta indicação
+                            // (não é R$ 0).
+                            { rotulo: em.execucao_em ? `Pago até ${diaBR(em.execucao_em)}` : "Pago",
+                              valor: em.valor_pago == null ? "—" : formatCurrency(em.valor_pago),
+                              title: em.valor_empenhado == null ? undefined
+                                : `Empenhado ${formatCurrency(em.valor_empenhado)}` },
                           ]}
                         />
                       </ItemLinha>
@@ -374,7 +423,76 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
           })}
         </div>
       )}
+      {municipioId && <OutrosBeneficiariosMG municipioId={String(municipioId)} />}
     </div>
+  );
+}
+
+interface OutroMG {
+  nr_indicacao: string; ano: number | null; autor: string | null; tipo_indicacao: string | null;
+  tipo_beneficiario: string | null; beneficiario: string | null; cnpj: string | null;
+  valor_indicacao: number | null; valor_pago: number | null; status: string | null;
+  execucao_em: string | null;
+}
+
+/** Indicações a quem está no município e NÃO é o município (OSC, caixa escolar,
+ *  órgão estadual) — fora das contas desta tela, num bloco recolhido. Mesma regra
+ *  do bloco "Outros convenentes" da tela de Convênios. */
+function OutrosBeneficiariosMG({ municipioId }: { municipioId: string }) {
+  const [itens, setItens] = useState<OutroMG[] | null>(null);
+  const [aberto, setAberto] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    api.get<OutroMG[]>("/emendas-estaduais/outros", { params: { municipio_id: municipioId } })
+      .then((r) => { if (vivo) setItens(r.data); })
+      .catch(() => { if (vivo) setItens([]); });
+    return () => { vivo = false; };
+  }, [municipioId]);
+  if (!itens || itens.length === 0) return null;
+  return (
+    <Bloco className="p-3">
+      <button type="button" className="w-full text-left" onClick={() => setAberto(!aberto)}
+              aria-expanded={aberto}>
+        <BlocoHead
+          icon={Users}
+          titulo={`Outros beneficiários no município · ${itens.length}`}
+          sub="OSC, caixas escolares e órgãos estaduais indicados por emenda — não é a prefeitura e fica fora das contas desta tela"
+          right={<ChevronDown className={`size-4 transition-transform ${aberto ? "rotate-180" : ""}`} />}
+        />
+      </button>
+      {aberto && (
+        <Lista>
+          {itens.map((o) => (
+            <ItemLinha
+              key={o.nr_indicacao}
+              titulo={
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>{o.beneficiario || "Beneficiário não informado"}</span>
+                  {o.tipo_indicacao && <Selo title={o.tipo_indicacao}>{siglaTipo(o.tipo_indicacao)}</Selo>}
+                  {o.status && <Selo tom={situacaoTom(o.status)}>{o.status.toLowerCase()}</Selo>}
+                  <Selo>não é a prefeitura</Selo>
+                </span>
+              }
+              valor={o.valor_indicacao == null ? "—" : formatCurrency(o.valor_indicacao)}
+              meta={
+                <>
+                  <span className="font-mono">nº {o.nr_indicacao}</span>
+                  {o.autor && <span>· {o.autor}</span>}
+                  {o.tipo_beneficiario && <span>· {o.tipo_beneficiario.toLowerCase()}</span>}
+                </>
+              }
+            >
+              <Campos campos={[
+                { rotulo: "Ano", valor: o.ano ?? "—" },
+                { rotulo: o.execucao_em ? `Pago até ${diaBR(o.execucao_em)}` : "Pago",
+                  valor: o.valor_pago == null ? "—" : formatCurrency(o.valor_pago) },
+                { rotulo: "CNPJ", valor: o.cnpj || "—" },
+              ]} />
+            </ItemLinha>
+          ))}
+        </Lista>
+      )}
+    </Bloco>
   );
 }
 
