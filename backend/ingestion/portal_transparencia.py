@@ -1466,7 +1466,158 @@ def execucao_planilha(cur, conn, client: httpx.Client, dry: bool = False) -> dic
          WHERE codigo_emenda = ANY(%s)
     """, (list(achados), list(codigos)))
     conn.commit()
+    # O que chegou A ESTE MUNICÍPIO e o convênio gerado aqui: os outros dois
+    # arquivos do MESMO zip. Falhar aqui não desfaz a execução já gravada.
+    try:
+        v = gravar_vinculos(cur, conn, r.content, codigos)
+        rel.update(v)
+    except Exception as e:
+        conn.rollback()
+        rel["nota"] = " | ".join(x for x in (
+            rel["nota"], f"favorecidos/convênios da CGU: {type(e).__name__}: "
+                         f"{str(e)[:120]}") if x)
     return rel
+
+
+# ---------------------------------------------------------------------------
+# O RECEBIDO POR MUNICÍPIO e o CONVÊNIO GERADO (24/09/2026)
+# ---------------------------------------------------------------------------
+PLANILHA_FAVORECIDOS = "EmendasParlamentares_PorFavorecido.csv"
+PLANILHA_CONVENIOS = "EmendasParlamentares_Convenios.csv"
+COLUNAS_FAVORECIDOS = ("Código da Emenda", "Ano/Mês", "Código do Favorecido", "Favorecido",
+                       "Natureza Jurídica", "Tipo Favorecido", "UF Favorecido",
+                       "Município Favorecido", "Valor Recebido")
+COLUNAS_CONVENIOS = ("Código da Emenda", "Nome Função", "Nome Subfunção",
+                     "Localidade do gasto", "Data Publicação Convênio", "Convenente",
+                     "Objeto Convênio", "Número Convênio", "Valor Convênio")
+# 825 mil e 85 mil linhas em 24/09/2026. Menos que isto = arquivo cortado, e o
+# DELETE-e-INSERT apagaria o que o município tem.
+MIN_FAVORECIDOS = 300000
+MIN_CONVENIOS = 30000
+
+
+def _chave_mun(nome, uf) -> tuple[str, str]:
+    t = unicodedata.normalize("NFKD", str(nome or "").upper())
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", t).split()), str(uf or "").strip().upper()
+
+
+def _csv_do_zip(z, nome: str, colunas: tuple):
+    import csv
+    import io
+    if nome not in z.namelist():
+        raise ValueError(f"{nome} ausente no zip da CGU")
+    leitor = csv.DictReader(io.TextIOWrapper(z.open(nome), encoding="latin-1", newline=""),
+                            delimiter=";")
+    faltam = [c for c in colunas if c not in (leitor.fieldnames or [])]
+    if faltam:
+        raise ValueError(f"colunas ausentes em {nome}: {faltam}")
+    return leitor
+
+
+def _data_br(v):
+    from datetime import date
+    m = re.search(r"(\d{2})/(\d{2})/(\d{4})", v or "")
+    if not m:
+        return None
+    try:
+        return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+    except ValueError:
+        return None
+
+
+def ler_vinculos(conteudo: bytes, codigos: "set[str]", municipios: "dict[tuple, int]"
+                 ) -> "tuple[dict, dict, int, int]":
+    """({chave: favorecido}, {chave: convênio}, linhas de favorecido, linhas de
+    convênio), só dos `codigos` e só do município do cliente — `municipios` é
+    {(NOME NORMALIZADO, UF): municipio_id}, casado por IGUALDADE.
+
+    Favorecido: o município é o DO FAVORECIDO ("Município Favorecido" + UF).
+    Convênio: o da "Localidade do gasto" ("NOVA PALMA - RS"); "MÚLTIPLO" e
+    "X (UF)" não são município e ficam fora."""
+    import io
+    import zipfile
+    favs: dict = {}
+    convs: dict = {}
+    nf = nc = 0
+    with zipfile.ZipFile(io.BytesIO(conteudo)) as z:
+        for r in _csv_do_zip(z, PLANILHA_FAVORECIDOS, COLUNAS_FAVORECIDOS):
+            nf += 1
+            cod = (r["Código da Emenda"] or "").strip()
+            if cod not in codigos:
+                continue
+            mid = municipios.get(_chave_mun(r["Município Favorecido"], r["UF Favorecido"]))
+            if not mid:
+                continue
+            doc = (r["Código do Favorecido"] or "").strip()[:20]
+            k = (mid, cod, (r["Ano/Mês"] or "").strip()[:6], doc)
+            f = favs.get(k)
+            valor = _dec_planilha(r["Valor Recebido"])
+            if f is None:
+                favs[k] = {"mid": mid, "codigo": cod, "ano_mes": k[2], "doc": doc,
+                           "favorecido": (r["Favorecido"] or "").strip() or None,
+                           "natureza": (r["Natureza Jurídica"] or "").strip() or None,
+                           "tipo": (r["Tipo Favorecido"] or "").strip() or None,
+                           "valor": valor}
+            elif valor is not None:
+                # Mesmo favorecido, mês e emenda em duas linhas: soma, não sobrescreve.
+                f["valor"] = (f["valor"] or 0) + valor
+        for r in _csv_do_zip(z, PLANILHA_CONVENIOS, COLUNAS_CONVENIOS):
+            nc += 1
+            cod = (r["Código da Emenda"] or "").strip()
+            if cod not in codigos:
+                continue
+            loc = (r["Localidade do gasto"] or "").strip()
+            if " - " not in loc:
+                continue
+            nome, uf = loc.rsplit(" - ", 1)
+            mid = municipios.get(_chave_mun(nome, uf))
+            if not mid:
+                continue
+            numero = (r["Número Convênio"] or "").strip()[:30]
+            if not numero:
+                continue
+            convs[(mid, cod, numero)] = {
+                "mid": mid, "codigo": cod, "numero": numero,
+                "convenente": (r["Convenente"] or "").strip() or None,
+                "objeto": (r["Objeto Convênio"] or "").strip() or None,
+                "valor": _dec_planilha(r["Valor Convênio"]),
+                "data": _data_br(r["Data Publicação Convênio"]),
+                "funcao": (r["Nome Função"] or "").strip() or None,
+                "subfuncao": (r["Nome Subfunção"] or "").strip() or None,
+            }
+    return favs, convs, nf, nc
+
+
+_SQL_FAV = """
+INSERT INTO emendas_federais_favorecidos (municipio_id, codigo_emenda, ano_mes,
+    favorecido_doc, favorecido, natureza_juridica, tipo_favorecido, valor)
+VALUES (%(mid)s, %(codigo)s, %(ano_mes)s, %(doc)s, %(favorecido)s, %(natureza)s,
+    %(tipo)s, %(valor)s)
+"""
+_SQL_CONV = """
+INSERT INTO emendas_federais_convenios (municipio_id, codigo_emenda, numero_convenio,
+    convenente, objeto, valor, data_publicacao, funcao, subfuncao)
+VALUES (%(mid)s, %(codigo)s, %(numero)s, %(convenente)s, %(objeto)s, %(valor)s,
+    %(data)s, %(funcao)s, %(subfuncao)s)
+"""
+
+
+def gravar_vinculos(cur, conn, conteudo: bytes, codigos: "set[str]") -> dict:
+    """Troca, de uma vez, os favorecidos e convênios do tenant pelos da planilha."""
+    import psycopg2.extras
+    cur.execute("SELECT id, nome, uf FROM municipios WHERE active")
+    municipios = {_chave_mun(n, u): i for i, n, u in cur.fetchall()}
+    favs, convs, nf, nc = ler_vinculos(conteudo, codigos, municipios)
+    if nf < MIN_FAVORECIDOS or nc < MIN_CONVENIOS:
+        raise ValueError(f"arquivos cortados? {nf} favorecido(s), {nc} convênio(s)")
+    mids = list(set(municipios.values()))
+    cur.execute("DELETE FROM emendas_federais_favorecidos WHERE municipio_id = ANY(%s)", (mids,))
+    cur.execute("DELETE FROM emendas_federais_convenios WHERE municipio_id = ANY(%s)", (mids,))
+    psycopg2.extras.execute_batch(cur, _SQL_FAV, list(favs.values()), page_size=500)
+    psycopg2.extras.execute_batch(cur, _SQL_CONV, list(convs.values()), page_size=500)
+    conn.commit()
+    return {"favorecidos": len(favs), "convenios": len(convs)}
 
 
 def ingest(dry: bool = False) -> int:
@@ -1534,6 +1685,10 @@ def ingest(dry: bool = False) -> int:
                              "com execucao publicada, %d linha(s) gravada(s) "
                              "(planilha com %d linhas)", pl["achou"], pl["codigos"],
                              pl["gravadas"], pl["linhas_cgu"])
+                    if "favorecidos" in pl:
+                        log.info("  recebido por municipio: %d linha(s) de favorecido e "
+                                 "%d convenio(s) gerado(s) nos municipios do cliente",
+                                 pl["favorecidos"], pl["convenios"])
                     if pl["nota"]:
                         status = "partial"
                         nota = " | ".join(x for x in (nota, pl["nota"]) if x)

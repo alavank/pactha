@@ -156,7 +156,15 @@ SELECT c.codigo_emenda, c.nr_emenda, c.ano, c.parlamentar, c.tipo_parlamentar,
        -- ou a API com chave (`consultado_em`). O nome da coluna fica: o teste de
        -- índices amarra x[22] a ele.
        coalesce(q.agregados_em, q.consultado_em) AS consultado_em,
-       q.achou_agregado, coalesce(q.n_documentos, 0) AS n_docs
+       q.achou_agregado, coalesce(q.n_documentos, 0) AS n_docs,
+       -- ⭐ x[25] O RECEBIDO NESTE MUNICÍPIO (planilha de favorecidos da CGU)
+       -- e x[26] os convênios que a emenda gerou AQUI. Por município: estes somam.
+       (SELECT sum(fv.valor) FROM emendas_federais_favorecidos fv
+         WHERE fv.municipio_id = :m AND fv.codigo_emenda = c.codigo_emenda
+       ) AS recebido_municipio,
+       (SELECT count(*) FROM emendas_federais_convenios cv
+         WHERE cv.municipio_id = :m AND cv.codigo_emenda = c.codigo_emenda
+       ) AS convenios_n
   FROM emendas_federais_carteira c
   -- ⚠️⚠️ LATERAL, E NÃO UM `LEFT JOIN` DIRETO — a diferença é o dinheiro do
   -- município. `emendas_federais_cgu` é 1:N por desenho: a chave única é
@@ -228,8 +236,11 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
     tot = {"emendas": 0, "indicado": 0.0, "indicado_prefeitura": 0.0,
            "indicado_outros": 0.0, "com_empenho_n": 0, "com_pagamento_n": 0,
            "com_resto_n": 0, "parado_n": 0, "nao_consultadas_n": 0,
-           "impositivas_n": 0}
+           "impositivas_n": 0,
+           # O ÚNICO valor de execução que soma: é por município (favorecidos).
+           "recebido_municipio": 0.0}
     consultadas = 0
+    recebido_somado: set = set()
     for x in linhas:
         e = {
             "codigo_emenda": x[0], "numero_emenda": x[1], "ano": x[2],
@@ -252,6 +263,11 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
             "execucao_consultada": x[22] is not None,
             "encontrada": x[23],
             "documentos_n": int(x[24] or 0),
+            # Quanto DESTA emenda foi pago a quem está NESTE município — a fatia
+            # que o agregado nacional da CGU não separa. None = ninguém daqui
+            # aparece como favorecido (ou a planilha ainda não foi lida).
+            "recebido_municipio": _f(x[25]),
+            "convenios_n": int(x[26] or 0),
         }
         # ⚠️ Os seis valores de execução ficam None quando a CGU nunca foi
         # perguntada. Zero aqui seria uma AFIRMAÇÃO que ninguém fez.
@@ -268,6 +284,11 @@ async def buscar(db: AsyncSession, municipio_id: int) -> dict:
 
         tot["emendas"] += 1
         tot["indicado"] += e["valor_indicado"]
+        # UMA VEZ POR CÓDIGO: a carteira tem uma linha por BENEFICIÁRIO (prefeitura e
+        # hospital da mesma emenda), e o recebido é do código inteiro no município.
+        if e["recebido_municipio"] and e["codigo_emenda"] not in recebido_somado:
+            recebido_somado.add(e["codigo_emenda"])
+            tot["recebido_municipio"] += e["recebido_municipio"]
         if e["beneficiario_prefeitura"]:
             tot["indicado_prefeitura"] += e["valor_indicado"]
         else:
@@ -504,5 +525,36 @@ async def linha_do_tempo(db: AsyncSession, codigo_emenda: str,
         else:
             motivo = ("A execução desta emenda ainda não foi consultada no "
                       "Portal da Transparência.")
+    recebido, convenios = await _vinculos_no_municipio(db, codigo_emenda, municipio_id)
     return {"consultado_em": consultado_em, "documentos": docs,
-            "motivo": motivo, "colegiado": colegiado}
+            "motivo": motivo, "colegiado": colegiado,
+            "recebido": recebido, "convenios": convenios}
+
+
+async def _vinculos_no_municipio(db: AsyncSession, codigo_emenda: str,
+                                 municipio_id: int) -> tuple[list, list]:
+    """Quem recebeu desta emenda NESTE município (mês a mês) e os convênios que ela
+    gerou AQUI — planilhas `_PorFavorecido` e `_Convenios` da CGU (24/09/2026).
+    Tabela ausente (deploy sem a migration) = listas vazias, nunca 500."""
+    try:
+        fav = (await db.execute(text("""
+            SELECT ano_mes, favorecido_doc, favorecido, natureza_juridica, valor
+              FROM emendas_federais_favorecidos
+             WHERE municipio_id = :m AND codigo_emenda = :c
+             ORDER BY ano_mes DESC, valor DESC NULLS LAST
+        """), {"m": municipio_id, "c": codigo_emenda})).all()
+        conv = (await db.execute(text("""
+            SELECT numero_convenio, convenente, objeto, valor, data_publicacao
+              FROM emendas_federais_convenios
+             WHERE municipio_id = :m AND codigo_emenda = :c
+             ORDER BY data_publicacao DESC NULLS LAST
+        """), {"m": municipio_id, "c": codigo_emenda})).all()
+    except Exception:
+        await db.rollback()
+        return [], []
+    return (
+        [{"ano_mes": r[0], "doc": r[1], "favorecido": r[2], "natureza": r[3],
+          "valor": _f(r[4])} for r in fav],
+        [{"numero": r[0], "convenente": r[1], "objeto": r[2], "valor": _f(r[3]),
+          "data_publicacao": r[4].isoformat() if r[4] else None} for r in conv],
+    )

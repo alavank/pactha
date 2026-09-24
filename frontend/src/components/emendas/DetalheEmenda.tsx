@@ -55,6 +55,11 @@ export const brl = (v: unknown) =>
     ? v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })
     : "—";
 const txt = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
+/** "202606" -> "06/2026" (o mês de referência da planilha de favorecidos). */
+const mesAno = (s: unknown) => {
+  const t = String(s ?? "");
+  return /^\d{6}$/.test(t) ? `${t.slice(4)}/${t.slice(0, 4)}` : (t || "—");
+};
 const dia = (s: unknown) =>
   typeof s === "string" && s ? new Date(s.length === 10 ? `${s}T12:00:00` : s).toLocaleDateString("pt-BR") : "—";
 
@@ -113,7 +118,12 @@ function DetalheFederal({ r, onFechar, onAbrir }: {
   const res = (d.resumo || {}) as Reg;
   const ex = (d.execucao || {}) as Reg;
   const benef = (d.beneficiarios || []) as Reg[];
-  const lt = (d.linha_do_tempo || {}) as { documentos?: Reg[]; motivo?: string };
+  const lt = (d.linha_do_tempo || {}) as {
+    documentos?: Reg[]; motivo?: string; recebido?: Reg[]; convenios?: Reg[];
+  };
+  const recebido = lt.recebido || [];
+  const convGerados = lt.convenios || [];
+  const totalRecebido = recebido.reduce((a, x) => a + ((x.valor as number) || 0), 0);
   const inst = (d.instrumentos || []) as Instrumento[];
   const consultada = !!res.execucao_consultada;
   const cols = "grid-cols-[6.5rem_8rem_1fr_9rem]";
@@ -157,7 +167,28 @@ function DetalheFederal({ r, onFechar, onAbrir }: {
           </>
         ) },
         { valor: "parlamentar", label: "Parlamentar", corpo: <Parlamentares autores={r.parlamentares} /> },
-        { valor: "pagamentos", label: "Pagamentos", corpo: consultada ? (
+        { valor: "pagamentos", label: "Pagamentos", corpo: (
+          <>
+            {/* ⭐ PRIMEIRO O QUE CHEGOU AQUI: o pago a quem está NESTE município,
+                mês a mês (planilha de favorecidos da CGU, 24/09/2026). É a fatia
+                que o agregado nacional abaixo não separa. */}
+            {recebido.length > 0 && (
+              <>
+                <p className="text-[12px] font-semibold" style={{ color: "var(--bi-text)" }}>
+                  Recebido neste município: {brl(totalRecebido)}
+                </p>
+                <Lista>
+                  {recebido.map((x, i) => (
+                    <ItemLinha key={i}
+                      titulo={txt(x.favorecido)}
+                      valor={<span className="bi-num">{brl(x.valor)}</span>}
+                      meta={[mesAno(x.ano_mes), x.natureza ? String(x.natureza) : null]
+                        .filter(Boolean).join(" · ")} />
+                  ))}
+                </Lista>
+              </>
+            )}
+            {consultada ? (
           <>
             {/* ⚠️⚠️ DA EMENDA INTEIRA, NACIONAL — e o rótulo diz. Somado ao
                 indicado, deu R$ 4 bilhões em Nova Palma. */}
@@ -175,7 +206,9 @@ function DetalheFederal({ r, onFechar, onAbrir }: {
                 tom: ((ex.valor_resto_cancelado as number) || 0) > 0 ? "critico" : "normal" },
             ]} />
           </>
-        ) : <Vazio>A execução desta emenda ainda não foi consultada no Portal da Transparência.</Vazio> },
+            ) : <Vazio>A execução desta emenda ainda não foi consultada no Portal da Transparência.</Vazio>}
+          </>
+        ) },
         { valor: "historico", label: `Histórico${lt.documentos?.length ? ` (${lt.documentos.length})` : ""}`, corpo:
           lt.documentos?.length ? (
             <Grade rolagem minLargura="32rem" cols={cols}
@@ -190,8 +223,26 @@ function DetalheFederal({ r, onFechar, onAbrir }: {
               ))}
             </Grade>
           ) : <Vazio>{lt.motivo || "Sem documentos de execução."}</Vazio> },
-        { valor: "instrumentos", label: `Projeto e instrumentos${inst.length ? ` (${inst.length})` : ""}`, corpo:
-          inst.length ? (
+        { valor: "instrumentos", label: `Projeto e instrumentos${inst.length + convGerados.length ? ` (${inst.length + convGerados.length})` : ""}`, corpo:
+          inst.length || convGerados.length ? (
+            <>
+            {/* Os convênios que a emenda gerou NESTE município, pela planilha da
+                CGU — o vínculo emenda → convênio que a API dela não tem. */}
+            {convGerados.length > 0 && (
+              <Lista>
+                {convGerados.map((c, i) => (
+                  <ItemLinha key={`cgu-${i}`}
+                    titulo={<span className="flex flex-wrap items-center gap-1.5">
+                      Convênio {txt(c.numero)} <Selo tom="acento">gerado por esta emenda</Selo>
+                    </span>}
+                    valor={<span className="bi-num">{brl(c.valor)}</span>}
+                    meta={[c.convenente ? String(c.convenente) : null,
+                           c.data_publicacao ? `publicado em ${dia(c.data_publicacao)}` : null,
+                           c.objeto ? String(c.objeto) : null].filter(Boolean).join(" · ")} />
+                ))}
+              </Lista>
+            )}
+            {inst.length > 0 && (
             <Lista>
               {inst.map((i) => (
                 <ItemLinha key={`${i.origem}-${i.id}`}
@@ -203,6 +254,8 @@ function DetalheFederal({ r, onFechar, onAbrir }: {
                   onClick={i.origem === "indicacao" ? undefined : () => onAbrir(i.origem, i.id)} />
               ))}
             </Lista>
+            )}
+            </>
           ) : <Vazio>Esta emenda ainda não virou proposta, plano de ação ou convênio.</Vazio> },
       ]}
     />

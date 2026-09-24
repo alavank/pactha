@@ -120,7 +120,11 @@ def unificar_federais(carteira: list[dict], te: list[dict], parcerias: list[dict
                     motivo=e.get("motivo"), execucao=execucao,
                     execucao_consultada=bool(e.get("execucao_consultada")),
                     documentos_n=e.get("documentos_n") or 0,
-                    url_fonte=e.get("url_fonte"))
+                    url_fonte=e.get("url_fonte"),
+                    # Pago a quem está NESTE município (planilha de favorecidos da
+                    # CGU) — POR CÓDIGO, não por beneficiário da carteira.
+                    recebido_municipio=e.get("recebido_municipio"),
+                    convenios_n=e.get("convenios_n") or 0)
         # ⚠️ O mesmo código pode vir em DUAS linhas da carteira (dois beneficiários
         # no município: a prefeitura e o hospital). O `id` continua o código — o
         # detalhe mostra as duas —, mas a `chave` da lista não pode repetir.
@@ -246,8 +250,17 @@ def totais(linhas: list[dict]) -> dict:
     pararam."""
     t = {"emendas": len(linhas), "valor_prefeitura": 0.0, "fora_prefeitura_n": 0,
          "fora_prefeitura_valor": 0.0, "parado_n": 0, "com_pagamento_n": 0,
-         "nao_consultadas_n": 0, "com_execucao_n": 0, "impositivas_n": 0, "por_origem": {}}
+         "nao_consultadas_n": 0, "com_execucao_n": 0, "impositivas_n": 0, "por_origem": {},
+         # ⭐ O único valor de EXECUÇÃO que soma: o pago a quem está neste
+         # município (favorecidos da CGU). ⚠️ UMA VEZ POR CÓDIGO — a mesma emenda
+         # pode ter duas linhas (prefeitura e hospital), e o recebido é do código.
+         "recebido_municipio": 0.0}
+    codigos_somados: set = set()
     for l in linhas:
+        cod = l.get("codigo_emenda")
+        if l.get("recebido_municipio") and cod and cod not in codigos_somados:
+            codigos_somados.add(cod)
+            t["recebido_municipio"] += l["recebido_municipio"]
         v = l["valor"] or 0.0
         if l["municipal"]:
             t["valor_prefeitura"] += v
@@ -273,4 +286,5 @@ def totais(linhas: list[dict]) -> dict:
             t["por_origem"][o] = t["por_origem"].get(o, 0) + 1
     t["valor_prefeitura"] = round(t["valor_prefeitura"], 2)
     t["fora_prefeitura_valor"] = round(t["fora_prefeitura_valor"], 2)
+    t["recebido_municipio"] = round(t["recebido_municipio"], 2)
     return t
