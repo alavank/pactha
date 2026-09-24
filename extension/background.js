@@ -685,6 +685,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, responder) => {
     iniciarCapturaCompleta();
     responder({ ok: true });
   }
+  // O popup pergunta a versão do SERVIÇO DE FUNDO (24/09/2026): o popup lê os arquivos
+  // do disco a cada abertura, o serviço de fundo só troca no ↻ de chrome://extensions.
+  if (msg && msg.tipo === "versao") {
+    responder({ versao: chrome.runtime.getManifest().version });
+  }
   return false;
 });
 
