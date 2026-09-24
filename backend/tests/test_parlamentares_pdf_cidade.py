@@ -1,14 +1,17 @@
-"""PDF «Relatório de Parlamentares»: a CIDADE no topo, grande (24/09/2026).
+"""PDF «Relatório de Parlamentares»: a CIDADE no título, grande (24/09/2026).
 
 Pedido da Laiza (Nova Serrana/MG): "no título eu gostaria que colocasse o nome da
 cidade grande, porque se eu precisar imprimir consigo identificar de qual cidade
-é". O subtítulo dizia "município: 2" — o ID interno.
+é". O subtítulo dizia "município: 2" — o ID interno. No mesmo dia o PDF passou ao
+MODELO DA PLANILHA do cliente (ver `test_parlamentares_pdf_modelo.py`): a cidade
+agora está no título de cada bloco ("RECURSOS PARA NOVA SERRANA – EMENDAS
+INDICADAS POR ..."), a maior letra da folha.
 
 Aqui o endpoint roda INTEIRO (sem Postgres): o banco falso só responde a leitura
 do município, `listar`/`detalhe` são dublês, e o PDF gerado é lido de volta com
-pypdf. O que se prova é o que sai no papel: o nome grande, o nome no subtítulo
-(sem o ID), o nome em toda folha, o nome no arquivo — e que os filtros da tela
-(`anos`, `tipo`) chegam ao PDF.
+pypdf. O que se prova é o que sai no papel: o nome grande, o nome na linha de
+filtros (sem o ID), o nome em toda folha, o nome no arquivo — e que os filtros
+da tela (`anos`, `tipo`) chegam ao PDF.
 
 Rodar:
     python -m pytest backend/tests/test_parlamentares_pdf_cidade.py -v
@@ -108,18 +111,23 @@ async def _ler(resp):
     return [bytes(c) if not isinstance(c, bytes) else c async for c in resp.body_iterator]
 
 
-def test_a_cidade_sai_grande_no_topo_e_o_id_sumiu(chamadas):
+def _plano(t: str) -> str:
+    """Texto sem as quebras de linha das células (Paragraph quebra onde cabe)."""
+    return " ".join(t.split())
+
+
+def test_a_cidade_sai_no_titulo_e_o_id_sumiu(chamadas):
     _resp, _pdf, texto = _gera(_Db(_mun()), q="Nikolas")
-    pag1 = texto[0]
-    # A cidade vem logo ACIMA do título (o rodapé, desenhado antes no fluxo do
-    # PDF, sai primeiro na extração de texto).
-    assert "NOVA SERRANA / MG\nRelatório de Parlamentares" in pag1
+    pag1 = _plano(texto[0])
+    # O plano do dublê está pago EM PARTE: o título não pode dizer "PAGOS".
+    assert "RECURSOS PARA NOVA SERRANA – EMENDAS INDICADAS POR NIKOLAS FERREIRA" in pag1
     assert "município: Nova Serrana/MG" in pag1
     assert "município: 2" not in pag1
 
 
 def test_a_cidade_e_a_maior_letra_da_primeira_pagina(chamadas):
-    """"Grande" é medido, não suposto: a fonte da cidade é maior que a do título."""
+    """"Grande" é medido, não suposto: o título com a cidade é a maior letra da
+    folha (16pt, o tamanho do título do modelo)."""
     _resp, pdf, _texto = _gera(_Db(_mun()))
     tamanhos: dict = {}
 
@@ -131,8 +139,8 @@ def test_a_cidade_e_a_maior_letra_da_primeira_pagina(chamadas):
     pdf.pages[0].extract_text(visitor_text=_visita)
     maior = max(tamanhos, key=tamanhos.get)
     assert "NOVA SERRANA" in maior
-    assert tamanhos[maior] >= 20
-    assert tamanhos[maior] > max(v for k, v in tamanhos.items() if "Relatório de Parlamentares" == k)
+    assert tamanhos[maior] >= 16
+    assert tamanhos[maior] > max(v for k, v in tamanhos.items() if "NOVA SERRANA" not in k)
 
 
 def test_toda_folha_diz_a_cidade_no_rodape(chamadas, monkeypatch):
@@ -166,12 +174,12 @@ def test_nome_com_acento_vira_arquivo_ascii(chamadas):
     disp.encode("ascii")
     # E o "<"/"&" da busca não derruba o Paragraph: sai escrito.
     assert 'busca: "Zé & <Cia>"' in texto[0]
-    assert "SÃO JOÃO DEL-REI / MG" in texto[0]
+    assert "RECURSOS PARA SÃO JOÃO DEL-REI – EMENDAS INDICADAS POR" in _plano(texto[0])
 
 
 def test_sem_uf_nao_imprime_barra_none(chamadas):
     _resp, pdf, texto = _gera(_Db(_mun(uf=None)))
-    assert "NOVA SERRANA\nRelatório de Parlamentares" in texto[0]
+    assert "RECURSOS PARA NOVA SERRANA – EMENDAS" in _plano(texto[0])
     assert "município: Nova Serrana" in texto[0]
     assert "None" not in texto[0] and "Nova Serrana/" not in texto[0]
     assert pdf.metadata.title == "Relatório de Parlamentares — Nova Serrana"
@@ -181,7 +189,9 @@ def test_sem_municipio_diz_todos_os_municipios(chamadas):
     """Só o super-admin chega aqui sem município (os demais levam 403 antes)."""
     db = _Db(None)
     resp, _pdf, texto = _gera(db, municipio_id=None)
-    assert "TODOS OS MUNICÍPIOS\nRelatório de Parlamentares" in texto[0]
+    t = _plano(texto[0])
+    assert "RECURSOS PARA TODOS OS MUNICÍPIOS – EMENDAS INDICADAS POR NIKOLAS FERREIRA" in t
+    assert "TOTAL GERAL – TODOS OS MUNICÍPIOS" in t
     assert "município: Todos os municípios" in texto[0]
     assert "parlamentares_todos_os_municipios" in resp.headers["content-disposition"]
     assert db.consultas == 0          # nada a ler do município
@@ -213,11 +223,17 @@ def test_chamada_direta_sem_anos_nem_tipo_nao_quebra(chamadas):
     assert "todos os anos" in texto[0]
 
 
-def test_a_transferencia_especial_sai_com_a_execucao_ao_lado_da_situacao(chamadas):
-    """Pedido 2 da Laiza: "só tá na situação como CIENTE"."""
+def test_a_transferencia_especial_sai_com_a_execucao_por_extenso(chamadas):
+    """Pedido 2 da Laiza: "só tá na situação como CIENTE". No modelo novo a
+    SITUAÇÃO ATUAL é a execução por extenso — e CIENTE (cadastro) não aparece
+    como se fosse o estágio do dinheiro."""
     _resp, _pdf, texto = _gera(_Db(_mun()))
-    t = " ".join(texto)
-    assert "CIENTE" in t
-    assert "Execução" in t and "Pago em parte" in t
-    assert "205.066,16" in t and "22/06/2026" in t
-    assert "Situação do plano" in t          # a nota de leitura, no fim
+    t = _plano(" ".join(texto))
+    assert ("Pago em parte: R$ 205.066,16 de R$ 398.000,00; "
+            "último pagamento em 22/06/2026.") in t
+    assert "CIENTE" not in t
+    # Achado (a) da revisão do 97e4903: a legenda dizia «-» = "não consultado"
+    # também do «Últ. pagamento» de plano CONSULTADO. Plano consultado não pode
+    # ter "não consultad..." em lugar nenhum da folha.
+    assert "não consultad" not in t.lower()
+    assert "«-»" not in t

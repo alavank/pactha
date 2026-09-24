@@ -36,7 +36,7 @@ def _valor_proposta(v) -> float:
         return 0.0
 
 
-def propostas_saude_por_autor(linha_propostas) -> list[dict]:
+def propostas_saude_por_autor(linha_propostas, com_pagamento: bool = False) -> list[dict]:
     """As propostas de saude do FNS por AUTOR, RICAS, de `raw_data['linhaPropostas']`.
 
     ⚠️ POR QUE ESTE MODULO, E NAO CADA TELA. O autor da emenda de saude NAO esta
@@ -62,6 +62,13 @@ def propostas_saude_por_autor(linha_propostas) -> list[dict]:
     pela linha inteira, senao o total ao expandir divergiria do que o cabecalho
     atribuiu ao parlamentar. Tolera `linha_propostas` como lista JSONB ja
     parseada OU string.
+
+    `com_pagamento=True` (o PDF de Parlamentares, 24/09/2026) acrescenta o que
+    o coletor grava por proposta (`ingestion/run_fns_local.py`): `vl_pago`,
+    `vl_pagar` e `data_pagamento` (dd/mm/aaaa, a do ULTIMO pagamento). ⚠️
+    `vl_pago`/`vl_pagar` saem None quando a fonte nao trouxe a chave — o FNS
+    omite `vlPago` tambem quando so nao informa, e None nao e zero. Desligado,
+    o dict e o de sempre (o agregado e o BI comparam por igualdade).
     """
     if isinstance(linha_propostas, str):
         try:
@@ -87,8 +94,18 @@ def propostas_saude_por_autor(linha_propostas) -> list[dict]:
                       or pp.get("nome") or "").strip()
                 if e_parlamentar_real(nm):
                     nomes.append(nm)
+        extra = {}
+        if com_pagamento:
+            extra = {
+                "vl_pago": (_valor_proposta(prop.get("vlPago"))
+                            if prop.get("vlPago") is not None else None),
+                "vl_pagar": (_valor_proposta(prop.get("vlPagar"))
+                             if prop.get("vlPagar") is not None else None),
+                "data_pagamento": str(prop.get("data_pagamento") or "").strip() or None,
+            }
         for nm in (nomes or [None]):
-            out.append({"autor": nm, "valor": val, "numero": numero, "situacao": situacao})
+            out.append({"autor": nm, "valor": val, "numero": numero, "situacao": situacao,
+                        **extra})
     return out
 
 

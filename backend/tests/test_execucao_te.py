@@ -23,7 +23,8 @@ from pathlib import Path
 import pytest
 
 from ingestion.transferegov_te import pagamentos_da_arvore
-from services.execucao_te import ROTULOS, empenho_real, execucao_te, texto_rm_te
+from services.execucao_te import (ROTULOS, empenho_real, execucao_te, frase_execucao_te,
+                                  frase_relatorio_gestao, situacao_e_execucao, texto_rm_te)
 from tests.test_te_arvore import PLANO_67457, PLANO_91573, _arvore
 
 RAIZ = Path(__file__).resolve().parent.parent
@@ -252,10 +253,97 @@ def test_o_SELECT_do_plano_de_acao_e_SQL_valido():
     pglast.parse_sql(sql)
 
 
-def test_o_PDF_mostra_a_situacao_do_plano_E_a_execucao():
-    fonte = _fonte("routers/export_pdf.py")
-    assert '"Situação\\ndo plano", "Execução"' in fonte
-    assert 'x.get("execucao")' in fonte and 'x.get("valor_pago")' in fonte
+def test_o_PDF_escreve_a_execucao_por_esta_frase():
+    """O PDF no modelo da planilha (24/09/2026) escreve a SITUAÇÃO ATUAL da TE
+    por `frase_execucao_te` — nenhuma segunda leitura do dinheiro no relatório."""
+    fonte = _fonte("services/relatorio_parlamentares.py")
+    assert "from services.execucao_te import frase_execucao_te" in fonte
+    assert "frase_execucao_te(ex, x.get(\"valor_total\"))" in fonte
+
+
+# ---------------------------------------------------------------------------
+# A execução POR EXTENSO (PDF no modelo da planilha) — cada estado, uma frase
+# ---------------------------------------------------------------------------
+def test_frase_dos_dois_planos_reais():
+    """As frases do modelo do cliente ("Pagamento realizado em 13/12/2024."),
+    com as datas e valores que a CAPTURA REAL dá — não os do código."""
+    pg_pago, emps_pago = _gravado(PLANO_67457, 200000.0)
+    pg_parte, emps_parte = _gravado(PLANO_91573, 398000.0)
+    assert frase_execucao_te(execucao_te(pg_pago, emps_pago, True), 200000.0) == \
+        "Pagamento realizado em 25/06/2024."
+    assert frase_execucao_te(execucao_te(pg_parte, emps_parte, True), 398000.0) == \
+        "Pago em parte: R$ 205.066,16 de R$ 398.000,00; último pagamento em 22/06/2026."
+
+
+@pytest.mark.parametrize("estado,frase_esperada", [
+    ("empenhado", "Empenhado, aguardando pagamento."),
+    ("sem_empenho", "Sem empenho."),
+    ("sem_pagamento", "Sem pagamento."),
+    ("nao_consultada", "Execução não consultada."),
+])
+def test_frase_de_cada_estado_sem_dinheiro(estado, frase_esperada):
+    assert frase_execucao_te({"estado": estado}, 100.0) == frase_esperada
+
+
+def test_frase_dos_estados_produzidos_pelo_helper():
+    """Os mesmos estados, agora saindo de `execucao_te` (e não escritos à mão)."""
+    emp = {"numero_empenho": "2026NE000123", "valor_empenho": 300000.0,
+           "descricao_situacao_empenho": "Enviado", "documentos_habeis": []}
+    pg_emp = pagamentos_da_arvore({"empenhos": [emp]}, 300000.0)
+    pg_nada = pagamentos_da_arvore({"empenhos": []}, 500000.0)
+    assert frase_execucao_te(execucao_te(pg_emp, [emp], True)) == "Empenhado, aguardando pagamento."
+    assert frase_execucao_te(execucao_te(pg_nada, [], True)) == "Sem empenho."
+    assert frase_execucao_te(execucao_te(pg_nada, None, False)) == "Sem pagamento."
+    assert frase_execucao_te(execucao_te(None)) == "Execução não consultada."
+
+
+def test_so_o_nao_consultado_diz_nao_consultada():
+    """Achado (a) da revisão do 97e4903: nenhum texto diz "não consultado" do que
+    foi consultado — nem do plano pago sem data, nem do consultado sem OB."""
+    for estado in ("pago", "pago_parte", "empenhado", "sem_empenho", "sem_pagamento"):
+        assert "consultad" not in frase_execucao_te({"estado": estado}, 1.0)
+    # Pago sem data: diz o que se sabe, sem inventar data nem "não consultado".
+    assert frase_execucao_te({"estado": "pago"}) == "Pagamento realizado."
+
+
+def _relatorios_enxutos(arv: dict) -> list[dict]:
+    """O que o SELECT de `detalhe_core` monta de `detalhe->'relatorios_gestao_novos'`
+    (tipo, situação, data e QUANTAS análises) — aqui a partir da árvore REAL."""
+    return [{"tipo": r.get("tipo_relatorio_gestao_novo"),
+             "situacao": r.get("situacao_relatorio_gestao_novo"),
+             "data": r.get("data_relatorio_gestao_novo"),
+             "analises": len(r.get("analises") or [])}
+            for r in arv.get("relatorios_gestao_novos") or []]
+
+
+def test_relatorio_de_gestao_do_67457_real():
+    """O 67457 tem relatório de gestão FINAL "Disponibilizado" em 30/12/2025 e
+    nenhuma análise na captura. A frase diz exatamente isso — e não "aguardando
+    análise", que a fonte não afirma."""
+    arv = _arvore(PLANO_67457)
+    txt = frase_relatorio_gestao(_relatorios_enxutos(arv), len(arv["relatorios_gestao"]),
+                                 True, "pago")
+    assert txt == ("Relatório de gestão final: Disponibilizado em 30/12/2025; "
+                   "nenhuma análise registrada.")
+
+
+def test_relatorio_de_gestao_so_afirma_ausencia_com_a_arvore_lida_e_dinheiro_pago():
+    assert frase_relatorio_gestao([], 0, True, "pago") == "Nenhum relatório de gestão registrado."
+    assert frase_relatorio_gestao([], 0, False, "pago") == ""        # árvore não lida
+    assert frase_relatorio_gestao([], 0, True, "empenhado") == ""    # nada pago ainda
+    assert frase_relatorio_gestao([], 1, True, "pago") == ""         # há na lista antiga
+    assert frase_relatorio_gestao("lixo", "x", True, "pago") == "Nenhum relatório de gestão registrado."
+    assert frase_relatorio_gestao([{"tipo": "Parcial", "situacao": "Em análise",
+                                    "data": "2026-01-02", "analises": 2}]) == \
+        "Relatório de gestão parcial: Em análise em 02/01/2026; 2 análise(s) registrada(s)."
+
+
+def test_situacao_do_plano_com_a_execucao_ao_lado():
+    """Consolidado e aba Federais: "CIENTE · Pago em parte" (achado (b))."""
+    assert situacao_e_execucao("CIENTE", "Pago em parte") == "CIENTE · Pago em parte"
+    assert situacao_e_execucao("CIENTE", None) == "CIENTE"
+    assert situacao_e_execucao(None, "Pago") == "Pago"
+    assert situacao_e_execucao("", "") == ""
 
 
 def test_a_tela_mostra_o_mesmo_rotulo():

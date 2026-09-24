@@ -167,3 +167,115 @@ def texto_rm_te(ex: dict) -> str:
     if ex.get("tem_documento_habil"):
         return "Pendente de desembolso"   # há empenho/DH e nada saiu
     return ""
+
+
+# ---------------------------------------------------------------------------
+# A execução POR EXTENSO — o PDF de Parlamentares no modelo da planilha
+# (24/09/2026) e as telas que só mostravam "CIENTE"
+# ---------------------------------------------------------------------------
+def frase_execucao_te(ex: dict | None, valor_total=None) -> str:
+    """A coluna SITUAÇÃO ATUAL do PDF de Parlamentares, para UM plano.
+
+    O modelo do cliente (planilha de Bom Despacho, 24/09/2026) escreve frase, e
+    não rótulo: "Pagamento realizado em 13/12/2024." Cada estado de
+    `execucao_te` vira UMA frase, sem inventar o que não foi medido:
+
+      pago           "Pagamento realizado em dd/mm/aaaa."
+      pago_parte     "Pago em parte: R$ X de R$ Y; último pagamento em dd/mm/aaaa."
+      empenhado      "Empenhado, aguardando pagamento."
+      sem_empenho    "Sem empenho."
+      sem_pagamento  "Sem pagamento."  (empenhos NÃO lidos: não se diz "sem empenho")
+      nao_consultada "Execução não consultada."
+
+    ⚠️ A data é a da EMISSÃO DA OB mais recente (a API pública não traz a de
+    crédito — ver o topo deste módulo). Sem data, a frase diz só o que se sabe.
+    ⚠️ "Execução não consultada" SÓ no estado `nao_consultada`: o PDF antigo tinha
+    uma legenda «-» = "não consultado" que valia também para o «Últ. pagamento»
+    de plano CONSULTADO sem OB — a frase por extenso acaba com essa ambiguidade.
+    """
+    ex = ex or {}
+    estado = ex.get("estado") or "nao_consultada"
+    dt = ex.get("dt_ultimo_pagamento")
+    if estado == "pago":
+        return f"Pagamento realizado em {dt}." if dt else "Pagamento realizado."
+    if estado == "pago_parte":
+        pago = _fmt_brl(ex.get("valor_pago"))
+        total = _fmt_brl(valor_total) if _num(valor_total) else ""
+        base = f"Pago em parte: {pago} de {total}" if total else f"Pago em parte: {pago}"
+        return f"{base}; último pagamento em {dt}." if dt else f"{base}."
+    if estado == "empenhado":
+        return "Empenhado, aguardando pagamento."
+    if estado == "sem_empenho":
+        return "Sem empenho."
+    if estado == "sem_pagamento":
+        return "Sem pagamento."
+    return "Execução não consultada."
+
+
+def _data_br(s) -> str:
+    """'2025-12-30' / '2025-12-30T08:19:19' -> '30/12/2025'. Outro formato volta
+    como veio (a fonte já manda dd/mm/aaaa em alguns recursos)."""
+    t = str(s or "").strip()
+    if len(t) >= 10 and t[4] == "-" and t[7] == "-":
+        return f"{t[8:10]}/{t[5:7]}/{t[:4]}"
+    return t
+
+
+def frase_relatorio_gestao(relatorios, n_antigos: int = 0,
+                           detalhe_coletado: bool = False,
+                           estado_execucao: str | None = None) -> str:
+    """O estado do RELATÓRIO DE GESTÃO da TE, por extenso — ou "" quando não há
+    o que afirmar.
+
+    `relatorios`: a lista enxuta que `detalhe_core` monta de
+    `detalhe->'relatorios_gestao_novos'` ({tipo, situacao, data, analises}, com
+    `analises` = QUANTAS análises a fonte devolveu). Vale o de data mais recente.
+
+    ⚠️ SÓ O QUE A FONTE DIZ. O modelo do cliente escreve "Aguardando análise do
+    relatório de gestão."; a API oficial não tem esse estado — ela dá a situação
+    do relatório (ex.: "Disponibilizado", medido no plano 67457 em 14/09/2026) e
+    a lista de análises. A frase aqui junta as duas coisas sem concluir além
+    delas: "Relatório de gestão final: Disponibilizado em 30/12/2025; nenhuma
+    análise registrada."
+
+    Sem relatório: só se afirma "Nenhum relatório de gestão registrado." quando a
+    árvore FOI lida (`detalhe_coletado`), nenhuma das duas listas da fonte tem
+    item (`n_antigos` = tamanho da lista antiga, `relatorios_gestao`) e o plano
+    já recebeu dinheiro — antes do pagamento não há relatório a cobrar.
+    """
+    try:
+        lst = _jsonb(relatorios)
+        lst = [r for r in (lst or []) if isinstance(r, dict)] if isinstance(lst, list) else []
+        if lst:
+            r = max(lst, key=lambda x: str(x.get("data") or ""))
+            tipo = str(r.get("tipo") or "").strip().lower()
+            sit = str(r.get("situacao") or "").strip()
+            data = _data_br(r.get("data"))
+            txt = "Relatório de gestão" + (f" {tipo}" if tipo else "")
+            txt += f": {sit}" if sit else ": registrado"
+            txt += f" em {data}" if data else ""
+            n = int(_num(r.get("analises")) or 0)
+            txt += ("; nenhuma análise registrada." if n == 0
+                    else f"; {n} análise(s) registrada(s).")
+            return txt
+        if (detalhe_coletado and not int(_num(n_antigos) or 0)
+                and estado_execucao in ("pago", "pago_parte")):
+            return "Nenhum relatório de gestão registrado."
+    except Exception:
+        pass
+    return ""
+
+
+def situacao_e_execucao(situacao_plano, rotulo_execucao) -> str:
+    """"CIENTE · Pago em parte": a situação do PLANO com a EXECUÇÃO ao lado.
+
+    Para quem só tinha espaço para UMA coluna de situação — o Consolidado
+    (`routers/consolidado.py::lancamentos`, tela, planilha e PDF) e a aba
+    Federais (`routers/emendas_parlamentares.py::_fontes_federais`). CIENTE
+    sozinho era lido como estágio do dinheiro (pedido da Laiza, 24/09/2026).
+    Sem rótulo, a situação volta como veio (e vice-versa)."""
+    sit = str(situacao_plano or "").strip()
+    rot = str(rotulo_execucao or "").strip()
+    if sit and rot:
+        return f"{sit} · {rot}"
+    return sit or rot

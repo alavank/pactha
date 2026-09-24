@@ -20,7 +20,8 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
+from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+                                KeepTogether, PageBreak)
 from services import authz
 from services.registro_rotas import exige, declarado
 # O recorte da tela de Convênios e a montagem de linha dos três formatos.
@@ -780,35 +781,184 @@ async def export_dou_pdf(
 
 
 # ---------------------------------------------------------------------------
-# Parlamentares — relatorio por parlamentar (respeita a busca da tela)
+# Parlamentares — NO MODELO DA PLANILHA DO CLIENTE (24/09/2026)
 # ---------------------------------------------------------------------------
-_CELL = ParagraphStyle("cell", fontSize=7, leading=8.5)
+# Pedido do dono: "na aba parlamentares eu gostaria que o pdf ficasse nesse
+# modelo" — `EmendasNikolasFerreiraBomDespacho.xlsx`, aba "Emendas por
+# categoria", MEDIDA com openpyxl: paisagem, ajustada à página, bordas finas;
+# título mesclado 16pt negrito branco sobre #1F4E78; cabeçalho 12pt negrito
+# branco sobre #1F4E78; faixa de área 13pt negrito branco sobre #2E75B6; linhas
+# 12pt sobre #DCE6F1 (município em negrito); subtotal negrito sobre #BDD7EE;
+# linha em branco entre áreas; TOTAL GERAL branco sobre #1F4E78. Larguras
+# relativas A..G = 22, 8, 46, 24, 20, 33, 48.
+#
+# ⚠️ AS FONTES DA TABELA SAEM A 3/4 DO MODELO (12 -> 9, 13 -> 10): a planilha é
+# "ajustada à página" — 201 caracteres de largura impressos em 277 mm saem
+# encolhidos nessa proporção. O TÍTULO fica nos 16pt do modelo: é nele que está
+# a CIDADE, e o pedido anterior da Laiza foi "a cidade grande, para identificar
+# impressa".
+#
+# A LÓGICA (linhas, áreas, fora do total, "PAGOS") mora em
+# `services/relatorio_parlamentares.py`; aqui só se desenha.
+_M_AZUL_ESCURO = colors.HexColor("#1F4E78")
+_M_AZUL_FAIXA = colors.HexColor("#2E75B6")
+_M_AZUL_LINHA = colors.HexColor("#DCE6F1")
+_M_AZUL_SUBTOTAL = colors.HexColor("#BDD7EE")
+# Fora do total: CINZA, de propósito diferente do azul do modelo — é o que o
+# olho usa para não somar essas linhas.
+_M_CINZA_FAIXA = colors.HexColor("#595959")
+_M_CINZA_LINHA = colors.HexColor("#EDEDED")
+_M_CINZA_SOMA = colors.HexColor("#D9D9D9")
+_M_BORDA = colors.HexColor("#404040")
+# 277 mm úteis (A4 paisagem, margens de 10 mm), na proporção das colunas A..G.
+_M_LARGURAS = [w * 277 / 201 * mm for w in (22, 8, 46, 24, 20, 33, 48)]
+_M_CABECALHO = ("MUNICÍPIO", "ANO", "RECURSO", "MINISTÉRIO DE ORIGEM",
+                "VALOR GLOBAL (R$)", "PLANO DE AÇÃO / PROPOSTA", "SITUAÇÃO ATUAL")
+
+_MS_TIT = ParagraphStyle("m_tit", fontName="Helvetica-Bold", fontSize=16, leading=19,
+                         textColor=colors.white, alignment=1)
+_MS_FILTRO = ParagraphStyle("m_filtro", fontName="Helvetica", fontSize=8, leading=10,
+                            textColor=colors.HexColor("#475569"), spaceBefore=3, spaceAfter=5)
+_MS_CAB = ParagraphStyle("m_cab", fontName="Helvetica-Bold", fontSize=9, leading=11,
+                         textColor=colors.white, alignment=1)
+_MS_FAIXA = ParagraphStyle("m_faixa", fontName="Helvetica-Bold", fontSize=10, leading=12,
+                           textColor=colors.white, alignment=0)
+_MS_MUN = ParagraphStyle("m_mun", fontName="Helvetica-Bold", fontSize=9, leading=11, alignment=1)
+_MS_C = ParagraphStyle("m_c", fontName="Helvetica", fontSize=9, leading=11, alignment=1)
+_MS_L = ParagraphStyle("m_l", fontName="Helvetica", fontSize=9, leading=11, alignment=0)
+_MS_R = ParagraphStyle("m_r", fontName="Helvetica", fontSize=9, leading=11, alignment=2)
+_MS_SUB = ParagraphStyle("m_sub", fontName="Helvetica-Bold", fontSize=9, leading=11, alignment=2)
+_MS_TOT = ParagraphStyle("m_tot", fontName="Helvetica-Bold", fontSize=10, leading=12,
+                         textColor=colors.white, alignment=2)
+_MS_NOTA = ParagraphStyle("m_nota", fontName="Helvetica", fontSize=7.5, leading=9.5,
+                          textColor=colors.HexColor("#334155"), spaceBefore=4)
+
+_NOTA_FORA = {
+    "EMENDAS FEDERAIS SEM INSTRUMENTO IDENTIFICADO": (
+        "<b>Fora do total — emendas federais sem instrumento identificado:</b> "
+        "indicações da carteira da CGU cujo instrumento não se casa pelo número da "
+        "emenda (as propostas de saúde do FNS e as seleções do Novo PAC não trazem "
+        "esse número). Podem ser o mesmo dinheiro de uma linha acima; por isso não "
+        "entram no total geral."),
+    "PROPOSTAS NÃO SELECIONADAS, CANCELADAS OU IMPEDIDAS": (
+        "<b>Fora do total — propostas não selecionadas, canceladas ou impedidas:</b> "
+        "aparecem para conferência, mas não são recurso do município."),
+}
+_NOTA_COMO_LER = (
+    "<b>Como ler.</b> Cada parlamentar começa numa folha. A <b>situação atual</b> diz "
+    "o que foi medido: «Pagamento realizado» é ordem bancária emitida (transferência "
+    "especial), repasse do FNS sem saldo a pagar, desembolso integral do convênio ou "
+    "pagamento na planilha da SEGOV (emenda estadual); o que não foi consultado é dito "
+    "por extenso e nunca vira R$ 0. O título só diz <b>RECURSOS PAGOS</b> quando todas "
+    "as linhas do total foram pagas e não há nada fora dele. <b>Áreas</b>: pela função "
+    "orçamentária do plano (transferência especial) ou pelo ministério/secretaria de "
+    "origem; esporte só de investimento (obra) conta como infraestrutura; na dúvida, "
+    "OUTROS. Um instrumento que executa uma emenda aparece uma vez só — a emenda não "
+    "se repete ao lado dele.")
 
 
-def _pc(txt, limit: int = 400):
-    """Celula que quebra linha (Paragraph). '-' quando vazio."""
-    s = "" if txt is None else str(txt)
-    s = s.replace("\n", " ").strip()
-    return Paragraph((s[:limit] or "-"), _CELL)
+def _esc(s, limite: int = 0) -> str:
+    """Texto para Paragraph: markup escapado (um "<" ou "&" derrubava o PDF) e,
+    com `limite`, cortado — uma célula mais alta que a folha é LayoutError."""
+    t = " ".join(str(s if s is not None else "").split())
+    if limite and len(t) > limite:
+        t = t[:limite].rstrip() + "…"
+    return html.escape(t, quote=False)
 
 
-def _sec_table(headers: list, rows: list, col_widths_mm: list) -> Table:
-    t = Table([headers] + rows, repeatRows=1, hAlign="LEFT",
-              colWidths=[w * mm for w in col_widths_mm])
+def _barra_titulo(titulo: str) -> Table:
+    t = Table([[Paragraph(_esc(titulo), _MS_TIT)]], colWidths=[sum(_M_LARGURAS)])
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#334155")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 7),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("BACKGROUND", (0, 0), (-1, -1), _M_AZUL_ESCURO),
+        ("BOX", (0, 0), (-1, -1), 0.4, _M_BORDA),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
     ]))
     return t
+
+
+def _celulas_modelo(l: dict) -> list:
+    from services.relatorio_parlamentares import fmt_valor
+    refs = "<br/>".join(_esc(r, 80) for r in l.get("referencias") or []) or "—"
+    return [
+        Paragraph(_esc(l["municipio"], 60), _MS_MUN),
+        Paragraph(str(l["ano"]) if l.get("ano") else "—", _MS_C),
+        Paragraph(_esc(l["recurso"], 600), _MS_L),
+        Paragraph(_esc(l["ministerio"], 120), _MS_C),
+        Paragraph(fmt_valor(l["valor"]), _MS_R),
+        Paragraph(refs, _MS_C),
+        Paragraph(_esc(l["situacao"], 500), _MS_L),
+    ]
+
+
+def _linha_soma(rotulo: str, valor, estilo) -> list:
+    from services.relatorio_parlamentares import fmt_valor
+    return [Paragraph(_esc(rotulo), estilo), "", "", "", Paragraph(fmt_valor(valor), estilo), "", ""]
+
+
+def _estilo_modelo(tipos: list[str]) -> list:
+    cmds: list = [
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]
+    fundo = {"cab": _M_AZUL_ESCURO, "faixa": _M_AZUL_FAIXA, "dado": _M_AZUL_LINHA,
+             "subtotal": _M_AZUL_SUBTOTAL, "total": _M_AZUL_ESCURO,
+             "faixa_fora": _M_CINZA_FAIXA, "fora": _M_CINZA_LINHA, "soma_fora": _M_CINZA_SOMA}
+    for i, k in enumerate(tipos):
+        if k == "branco":
+            continue          # a linha em branco do modelo: sem borda, sem fundo
+        cmds.append(("GRID", (0, i), (-1, i), 0.4, _M_BORDA))
+        cmds.append(("BACKGROUND", (0, i), (-1, i), fundo[k]))
+        if k in ("faixa", "faixa_fora"):
+            cmds.append(("SPAN", (0, i), (-1, i)))
+        elif k in ("subtotal", "total", "soma_fora"):
+            cmds.append(("SPAN", (0, i), (3, i)))     # A:D mesclado, como no modelo
+    return cmds
+
+
+def _bloco_modelo(bloco: dict, cidade: str, filtros_txt: str) -> list:
+    """Os flowables de UM parlamentar: barra do título, a linha de filtros e a
+    tabela (cabeçalho repetido a cada folha)."""
+    fl: list = [_barra_titulo(bloco["titulo"]), Paragraph(_esc(filtros_txt), _MS_FILTRO)]
+    if not bloco["areas"] and not bloco["fora"]:
+        fl.append(Paragraph("Sem lançamentos detalhados para o filtro atual.", _MS_NOTA))
+        return fl
+    dados: list = [[Paragraph(h, _MS_CAB) for h in _M_CABECALHO]]
+    tipos = ["cab"]
+
+    def _add(linha, tipo):
+        dados.append(linha)
+        tipos.append(tipo)
+
+    for a in bloco["areas"]:
+        if len(tipos) > 1:
+            _add([""] * 7, "branco")
+        _add([Paragraph(_esc(a["area"]), _MS_FAIXA)] + [""] * 6, "faixa")
+        for l in a["linhas"]:
+            _add(_celulas_modelo(l), "dado")
+        _add(_linha_soma(f"SUBTOTAL – {a['area']}", a["subtotal"], _MS_SUB), "subtotal")
+    if bloco["total"] is not None:
+        _add([""] * 7, "branco")
+        _add(_linha_soma(f"TOTAL GERAL – {cidade}", bloco["total"], _MS_TOT), "total")
+    for g in bloco["fora"]:
+        _add([""] * 7, "branco")
+        _add([Paragraph(_esc(f"FORA DO TOTAL – {g['grupo']}"), _MS_FAIXA)] + [""] * 6,
+             "faixa_fora")
+        for l in g["linhas"]:
+            _add(_celulas_modelo(l), "fora")
+        _add(_linha_soma("SOMA – FORA DO TOTAL GERAL", g["soma"], _MS_SUB), "soma_fora")
+    t = Table(dados, repeatRows=1, colWidths=_M_LARGURAS, hAlign="CENTER",
+              rowHeights=[4 * mm if k == "branco" else None for k in tipos])
+    t.setStyle(TableStyle(_estilo_modelo(tipos)))
+    fl.append(t)
+    if bloco["total"] is None:
+        fl.append(Paragraph("Nenhum instrumento deste parlamentar entra no total geral.",
+                            _MS_NOTA))
+    for g in bloco["fora"]:
+        if g["grupo"] in _NOTA_FORA:
+            fl.append(Paragraph(_NOTA_FORA[g["grupo"]], _MS_NOTA))
+    return fl
 
 
 def _slug_arquivo(s: str) -> str:
@@ -822,9 +972,9 @@ def _slug_arquivo(s: str) -> str:
 
 def _rodape_cidade(cidade: str, emitido: str):
     """Rodapé desenhado em TODA folha — o mesmo gesto de `services/rm_pdf.py::
-    _on_page`. O nome grande no topo só existe na primeira página; impressa, a
-    segunda folha em diante voltava a não dizer de qual cidade era, que é
-    exatamente o pedido (Laiza, Nova Serrana/MG, 24/09/2026)."""
+    _on_page`. A cidade do título só está na primeira folha de cada
+    parlamentar; impressa, a folha de continuação voltaria a não dizer de qual
+    cidade era, que é exatamente o pedido (Laiza, Nova Serrana/MG, 24/09/2026)."""
     def _desenha(canvas, doc):
         canvas.saveState()
         largura = doc.pagesize[0]
@@ -858,9 +1008,12 @@ async def export_parlamentares_pdf(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """PDF da tela Parlamentares — uma secao por parlamentar (respeita a busca
-    `q`, os anos, o tipo e o filtro de municipio), com TODOS os lancamentos:
-    SIGCON-MG (estadual), TransfereGov/SICONV (federal) e Emendas estaduais."""
+    """PDF da tela Parlamentares NO MODELO DA PLANILHA DO CLIENTE (24/09/2026):
+    um bloco por parlamentar, cada um numa folha, com o título "RECURSOS
+    (PAGOS|PARA) <CIDADE> – EMENDAS INDICADAS POR <NOME>", as faixas por área,
+    subtotal, TOTAL GERAL e, à parte, o que fica FORA do total. Respeita a busca
+    `q`, os anos, o tipo e o filtro de município. Regras em
+    `services/relatorio_parlamentares.py`."""
     # Unico endpoint do router que ja checava a tela — nada a acrescentar aqui.
     # A ordem invertida (tela antes de municipio) fica como esta pelo mesmo
     # motivo de `/ai-relatorio`: `municipio_id` e opcional, e um nao-admin que
@@ -885,7 +1038,9 @@ async def export_parlamentares_pdf(
     # `Nova Serrana/MG` no subtítulo e na trilha; sem UF (a coluna é anulável
     # desde uf_sem_default_mg), só o nome — nunca "/None".
     rotulo_mun = (f"{mun.nome}/{_uf}" if _uf else mun.nome) if mun else "Todos os municípios"
-    cidade_topo = (f"{mun.nome.upper()} / {_uf}" if _uf else mun.nome.upper()) if mun else "TODOS OS MUNICÍPIOS"
+    # No TÍTULO de cada bloco, como no modelo ("RECURSOS PAGOS BOM DESPACHO"): o
+    # nome em maiúsculas, sem UF — a UF vai no rodapé de toda folha.
+    cidade_titulo = mun.nome.upper() if mun else "TODOS OS MUNICÍPIOS"
 
     # Normalização contra a CHAMADA DIRETA (os testes chamam esta função sem o
     # FastAPI no meio, e aí o default é o objeto `Query`, não o valor).
@@ -906,33 +1061,15 @@ async def export_parlamentares_pdf(
                           tipo=_tipo, db=db, current=current)
     items = lista.get("items", [])
 
-    styles = getSampleStyleSheet()
-    name_style = ParagraphStyle("pname", parent=styles["Heading2"], fontSize=11,
-                                textColor=colors.HexColor("#1e40af"),
-                                spaceBefore=10, spaceAfter=1)
-    meta_style = ParagraphStyle("pmeta", parent=styles["Normal"], fontSize=8,
-                                textColor=colors.HexColor("#475569"), spaceAfter=3)
-    sub_style = ParagraphStyle("psub", parent=styles["Normal"], fontSize=8.5,
-                               fontName="Helvetica-Bold",
-                               textColor=colors.HexColor("#0f766e"),
-                               spaceBefore=4, spaceAfter=2)
-    # ⭐ A CIDADE EM CIMA, GRANDE (24pt) — maior que o próprio título. Pedido da
-    # Laiza: "se eu precisar imprimir consigo identificar de qual cidade é". O
-    # A4 paisagem tem 277 mm úteis; o nome de município mais longo do país cabe.
-    cidade_style = ParagraphStyle("pcidade", parent=styles["Heading1"],
-                                  fontName="Helvetica-Bold", fontSize=24, leading=28,
-                                  textColor=colors.HexColor("#0f172a"), spaceAfter=2)
-    title_style = ParagraphStyle("Title", parent=styles["Heading1"], fontSize=15,
-                                 textColor=colors.HexColor("#1e40af"), spaceAfter=2)
-    subt_style = ParagraphStyle("Sub", parent=styles["Normal"], fontSize=9,
-                                textColor=colors.HexColor("#475569"), spaceAfter=10)
+    from services.relatorio_parlamentares import montar_bloco
 
-    # ⚠️ `html.escape` na busca e na cidade: Paragraph interpreta markup, e um
-    # "<" ou "&" na busca derrubava o PDF com 500 (e há município com
-    # apóstrofo, como Olhos-d'Água).
+    # A linha pequena de FILTROS abaixo do título de cada bloco. O texto é
+    # escapado na hora de virar Paragraph (`_esc`): um "<" ou "&" na busca
+    # derrubava o PDF com 500 (e há município com apóstrofo, como Olhos-d'Água).
+    emitido = datetime.now().strftime('%d/%m/%Y %H:%M')
     filtros = []
     if q:
-        filtros.append(f"busca: \"{html.escape(q, quote=False)}\"")
+        filtros.append(f"busca: \"{q}\"")
     if _anos:
         filtros.append(f"{'ano' if len(_anos) == 1 else 'anos'}: {_rotulo_periodo(_anos)}")
     else:
@@ -941,170 +1078,33 @@ async def export_parlamentares_pdf(
         filtros.append("só outros proponentes (fundos, municípios)")
     elif _tipo == "todos":
         filtros.append("parlamentares e outros proponentes")
-    filtros.append(f"município: {html.escape(rotulo_mun, quote=False)}")
-    story = [
-        Paragraph(html.escape(cidade_topo, quote=False), cidade_style),
-        Paragraph("Relatório de Parlamentares", title_style),
-        Paragraph(f"{len(items)} parlamentar(es) · {' · '.join(filtros)}", subt_style),
-    ]
-    tem_te = False
+    filtros.append(f"município: {rotulo_mun}")
 
-    for p in items:
+    story: list = []
+    for n, p in enumerate(items, 1):
         try:
             det = await _detalhe(nome_normalizado=p["nome_display"],
                                  municipio_id=municipio_id, ano=None, anos=_anos,
                                  db=db, current=current)  # `ano`/`anos`: ver acima
         except HTTPException:
-            det = {"sigcon": [], "voluntarias": [], "emendas": [], "plano_acao": [], "pac": [], "fns": []}
-
-        pf = p.get("por_fonte", {})
-        muns = ", ".join(p.get("municipios", []))
-        cab = [
-            Paragraph(p["nome_display"], name_style),
-            Paragraph(
-                f"{p['total_lancamentos']} lançamento(s) · Total {_br(p['valor_total'])} · "
-                f"SIGCON: {pf.get('sigcon', 0)} · TransfereGov: {pf.get('voluntaria', 0)} · "
-                f"Emendas: {pf.get('emenda', 0)} · Transf. Especial: {pf.get('plano_acao', 0)} · "
-                f"PAC: {pf.get('pac', 0)} · FNS: {pf.get('fns', 0)} · "
-                f"Emendas federais: {pf.get('emenda_federal', 0)}"
-                + (f" · Municípios: {muns}" if muns else ""),
-                meta_style),
-        ]
-        story.append(KeepTogether(cab))
-
-        sig = det.get("sigcon", [])
-        if sig:
-            rows = [[
-                _pc(s.get("municipio_nome"), 30), _pc(s.get("numero"), 20),
-                _pc(s.get("orgao"), 60), _pc(s.get("situacao"), 40),
-                _pc(_br(s.get("valor_total"))),
-                _pc(s.get("dt_vigencia_atual") or s.get("dt_vigencia_final")),
-                _pc(s.get("objeto"), 500),
-            ] for s in sig]
-            story.append(Paragraph(f"SIGCON-MG (Estadual) — {len(sig)} convênio(s)", sub_style))
-            story.append(_sec_table(
-                ["Município", "Nº SIGCON", "Órgão", "Situação", "Valor Total", "Vigência", "Objeto"],
-                rows, [24, 22, 34, 30, 26, 22, 119]))
-
-        vol = det.get("voluntarias", [])
-        if vol:
-            rows = [[
-                _pc(v.get("municipio_nome"), 30), _pc(v.get("numero_proposta"), 20),
-                _pc(v.get("codigo_instrumento"), 20), _pc(v.get("orgao"), 40),
-                _pc(v.get("situacao"), 40), _pc(v.get("situacao_contratacao"), 30),
-                _pc(_br(v.get("valor_global"))),
-                _pc(_br(v.get("dt_fim_vigencia")) if v.get("dt_fim_vigencia") else "-"),
-                _pc(v.get("objeto"), 500),
-            ] for v in vol]
-            story.append(Paragraph(f"TransfereGov / SICONV (Federal) — {len(vol)} proposta(s)", sub_style))
-            story.append(_sec_table(
-                ["Município", "Nº Proposta", "Instrumento", "Órgão", "Situação", "Sit.Contr.", "Valor Global", "Fim Vig.", "Objeto"],
-                rows, [22, 22, 22, 26, 26, 22, 26, 20, 91]))
-
-        em = det.get("emendas", [])
-        if em:
-            rows = [[
-                _pc(e.get("municipio_nome"), 30), _pc(e.get("nr_indicacao"), 20),
-                _pc(e.get("ano")), _pc(e.get("uo_sigla"), 14),
-                _pc(e.get("beneficiario"), 120), _pc(e.get("tipo_atendimento"), 60),
-                _pc(_br(e.get("valor_indicacao"))), _pc(e.get("status_indicacao"), 40),
-            ] for e in em]
-            story.append(Paragraph(f"Emendas Estaduais — {len(em)} indicação(ões)", sub_style))
-            story.append(_sec_table(
-                ["Município", "Indicação", "Ano", "UO", "Beneficiário", "Tipo", "Valor", "Status"],
-                rows, [24, 24, 12, 16, 70, 45, 26, 60]))
-
-        pa = det.get("plano_acao", [])
-        if pa:
-            tem_te = True
-            # ⭐ SITUAÇÃO DO PLANO ≠ EXECUÇÃO (pedido da Laiza, 24/09/2026: "só tá
-            # na situação como CIENTE"). CIENTE é cadastro; o dinheiro vem ao lado,
-            # da MESMA leitura do RM e da tela (`services/execucao_te.py`).
-            # `_br(None)` é "-": o que não foi medido não vira R$ 0,00.
-            rows = [[
-                _pc(x.get("municipio_nome"), 30), _pc(x.get("codigo"), 20),
-                _pc(x.get("emenda"), 16), _pc(x.get("situacao"), 16),
-                _pc(x.get("execucao"), 40),
-                _pc(_br(x.get("valor_custeio"))), _pc(_br(x.get("valor_investimento"))),
-                _pc(_br(x.get("valor_total"))),
-                _pc(_br(x.get("valor_empenhado"))), _pc(_br(x.get("valor_pago"))),
-                _pc(x.get("dt_ultimo_pagamento")),
-                _pc(x.get("objeto"), 500),
-            ] for x in pa]
-            story.append(Paragraph(f"Transferência Especial / Plano de Ação (RP9) — {len(pa)} plano(s)", sub_style))
-            story.append(_sec_table(
-                # "\n" e não Paragraph: o cabeçalho é texto branco pintado pelo
-                # TableStyle, que não alcança Paragraph (sairia preto no escuro).
-                ["Município", "Plano", "Emenda", "Situação\ndo plano", "Execução",
-                 "Custeio", "Investim.", "Valor Total", "Empenhado", "Pago",
-                 "Últ.\npagamento", "Objeto/Política"],
-                rows, [20, 23, 20, 16, 23, 21, 21, 22, 22, 22, 16, 51]))
-
-        pac = det.get("pac", [])
-        if pac:
-            rows = [[
-                _pc(x.get("municipio_nome"), 30), _pc(x.get("numero_proposta"), 20),
-                _pc(x.get("programa"), 120), _pc(x.get("situacao"), 40),
-                _pc(_br(x.get("valor_total"))), _pc(x.get("emenda_parlamentar"), 40),
-            ] for x in pac]
-            story.append(Paragraph(f"Seleção PAC / Novo PAC — {len(pac)} proposta(s)", sub_style))
-            story.append(_sec_table(
-                ["Município", "Nº Proposta", "Programa", "Situação", "Valor Total", "Emenda"],
-                rows, [26, 24, 90, 40, 28, 45]))
-
-        fns = det.get("fns", [])
-        if fns:
-            rows = [[
-                _pc(x.get("municipio_nome"), 30), _pc(x.get("numero"), 20),
-                _pc(x.get("orgao"), 40), _pc(x.get("situacao"), 40),
-                _pc(_br(x.get("valor_total"))), _pc(x.get("ano")),
-                _pc(x.get("objeto"), 500),
-            ] for x in fns]
-            story.append(Paragraph(f"FNS — Fundo Nacional de Saúde (Federal) — {len(fns)} proposta(s)", sub_style))
-            story.append(_sec_table(
-                ["Município", "Nº Proposta", "Órgão", "Situação", "Valor Total", "Ano", "Objeto"],
-                rows, [24, 24, 34, 34, 26, 14, 97]))
-
-        # A sétima fonte. O cabeçalho do parlamentar já contava "Emendas federais"
-        # (acima), mas o arquivo não tinha a seção: o total do cabeçalho passava
-        # a soma das tabelas, e o parlamentar só com emenda federal saía "sem
-        # lançamentos detalhados".
-        ef = det.get("emendas_federais", [])
-        if ef:
-            rows = [[
-                _pc(x.get("municipio_nome"), 30), _pc(x.get("codigo_emenda"), 20),
-                _pc(x.get("ano")), _pc(x.get("beneficiario_nome"), 120),
-                _pc(x.get("qualif_proponente"), 40), _pc(_br(x.get("valor_total"))),
-            ] for x in ef]
-            story.append(Paragraph(f"Emendas federais (carteira CGU) — {len(ef)} emenda(s)", sub_style))
-            story.append(_sec_table(
-                ["Município", "Emenda", "Ano", "Beneficiário", "Qualificação", "Valor"],
-                rows, [26, 26, 12, 110, 60, 28]))
-
-        if not (sig or vol or em or pa or pac or fns or ef):
-            story.append(Paragraph("Sem lançamentos detalhados.", meta_style))
-        story.append(Spacer(1, 6))
+            det = {}
+        bloco = montar_bloco(p["nome_display"], det, cidade_titulo)
+        if n > 1:
+            story.append(PageBreak())      # um parlamentar por folha, como o modelo
+        story += _bloco_modelo(
+            bloco, cidade_titulo,
+            " · ".join(filtros) + f" · parlamentar {n} de {len(items)} · gerado em {emitido}")
 
     if not items:
-        story.append(Paragraph("Nenhum parlamentar para o filtro atual.", meta_style))
-    if tem_te:
-        # Uma vez, no fim — repetida sob cada parlamentar viraria ruído num PDF
-        # sem busca, com dezenas deles.
+        story += [
+            _barra_titulo(f"RECURSOS PARA {cidade_titulo} – EMENDAS INDICADAS POR PARLAMENTARES"),
+            Paragraph(_esc(" · ".join(filtros) + f" · gerado em {emitido}"), _MS_FILTRO),
+            Paragraph("Nenhum parlamentar para o filtro atual.", _MS_NOTA),
+        ]
+    else:
+        # Uma vez, no fim — repetida sob cada parlamentar viraria ruído.
         story.append(Spacer(1, 6))
-        story.append(Paragraph(
-            "<b>Transferência Especial — como ler.</b> <b>Situação do plano</b> é o "
-            "cadastro no Transferegov (CIENTE = o município deu ciência e o plano está "
-            "ativo; IMPEDIDO = há impedimento registrado) e não muda quando o dinheiro sai. "
-            "<b>Execução</b> vem dos empenhos e das ordens bancárias da União (API "
-            "oficial do Transferegov): <b>Pago</b> = ordem bancária emitida para a conta "
-            "do município; minuta de empenho ou de documento hábil não conta. "
-            "«-» = ainda não consultado, não é R$ 0.", meta_style))
-    emitido = datetime.now().strftime('%d/%m/%Y %H:%M')
-    story.append(Spacer(1, 8))
-    story.append(Paragraph(
-        f"Gerado em {emitido} | PACTHA - Plataforma de Acompanhamento",
-        ParagraphStyle("Footer", parent=styles["Normal"], fontSize=7,
-                       textColor=colors.HexColor("#64748b"), alignment=2)))
+        story.append(Paragraph(_NOTA_COMO_LER, _MS_NOTA))
 
     buf = BytesIO()
     # `title`: é o que aparece na aba do visualizador — a tela abre o PDF como

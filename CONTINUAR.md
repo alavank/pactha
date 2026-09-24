@@ -29,27 +29,47 @@
 
 ---
 
-## 1.40. PDF de Parlamentares com a cidade, execução da Emenda Pix e o "36 de 37" (24/09/2026)
+## 1.40. PDF de Parlamentares no modelo da planilha, execução da Emenda Pix e o "36 de 37" (24/09/2026)
 
-Três pedidos da Laiza (Nova Serrana/MG, cliente da Freitas), com print do PDF de
-Parlamentares e da aba Emendas:
+Pedidos da Laiza (Nova Serrana/MG, cliente da Freitas) e do dono:
 
-- **Cidade no PDF** (`routers/export_pdf.py::export_parlamentares_pdf`): o nome da cidade
-  sai em 24pt acima do título, no subtítulo (antes era o ID: "município: 2"), no rodapé de
-  TODA folha, no `/Title` do PDF (é o que a aba mostra: a tela abre o blob) e no arquivo
-  (`parlamentares_Nova_Serrana_<busca>_<ano>.pdf`, ASCII). Sem município: "TODOS OS
-  MUNICÍPIOS". ⚠️ De carona, o PDF passou a respeitar `anos` e `tipo` da tela — a rota só
-  declarava `ano` e saía "todos os anos" com a década inteira e com os "outros" (Fundo
-  Municipal) misturados. Agora traz MENOS linhas que antes, igual à tela.
+- **PDF no MODELO DA PLANILHA** (pedido do dono: `EmendasNikolasFerreiraBomDespacho.xlsx`,
+  aba "Emendas por categoria"). `export_parlamentares_pdf` desenha; a LÓGICA é pura, em
+  `services/relatorio_parlamentares.py`. Um bloco por parlamentar, cada um numa folha:
+  barra "RECURSOS PAGOS|PARA <CIDADE> – EMENDAS INDICADAS POR <NOME>" (16pt, #1F4E78), a
+  linha pequena de filtros, e a tabela MUNICÍPIO | ANO | RECURSO | MINISTÉRIO DE ORIGEM |
+  VALOR GLOBAL (R$) | PLANO DE AÇÃO / PROPOSTA | SITUAÇÃO ATUAL com faixa por ÁREA
+  (#2E75B6), subtotal (#BDD7EE) e TOTAL GERAL – <CIDADE>; cabeçalho repetido a cada folha.
+  Cidade também no rodapé de toda folha, no `/Title` e no nome do arquivo (ASCII). O PDF
+  respeita `anos` e `tipo` da tela.
+  - **"PAGOS" só com tudo pago** e nada fora do total (TE com OB 100%, FNS pago sem saldo,
+    voluntária desembolsada, indicação paga na planilha da SEGOV; SIGCON/PAC nunca).
+  - **Não conta duas vezes:** instrumento vence a indicação por CHAVE (carteira×voluntária
+    e carteira×TE já em `detalhe_core`; indicação estadual×convênio SIGCON pelo nº da
+    indicação; seleção PAC×voluntária pelo "Número da Proposta Novo PAC"). A carteira CGU
+    que sobra pode ser o mesmo dinheiro do FNS/PAC (sem nº da emenda nos dois) → seção
+    "EMENDAS FEDERAIS SEM INSTRUMENTO IDENTIFICADO", FORA do total. PAC não selecionado,
+    TE IMPEDIDO e cancelado/rejeitado (`_fed_status` 'dead') → outra seção fora do total.
+  - **Áreas:** FNS = SAÚDE; TE pela função orçamentária das finalidades (27 Desporto só de
+    investimento = INFRAESTRUTURA, a quadra do modelo); o resto pelo nome do ministério/
+    secretaria. Duas áreas ou nenhuma = OUTROS. Ordem: soma, maior primeiro; OUTROS por último.
+  - **Ministério da TE** vem de `detalhe->'programa'` (API oficial): ⚠️ NÃO é sempre Fazenda
+    — 2020-22 Economia, 2023-25 Fazenda, 2026 MGI (captura de 14/09/2026). Sem árvore, o de
+    outro plano do mesmo programa; sem nenhum, "—". PAC e carteira pelo órgão SIAFI.
+  - **Situação por extenso** (`execucao_te.frase_execucao_te`): "Pagamento realizado em
+    dd/mm/aaaa." etc. O relatório de gestão da TE entra como a fonte diz ("Relatório de
+    gestão final: Disponibilizado em 30/12/2025; nenhuma análise registrada.") — a API
+    não tem "aguardando análise", que o modelo escreve. FNS: `data_pagamento` da proposta.
 - **Execução da Emenda Pix** (`services/execucao_te.py`): CIENTE é a situação do PLANO
   (cadastro; só existem CIENTE e IMPEDIDO) e não anda com o dinheiro. A leitura única de
   `pagamentos` + `detalhe->'empenhos'` dá Pago / Pago em parte / Empenhado, aguardando
   pagamento / Sem empenho / Sem pagamento / Execução não consultada. `pagamentos` NULO
   nunca vira "Sem empenho" nem R$ 0; "Sem empenho" exige o `detalhe` lido; minuta de
-  empenho (número nulo, valor cheio) não soma. Ligada em `parlamentares.detalhe_core` (a
-  tela mostra o selo e os valores; o PDF ganha Execução/Empenhado/Pago/Últ. pagamento ao
-  lado de "Situação do plano"; o Consolidado recebe as chaves mas ainda não as exibe) e no
-  RM (`texto_rm_te`, texto byte a byte o de antes).
+  empenho (número nulo, valor cheio) não soma. Ligada em `parlamentares.detalhe_core`
+  (tela, PDF), no Consolidado e na aba Federais ("CIENTE · Pago em parte",
+  `situacao_e_execucao`) e no RM (`texto_rm_te`, texto byte a byte o de antes).
+  ⚠️ `detalhe_core` lê por ÍNDICE: coluna nova SEMPRE no fim do SELECT —
+  `tests/test_detalhe_core_ordem.py` monta a linha na ordem do SQL e reprova a troca.
   Decisão do dono em aberto: o RM escrever "Pendente de desembolso" para empenho sem
   documento hábil (hoje fica calado, porque o RM não lê `detalhe`).
 - **"Execução consultada em 36 de 37"**: é só aviso. A linha da carteira SEM nº da emenda
@@ -64,6 +84,10 @@ Parlamentares e da aba Emendas:
 Fora deste trabalho: `/export-pdf/dou` imprime "Município {id}" e recebe sempre `0` do
 frontend (403 para quem não é super-admin); clicar na linha `sem-codigo-N` dá 404 em
 `_detalhe_federal`; `routers/ai.py` ainda lê `pagamentos->>'valor_desembolsado'` direto.
+No PDF novo: o pagamento do convênio SIGCON (`transparencia_mg_empenhos`/SEGOV) não é lido
+— SIGCON nunca conta como "pago"; casar FNS×carteira pedia o `coEmendaPolitica` do FNS,
+cujo formato nunca foi medido; a lista ANTIGA `relatorios_gestao` da TE só é contada (os
+nomes de campo dela não estão em captura nenhuma).
 
 ## 1.39. Saldo das contas do Fundo Municipal de Saúde — Portal FNS (24/09/2026)
 
