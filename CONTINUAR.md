@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **30 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **31 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -28,6 +28,25 @@
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
 
 ---
+
+## 1.39. Saldo das contas do Fundo Municipal de Saúde — Portal FNS (24/09/2026)
+
+Oitava fonte, trazida pelo dono como link (`portalfns.saude.gov.br/downloads/`). A página
+tem PDFs institucionais (prestação de contas 1994-2002, relatórios de gestão) e um arquivo
+por ano, `REPASSE-FAF-COM-POPULACAO-<ANO>` (2002-2022 e 2025; **2023 e 2024 não estão
+lá**). O repasse fundo a fundo nós já tínhamos (`fns_faf.py`, API do ConsultaFNS); o que o
+arquivo tem e nada mais tem é o **SALDO DA CONTA** do Fundo Municipal, por conta.
+
+- **A API do ConsultaFNS não tem saldo** — medido abrindo a tela, como manda a lição do
+  `fns_faf`: o extrato da conta (`recursos/conta-corrente/extrato-movimentacao`) dá 404 e o
+  botão está comentado no código; "Saldo PAB/MAC" é o saldo do TETO, não da conta.
+- **O arquivo é anual e atrasado** (o de 2025 saiu em 16/01/2026, com saldo de 30/11/2025):
+  a tela InvestSUS mostra a data no título do bloco. A rodada é diária, mas só baixa quando
+  há ano novo ou município novo.
+- **Um saldo por conta:** o arquivo repete o saldo em cada estratégia da conta (nenhuma das
+  52.885 contas tem dois saldos). `fns_saldo_conta` tem uma linha por conta.
+- Conferido num Postgres real com o arquivo real: Monte Sião, 12 contas com R$ 4,51 mi em
+  30/11/2025; Nova Palma, 7 contas com R$ 1,16 mi.
 
 ## 1.38. Emendas estaduais de MG pela planilha oficial da SEGOV (24/09/2026)
 

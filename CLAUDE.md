@@ -5,8 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **30 official data sources** (federal +
-MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is MG's **official emendas
+emendas) for Brazilian municipalities, tracking **31 official data sources** (federal +
+MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is the **FNS account balance**
+(`fns_saldo.py`): the Portal FNS's yearly `REPASSE-FAF-COM-POPULACAO-<ANO>` file is the
+ONLY public source of how much sits in each Fundo Municipal de Saúde bank account
+(ConsultaFNS's API has no balance — its statement endpoint is 404) -> `fns_saldo_conta`,
+one row per account (the file repeats the balance per estratégia), shown on the InvestSUS
+screen WITH its date (the 2025 file came out in 01/2026 with the 30/11/2025 balance).
+Before it, MG's **official emendas
 spreadsheet** (`emendas_mg.py`, SEGOV's `DADOS_EMENDAS_*.xlsx` at emendas.mg.gov.br, no
 login): it COMPLETES `emendas_estaduais` (same indicação number as SIGCON) with
 empenhado/liquidado/pago, the Resolução SES health transfers and the municípios without a

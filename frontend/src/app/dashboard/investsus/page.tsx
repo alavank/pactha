@@ -24,7 +24,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Banknote, ChevronDown, ChevronRight, ExternalLink, KeyRound, ListChecks,
-  Loader2, ShieldAlert, Wallet,
+  Landmark, Loader2, ShieldAlert, Wallet,
 } from "lucide-react";
 
 import api from "@/lib/api";
@@ -58,6 +58,21 @@ interface Faf {
   serie?: AnoFaf[];
   atualizado_em: string | null;
 }
+/** Saldo das contas do Fundo Municipal — arquivo ANUAL do Portal FNS. */
+interface ContaFns {
+  cnpj: string; entidade: string | null; banco: string; agencia: string; conta: string;
+  saldo: number | null; dt_saldo: string | null; repassado_ano: number | null;
+  estrategias: string[];
+}
+interface SaldoContas { ano: number; total: number; dt_saldo: string | null; contas: ContaFns[] }
+
+/** "2025-11-30" -> "30/11/2025" (data, não instante: sem fuso). */
+function diaBR(iso?: string | null): string {
+  if (!iso) return "—";
+  const [a, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
+}
+
 interface Resp {
   tem_dados: boolean;
   motivo?: string;
@@ -69,6 +84,7 @@ interface Resp {
   conferir?: Conferir[];
   links?: [string, string][];
   faf?: Faf | null;
+  saldo_contas?: SaldoContas | null;
   coleta_automatica?: boolean;
   bloqueio?: {
     titulo: string;
@@ -322,6 +338,52 @@ export default function InvestSusPage() {
             município. Isto <strong>não</strong> significa que ele não recebeu
             repasses — significa que ainda não buscamos. Assim que a primeira
             rodada passar, os valores por bloco aparecem aqui.
+          </p>
+        </Bloco>
+      )}
+
+      {/* ⭐ O DINHEIRO PARADO NA CONTA DO FUNDO. Só o Portal FNS publica, num
+          arquivo ANUAL que sai com meses de atraso — por isso a data do saldo
+          está no título, e não num rodapé: "R$ 4,5 mi parados" sem a data seria
+          lido como hoje. A API do ConsultaFNS não tem este número. */}
+      {d.saldo_contas && d.saldo_contas.contas.length > 0 && (
+        <Bloco className="p-3">
+          <BlocoHead icon={Landmark}
+                     titulo={`Saldo nas contas do Fundo Municipal em ${diaBR(d.saldo_contas.dt_saldo)}`}
+                     sub={`Portal FNS · arquivo anual de ${d.saldo_contas.ano} · ${d.saldo_contas.contas.length} conta(s)`}
+                     right={<span className="bi-num text-[13px]">{formatCurrency(d.saldo_contas.total)}</span>} />
+          <Lista>
+            {d.saldo_contas.contas.map((c) => (
+              <ItemLinha
+                key={`${c.banco}-${c.agencia}-${c.conta}`}
+                titulo={
+                  <span className="font-mono text-[12px]">
+                    banco {c.banco} · ag. {c.agencia} · c/c {c.conta}
+                  </span>
+                }
+                valor={c.saldo == null ? "—" : formatCurrency(c.saldo)}
+                meta={
+                  <>
+                    {c.entidade && <span>{c.entidade}</span>}
+                    {c.repassado_ano != null && (
+                      <span>· recebeu {formatCurrency(c.repassado_ano)} em {d.saldo_contas!.ano}</span>
+                    )}
+                    {c.estrategias[0] && (
+                      <span className="truncate" title={c.estrategias.join(" · ")}>
+                        · {c.estrategias[0].toLowerCase()}
+                        {c.estrategias.length > 1 ? ` e mais ${c.estrategias.length - 1}` : ""}
+                      </span>
+                    )}
+                  </>
+                }
+              />
+            ))}
+          </Lista>
+          <p className="mt-2 text-[10px] leading-snug" style={{ color: "var(--bi-faint)" }}>
+            O Portal do FNS publica este saldo <b>uma vez por ano</b> (o arquivo de{" "}
+            {d.saldo_contas.ano} saiu com saldo de {diaBR(d.saldo_contas.dt_saldo)}). O saldo de
+            hoje está no extrato bancário de cada conta; aqui ele serve para mostrar onde o
+            dinheiro ficou parado.
           </p>
         </Bloco>
       )}

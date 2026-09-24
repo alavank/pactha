@@ -53,6 +53,12 @@ _SOURCES = [
     ("FNS — Fundo a fundo (saúde)",
      "SELECT max(updated_at), count(*) FROM fns_repasse_faf",
      "fns_faf"),
+    # ⚠️ A DATA É A DO SALDO (`dt_saldo`), NÃO A DA RODADA: o Portal FNS publica o
+    # arquivo uma vez por ano (o de 2025 saiu em 16/01/2026 com saldo de
+    # 30/11/2025). A rodada diária carimbaria "hoje" num número de meses atrás.
+    ("FNS — Saldo das contas do Fundo Municipal (arquivo anual)",
+     "SELECT max(dt_saldo)::timestamptz, count(*) FROM fns_saldo_conta",
+     "fns_saldo"),
     # ⚠️ CONTA SÓ OS QUE ESTÃO NO AR. O radar guarda o programa que saiu de
     # cartaz (marcado com `ausente_desde`, e não apagado); somá-los aqui faria o
     # monitor crescer para sempre e nunca acusar um radar que parou de achar
