@@ -1,6 +1,9 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.34.0
-sqlalchemy[asyncio]>=2.0.0
+# <2.1: o SQLAlchemy 2.1.0 (saiu em 24/09/2026 ~20h UTC) troca o driver padrao do
+# "postgresql://" para o psycopg 3, que nao esta instalado — o CI quebrou em
+# test_migrations_registradas e test_smoke_coleta. Migrar de driver e decisao a parte.
+sqlalchemy[asyncio]>=2.0.0,<2.1
 asyncpg>=0.30.0
 psycopg2-binary>=2.9.0
 pydantic>=2.10.0
