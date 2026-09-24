@@ -61,6 +61,120 @@ const chk = (cond, msg) => {
   if (!cond) falhas++;
 };
 
+/* O CHROME FALSO: roda o background.js INTEIRO com abas, eventos, alarme, selo e
+   storage simulados. `cenario(url, aba)` diz onde cada navegação vai parar:
+   `{ url, titulo, carregando, semEvento, pendenteMs }`. `opcoes.sonda(url)` é o HTML
+   que a sonda do porteiro recebe (default: página logada). */
+function montarBg(cenario, inicial, opcoes) {
+  const store = { pactha_ambientes: [{ nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true }],
+    ...(inicial || {}) };
+  const ouvintes = { nav: [], alarme: [], msg: [] };
+  const abas = new Map();
+  const posts = [];
+  const alarmes = new Set();
+  const navegacoes = [];                     // toda URL mandada a uma aba por tabs.update
+  const selo = { texto: "", titulo: "" };
+  let proxId = 100;
+  const ecoa = (v, cb) => { if (cb) cb(v); return Promise.resolve(v); };
+  const nada = () => {};
+  const navegar = (aba, url) => {
+    const plano = cenario(url, aba) || {};
+    const commit = () => {
+      delete aba.pendingUrl;
+      aba.url = plano.url || url;
+      aba.title = plano.titulo != null ? plano.titulo : "Transferegov";
+      (aba.visitas = aba.visitas || []).push(aba.url);
+      if (!plano.carregando) aba.status = "complete";
+      if (!plano.semEvento) ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: aba.url, frameId: 0 }));
+    };
+    const comecar = () => {
+      aba.status = "loading";
+      aba.pendingUrl = url;                  // como no Chrome: a URL velha fica até o commit
+      setTimeout(commit, plano.pendenteMs || 1);
+    };
+    // `inicioMs`: a navegação pedida demora a APARECER na aba (sem pendingUrl, a
+    // página velha "complete") — a janela em que um sinal velho parece a página nova.
+    if (plano.inicioMs) setTimeout(comecar, plano.inicioMs); else comecar();
+  };
+  const chromeFalso = {
+    storage: { local: {
+      get: (k, cb) => { const o = {}; (Array.isArray(k) ? k : [k]).forEach((x) => { if (x in store) o[x] = store[x]; }); return ecoa(o, cb); },
+      set: (o, cb) => { Object.assign(store, o); return ecoa(undefined, cb); },
+      remove: (k, cb) => { (Array.isArray(k) ? k : [k]).forEach((x) => delete store[x]); return ecoa(undefined, cb); },
+    }, onChanged: { addListener: nada } },
+    tabs: {
+      create: (o, cb) => { const aba = { id: proxId++, url: o.url, status: "complete" }; abas.set(aba.id, aba); if (cb) cb(aba); },
+      get: (id) => abas.has(id) ? Promise.resolve({ ...abas.get(id) }) : Promise.reject(new Error("No tab with id")),
+      update: (id, o) => {
+        const aba = abas.get(id);
+        if (aba && aba.recusa) { aba.recusa--; return Promise.reject(new Error("Tabs cannot be edited right now")); }
+        if (o && o.url) navegacoes.push(o.url);
+        if (aba && o.url) navegar(aba, o.url);
+        return Promise.resolve(aba);
+      },
+    },
+    alarms: { create: (n) => alarmes.add(n), clear: (n) => alarmes.delete(n),
+      get: (n) => Promise.resolve(alarmes.has(n) ? { name: n } : undefined),
+      onAlarm: { addListener: (f) => ouvintes.alarme.push(f) } },
+    webNavigation: { onCompleted: { addListener: (f) => ouvintes.nav.push(f) } },
+    cookies: { onChanged: { addListener: nada },
+      getAll: (q, cb) => cb(q.domain === "idp.transferegov.sistema.gov.br"
+        ? [{ name: "JSESSIONID", value: "i1", domain: "idp.transferegov.sistema.gov.br", path: "/", httpOnly: true }] : []) },
+    runtime: { onInstalled: { addListener: nada }, onStartup: { addListener: nada },
+      onMessage: { addListener: (f) => ouvintes.msg.push(f) } },
+    action: { setBadgeText: (o) => { selo.texto = o.text; }, setBadgeBackgroundColor: nada,
+      setTitle: (o) => { selo.titulo = o.title; } },
+  };
+  const ctx = {
+    console: { log: nada, warn: nada, error: nada },
+    chrome: chromeFalso, navigator: { userAgent: "teste" }, URL, Date, JSON, Promise, Set, Map,
+    setTimeout: (f) => setTimeout(f, 1),       // o tempo corre depressa aqui
+    fetch: async (url, opt) => {
+      if (opt && opt.method === "POST") { posts.push(JSON.parse(opt.body)); return { ok: true, status: 200, json: async () => ({ id: 1 }) }; }
+      if (String(url).includes("/session-capture/saude")) return { ok: true, status: 200, json: async () => ({}) };
+      // `sondaMs`: a sonda leva tempo de REDE de verdade (no Chrome ela é um fetch):
+      // é o que deixa dois sinais passarem juntos pela conferência da página.
+      if (opcoes && opcoes.sondaMs) await new Promise((r) => setTimeout(r, opcoes.sondaMs));
+      const html = opcoes && opcoes.sonda ? opcoes.sonda(url) : "<a>Sair</a> Consultar Proposta";
+      return { ok: true, status: 200, url, text: async () => html };
+    },
+  };
+  ctx.self = ctx;
+  ctx.importScripts = (f) => { if (f === "tokens.local.js") throw new Error("ausente"); vm.runInContext(ler(f), ctx); };
+  vm.createContext(ctx);
+  vm.runInContext(ler("background.js"), ctx);
+  const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+  return { ctx, store, abas, posts, alarmes, ouvintes, navegacoes, selo, esperar,
+    clicar: () => ouvintes.msg.forEach((f) => f({ tipo: "captura_completa" }, {}, nada)),
+    tick: async () => { for (const f of ouvintes.alarme) f({ name: "pactha_roteiro_tick" }); await esperar(80); } };
+}
+const PORTA = (n) => vm.runInContext(`PORTAS_GOVBR[${n}].url`, montarBg(() => ({})).ctx);
+// Só as capturas DO ROTEIRO (o modo automático também captura a cada navegação).
+const govbrPosts = (bg) => bg.posts.filter((p) => p.automation_key === "govbr"
+  && /captura_completa/.test(String(p.url_atual || "")));
+
+/* O ACESSO LIVRE como medido no Chrome do dono em 24/09/2026 (título, o span.exit
+   do <div id="info"> e o link do LLO são os literais medidos; o resto é enchimento). */
+const HTML_VISITANTE = '<html><head><title>Transferegov - Consultar Proposta - Acesso Livre</title></head><body>'
+  + '<div id="info"><a href="/voluntarias?LLO=true"><span class="exit">Sair do Acesso Livre '
+  + '<input type="button" class="bt_exit" value=""></span></a></div><h1>Consultar Proposta</h1></body></html>';
+/* A página LOGADA NÃO foi medida: hipótese (título sem "Acesso Livre", span.exit só
+   "Sair"). O "Acesso Livre" solto no menu é o que o keepalive do servidor anotou
+   ("aparece no header MESMO logado"). */
+const HTML_LOGADA = '<html><head><title>Transferegov - Consultar Proposta</title></head><body>'
+  + '<div id="info"><a href="/voluntarias/Logout.do"><span class="exit">Sair <input type="button" class="bt_exit" value="">'
+  + '</span></a></div><ul class="menu"><li><a href="https://www.gov.br/transferegov/pt-br/sistemas/acesso-livre">Acesso Livre</a></li></ul>'
+  + '<h1>Consultar Proposta</h1></body></html>';
+const MURO_REAL = '<HTML><HEAD><TITLE>HTTP Post Binding (Request)</TITLE></HEAD><BODY Onload="document.forms[0].submit()">'
+  + '<FORM METHOD="POST" ACTION="https://idp.transferegov.sistema.gov.br/idp/"><INPUT TYPE="HIDDEN" NAME="SAMLRequest" VALUE="..."/>'
+  + '<NOSCRIPT><P>JavaScript is disabled.</P><INPUT TYPE="SUBMIT" VALUE="CONTINUE" /></NOSCRIPT></FORM></BODY></HTML>';
+const URL_VISITANTE = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/proposta/ConsultarProposta/ConsultarProposta.do";
+const URL_IDP = "https://idp.transferegov.sistema.gov.br/idp/";
+const URL_IDP_COM_CONTEXTO = "https://idp.transferegov.sistema.gov.br/idp/profile/SAML2/POST/SSO?execution=e1s1";
+const TIT_LIVRE = "Transferegov - Consultar Proposta - Acesso Livre";
+const TIT_LOGIN = "Login do Transferegov";
+const TIT_LOGADA = "Transferegov - Consultar Proposta";
+
 (async () => {
   console.log(`pasta: ${DIR}${TEM_TOKENS ? "  (com tokens.local.js)" : "  (sem tokens pré-configurados)"}`);
 
@@ -224,14 +338,15 @@ const chk = (cond, msg) => {
     chk((await ctx2.chromeEstaLogado()) === null, "falha de rede = null (não barra a recaptura)");
 
     const bg = ler("background.js");
-    const iPorteiro = bg.indexOf("await chromeEstaLogado()");
+    const iPorteiro = bg.indexOf("await chromeEstadoLogin()");
     const iDebounce = bg.indexOf("lastCaptureAt.set(dKey, now)");
     chk(iPorteiro > 0 && iPorteiro < iDebounce,
       "em capture(), o porteiro vem ANTES de marcar o debounce (senão a página SAML engole a captura boa)");
     chk(/tab\.status\s*!==\s*"complete"/.test(bg), "o roteiro só avança com a aba `complete`");
     chk(/if\s*\(!itens\.some\(\(i\)\s*=>\s*i\.ok\)\)\s*return/.test(bg),
       "sem nenhuma resposta de servidor o selo não muda");
-    chk(/chromeEstaLogado\(\)\)\s*===\s*false/.test(ler("popup.js")), "a captura MANUAL passa pelo mesmo porteiro");
+    chk(/await chromeEstadoLogin\(\);\s*if \(estado\.valor === false\)/.test(ler("popup.js")),
+      "a captura MANUAL passa pelo mesmo porteiro");
     chk(/if\s*\(!cfg\.auto_enabled\s*&&\s*!forcar\)/.test(bg),
       "o toggle do modo AUTOMÁTICO não barra o fim da «Captura completa» (era no-op silencioso)");
     chk(!/if\s*\(!cfg\.auto_enabled\)\s*\{\s*console\.log\("\[PACTHA\] auto-captura/.test(bg),
@@ -289,80 +404,8 @@ const chk = (cond, msg) => {
   console.log("\n12) o ROTEIRO da captura completa, rodando de verdade num Chrome falso");
   {
     // ⚠️ Travou em produção em 23/09/2026 ("só fica abrindo e não captura"). Estes
-    // cenários rodam o background.js inteiro com abas, eventos e alarme simulados.
-    const montarBg = (cenario, inicial) => {
-      const store = { pactha_ambientes: [{ nome: "A", api: "https://a.sslip.io/api", token: "pactha_st_a", ativo: true }],
-        ...(inicial || {}) };
-      const ouvintes = { nav: [], alarme: [], msg: [] };
-      const abas = new Map();
-      const posts = [];
-      const alarmes = new Set();
-      let proxId = 100;
-      const ecoa = (v, cb) => { if (cb) cb(v); return Promise.resolve(v); };
-      const nada = () => {};
-      const navegar = (aba, url) => {
-        const plano = cenario(url, aba) || {};
-        aba.status = "loading";
-        aba.pendingUrl = url;                    // como no Chrome: a URL velha fica até o commit
-        const commit = () => {
-          delete aba.pendingUrl;
-          aba.url = plano.url || url;
-          (aba.visitas = aba.visitas || []).push(aba.url);
-          if (!plano.carregando) aba.status = "complete";
-          if (!plano.semEvento) ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: aba.url, frameId: 0 }));
-        };
-        setTimeout(commit, plano.pendenteMs || 1);
-      };
-      const chromeFalso = {
-        storage: { local: {
-          get: (k, cb) => { const o = {}; (Array.isArray(k) ? k : [k]).forEach((x) => { if (x in store) o[x] = store[x]; }); return ecoa(o, cb); },
-          set: (o, cb) => { Object.assign(store, o); return ecoa(undefined, cb); },
-          remove: (k, cb) => { (Array.isArray(k) ? k : [k]).forEach((x) => delete store[x]); return ecoa(undefined, cb); },
-        }, onChanged: { addListener: nada } },
-        tabs: {
-          create: (o, cb) => { const aba = { id: proxId++, url: o.url, status: "complete" }; abas.set(aba.id, aba); if (cb) cb(aba); },
-          get: (id) => abas.has(id) ? Promise.resolve({ ...abas.get(id) }) : Promise.reject(new Error("No tab with id")),
-          update: (id, o) => {
-            const aba = abas.get(id);
-            if (aba && aba.recusa) { aba.recusa--; return Promise.reject(new Error("Tabs cannot be edited right now")); }
-            if (aba && o.url) navegar(aba, o.url);
-            return Promise.resolve(aba);
-          },
-        },
-        alarms: { create: (n) => alarmes.add(n), clear: (n) => alarmes.delete(n),
-          get: (n) => Promise.resolve(alarmes.has(n) ? { name: n } : undefined),
-          onAlarm: { addListener: (f) => ouvintes.alarme.push(f) } },
-        webNavigation: { onCompleted: { addListener: (f) => ouvintes.nav.push(f) } },
-        cookies: { onChanged: { addListener: nada },
-          getAll: (q, cb) => cb(q.domain === "idp.transferegov.sistema.gov.br"
-            ? [{ name: "JSESSIONID", value: "i1", domain: "idp.transferegov.sistema.gov.br", path: "/", httpOnly: true }] : []) },
-        runtime: { onInstalled: { addListener: nada }, onStartup: { addListener: nada },
-          onMessage: { addListener: (f) => ouvintes.msg.push(f) } },
-        action: { setBadgeText: nada, setBadgeBackgroundColor: nada, setTitle: nada },
-      };
-      const ctx = {
-        console: { log: nada, warn: nada, error: nada },
-        chrome: chromeFalso, navigator: { userAgent: "teste" }, URL, Date, JSON, Promise, Set, Map,
-        setTimeout: (f) => setTimeout(f, 1),       // o tempo corre depressa aqui
-        fetch: async (url, opt) => {
-          if (opt && opt.method === "POST") { posts.push(JSON.parse(opt.body)); return { ok: true, status: 200, json: async () => ({ id: 1 }) }; }
-          if (String(url).includes("/session-capture/saude")) return { ok: true, status: 200, json: async () => ({}) };
-          return { ok: true, status: 200, url, text: async () => "<a>Sair</a> Consultar Proposta" };
-        },
-      };
-      ctx.self = ctx;
-      ctx.importScripts = (f) => { if (f === "tokens.local.js") throw new Error("ausente"); vm.runInContext(ler(f), ctx); };
-      vm.createContext(ctx);
-      vm.runInContext(ler("background.js"), ctx);
-      const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
-      return { ctx, store, abas, posts, alarmes, ouvintes, esperar,
-        clicar: () => ouvintes.msg.forEach((f) => f({ tipo: "captura_completa" }, {}, nada)),
-        tick: async () => { for (const f of ouvintes.alarme) f({ name: "pactha_roteiro_tick" }); await esperar(80); } };
-    };
-    const PORTA = (n) => vm.runInContext(`PORTAS_GOVBR[${n}].url`, montarBg(() => ({})).ctx);
-    // Só as capturas DO ROTEIRO (o modo automático também captura a cada navegação).
-    const govbrPosts = (bg) => bg.posts.filter((p) => p.automation_key === "govbr"
-      && /captura_completa/.test(String(p.url_atual || "")));
+    // cenários rodam o background.js inteiro com abas, eventos e alarme simulados
+    // (`montarBg`, no topo deste arquivo).
 
     // (a) caminho feliz: passa pelas 4 portas e captura
     {
@@ -471,6 +514,346 @@ const chk = (cond, msg) => {
       bg.clicar(); await bg.esperar(50);
       chk(viuEstado === true, "(f) o roteiro é gravado antes de a aba ir para a porta 1");
     }
+  }
+
+  console.log("\n13) ACESSO LIVRE (visitante): só marcadores PRECISOS — página logada nunca é visitante");
+  {
+    // (c) do pedido de 24/09/2026. Página logada tomada por visitante = a captura boa
+    // barrada para sempre, em silêncio, e o roteiro mandando a aba para o LLO.
+    const { ctx } = montar({});
+    const URL_TG = URL_VISITANTE;
+    chk(ctx.corpoEhAcessoLivre(HTML_VISITANTE) === true, "o HTML medido de visitante = Acesso Livre");
+    chk(ctx.corpoEhAcessoLivre('<div id="info"><span class="exit">Sair do Acesso Livre <input type="button" class="bt_exit" value=""></span></div>') === true,
+      "só o span.exit «Sair do Acesso Livre» (sem título) também é");
+    chk(ctx.corpoEhAcessoLivre("<title>Transferegov - Consultar Proposta - Acesso Livre</title>") === true, "só o <title> também é");
+    chk(ctx.corpoEhAcessoLivre(HTML_LOGADA) === false,
+      "página logada simulada (título sem «Acesso Livre», span.exit «Sair», «Acesso Livre» no menu) NÃO é");
+    const escondidas = {
+      "num <script>": '<script>var rotulo = \'<span class="exit">Sair do Acesso Livre</span>\';</script>',
+      "num comentário": '<!-- <span class="exit">Sair do Acesso Livre <input class="bt_exit"></span> -->',
+      "num div oculto (frase solta)": '<div style="display:none">Sair do Acesso Livre</div>',
+      "num <template>": '<template><title>Consultar - Acesso Livre</title></template>',
+      "num botão com outra classe": '<span class="bt_exit">Sair do Acesso Livre</span>',
+    };
+    Object.entries(escondidas).forEach(([onde, trecho]) => {
+      const html = HTML_LOGADA.replace("</body>", trecho + "</body>");
+      chk(ctx.corpoEhAcessoLivre(html) === false && ctx.vereditoLogin(URL_TG, html) === true,
+        `página logada com «Sair do Acesso Livre» escondido ${onde} = LOGADA (não visitante)`);
+    });
+    chk(ctx.corpoEhLogin(MURO_REAL) === true && ctx.corpoEhAcessoLivre(MURO_REAL) === false,
+      "o muro SAML continua reconhecido (e não é visitante)");
+    chk(JSON.stringify(ctx.estadoLogin(URL_TG, HTML_VISITANTE)) === JSON.stringify({ valor: false, motivo: "visitante" }),
+      "estadoLogin: visitante");
+    chk(ctx.estadoLogin(URL_TG, MURO_REAL).motivo === "login", "estadoLogin: muro = login");
+    chk(ctx.estadoLogin(URL_TG, HTML_LOGADA).motivo === "logado", "estadoLogin: logada = logado");
+    chk(ctx.estadoLogin(URL_TG, "<html>erro 500</html>").motivo === "nao_sei", "estadoLogin: sem prova = nao_sei");
+    chk(ctx.tituloEhAcessoLivre(TIT_LIVRE) === true && ctx.tituloEhAcessoLivre(TIT_LOGIN) === false
+      && ctx.tituloEhAcessoLivre(TIT_LOGADA) === false, "tituloEhAcessoLivre: só o título de visitante");
+    chk(vm.runInContext("LLO_URL", ctx) === "https://discricionarias.transferegov.sistema.gov.br/voluntarias?LLO=true",
+      "LLO_URL é o «Sair do Acesso Livre» medido");
+
+    let corpo = HTML_VISITANTE;
+    ctx.fetch = async (url) => ({ ok: true, status: 200, url, text: async () => corpo });
+    chk(JSON.stringify(await ctx.chromeEstadoLogin()) === JSON.stringify({ valor: false, motivo: "visitante" }),
+      "chromeEstadoLogin: sonda de visitante → {false, visitante}");
+    chk((await ctx.chromeEstaLogado()) === false, "chromeEstaLogado continua existindo (delega) e diz false");
+    corpo = MURO_REAL;
+    chk((await ctx.chromeEstadoLogin()).motivo === "login", "chromeEstadoLogin: muro → login");
+    corpo = HTML_LOGADA;
+    chk(JSON.stringify(await ctx.chromeEstadoLogin()) === JSON.stringify({ valor: true, motivo: "logado" }),
+      "chromeEstadoLogin: logada → {true, logado}");
+    const { ctx: ctx2 } = montar({});
+    ctx2.fetch = async () => { throw new Error("Failed to fetch"); };
+    chk(JSON.stringify(await ctx2.chromeEstadoLogin()) === JSON.stringify({ valor: null, motivo: "nao_sei" }),
+      "chromeEstadoLogin: rede fora → {null, nao_sei} (não barra a recaptura)");
+  }
+
+  console.log("\n14) o 401 diz o MOTIVO do servidor e a AÇÃO (o Juranda ficou em «HTTP 401» mudo)");
+  {
+    // (f) do pedido de 24/09/2026.
+    const { ctx } = montar({});
+    const amb = [{ nome: "Juranda - PR", api: "https://j.sslip.io/api", token: "pactha_st_x", ativo: true }];
+    ctx.fetch = async () => ({ ok: false, status: 401, json: async () => ({ detail: "Token inválido ou revogado" }) });
+    const [i] = await ctx.consultarSaude(amb);
+    chk(i.ok === false && i.status === 401 && i.detalhe === "HTTP 401 — Token inválido ou revogado",
+      "consultarSaude: 401 com {detail} → «HTTP 401 — Token inválido ou revogado»");
+    ctx.fetch = async () => ({ ok: false, status: 404, json: async () => { throw new Error("not json"); } });
+    chk((await ctx.consultarSaude(amb))[0].detalhe === "HTTP 404", "sem corpo JSON: só o código (servidor sem a rota)");
+    ctx.fetch = async () => ({ ok: false, status: 422, json: async () => ({ detail: [{ msg: "x" }] }) });
+    chk((await ctx.consultarSaude(amb))[0].detalhe === "HTTP 422", "detail que não é texto não vira «[object Object]»");
+    ctx.fetch = async () => ({ ok: false, status: 401, json: async () => ({ detail: "Service token expirado" }) });
+    const [e] = await ctx.enviarParaTodos({ automation_key: "govbr" }, amb);
+    chk(e.ok === false && e.detalhe === "token inválido (Service token expirado)", "a captura recusada também diz o motivo");
+
+    // A LINHA do popup: a função de verdade, tirada do popup.js (o resto dele precisa do DOM).
+    const pj = ler("popup.js");
+    const ini = pj.indexOf("function textoDoItem(");
+    vm.runInContext(pj.slice(ini, pj.indexOf("\n}\n", ini) + 2), ctx);
+    const linha = ctx.textoDoItem(i);
+    chk(/RECUSOU o token \(Token inválido ou revogado\)/.test(linha), "popup: a linha do 401 mostra o motivo do servidor");
+    chk(/gere um novo token em Configurações › Service Tokens no PACTHA desse cliente e cole em «Configurar token PACTHA»/.test(linha),
+      "popup: e a ação (novo token, colar em «Configurar token PACTHA»)");
+    chk(/RECUSOU o token/.test(ctx.textoDoItem({ nome: "X", ok: false, detalhe: "HTTP 401" })),
+      "popup: item antigo guardado no storage (sem `status`) também é reconhecido");
+    chk(/sem resposta \(HTTP 503\)/.test(ctx.textoDoItem({ nome: "X", ok: false, status: 503, detalhe: "HTTP 503" })),
+      "popup: outro erro continua «sem resposta»");
+  }
+
+  console.log("\n15) ACESSO LIVRE no ROTEIRO e no modo automático, rodando no Chrome falso");
+  {
+    const LLO = vm.runInContext("LLO_URL", montarBg(() => ({})).ctx);
+    const sondaPor = (estado) => () => (estado() === "visitante" ? HTML_VISITANTE
+      : (estado() === "logado" ? HTML_LOGADA : MURO_REAL));
+
+    // (a) porta 1 no Acesso Livre → LLO → idp → porta 1 → tela de login (espera) →
+    //     logado → portas 2..4 → captura final ENVIADA
+    {
+      let estado = "visitante";
+      const bg = montarBg((url) => {
+        if (url === LLO) { estado = "deslogado"; return { url: URL_IDP, titulo: TIT_LOGIN }; }
+        if (url === PORTA(0) && estado === "visitante") return { url: URL_VISITANTE, titulo: TIT_LIVRE };
+        if (url === PORTA(0) && estado === "deslogado") return { url: URL_IDP_COM_CONTEXTO, titulo: TIT_LOGIN };
+        return { titulo: TIT_LOGADA };
+      }, { pactha_visitante: { quando: new Date().toISOString() } },   // o automático já tinha visto o visitante
+      { sonda: sondaPor(() => estado) });
+      bg.clicar(); await bg.esperar(300);
+      const aba = [...bg.abas.values()][0];
+      const rot = bg.store.pactha_roteiro;
+      chk(JSON.stringify(aba.visitas) === JSON.stringify([URL_VISITANTE, URL_IDP, URL_IDP_COM_CONTEXTO]),
+        "(a) visitante → LLO (tela do idp) → de volta à porta 1 → tela de login COM contexto");
+      chk(bg.navegacoes.filter((u) => u === LLO).length === 1, "(a) a aba foi ao LLO uma vez");
+      chk(rot && rot.passo === 0 && rot.saidasDoLivre === 1 && !rot.saindoDoLivre,
+        "(a) o roteiro voltou ao passo 0 com 1 saída do Acesso Livre contada");
+      chk(rot && /passando pelo login/.test(rot.fase) && /«Entrar com gov\.br»/.test(rot.fase) && /NÃO em «Acesso livre»/.test(rot.fase),
+        "(a) espera o login dizendo «Entrar com gov.br», NÃO «Acesso livre»");
+      chk(govbrPosts(bg).length === 0, "(a) nada enviado antes do login");
+      // a PESSOA faz o login; o gov.br devolve à porta 1 logada
+      estado = "logado";
+      aba.url = PORTA(0); aba.title = TIT_LOGADA; aba.status = "complete"; aba.visitas.push(PORTA(0));
+      bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: PORTA(0), frameId: 0 }));
+      await bg.esperar(500);
+      chk(JSON.stringify(aba.visitas.slice(-4)) === JSON.stringify([PORTA(0), PORTA(1), PORTA(2), PORTA(3)]),
+        "(a) depois do login: as 4 portas, em ordem");
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "(a) e a captura final foi ENVIADA");
+      chk(bg.store.pactha_roteiro_fim && !bg.store.pactha_roteiro_fim.barrado, "(a) sem motivo de barrado no fim");
+      chk(!bg.store.pactha_visitante, "(a) captura enviada limpa o aviso de visitante");
+    }
+
+    // (b) volta ao Acesso Livre 4 vezes (a pessoa clica «Acesso livre» na tela de login):
+    //     encerra com o motivo, sem enviar, em vez de rodar em círculo
+    {
+      const bg = montarBg((url) => {
+        if (url === LLO) return { url: URL_IDP, titulo: TIT_LOGIN };
+        if (url === PORTA(0)) return { url: URL_VISITANTE, titulo: TIT_LIVRE };
+        return { titulo: TIT_LOGADA };
+      }, null, { sonda: () => HTML_VISITANTE });
+      bg.clicar(); await bg.esperar(600);
+      const fim = bg.store.pactha_roteiro_fim;
+      chk(!bg.store.pactha_roteiro, "(b) o roteiro encerrou");
+      chk(bg.navegacoes.filter((u) => u === LLO).length === 3, "(b) saiu do Acesso Livre 3 vezes, e não uma 4ª");
+      chk(fim && fim.visitante === true && /voltou ao Acesso Livre/.test(fim.barrado || "")
+        && /«Entrar com gov\.br»/.test(fim.barrado || ""), "(b) o motivo fica para o popup: voltou ao Acesso Livre; «Entrar com gov.br»");
+      chk(govbrPosts(bg).length === 0 && !bg.posts.some((p) => p.automation_key === "govbr"), "(b) nada enviado");
+      chk(!bg.alarmes.has("pactha_roteiro_tick"), "(b) o alarme do roteiro foi desligado");
+      chk(bg.selo.texto === "!" && /ACESSO LIVRE/.test(bg.selo.titulo), "(b) selo «!» dizendo Acesso Livre");
+    }
+
+    // (e) evento + alarme JUNTOS na página de visitante: a aba vai ao LLO UMA vez só
+    {
+      let estado = "visitante";
+      const bg = montarBg((url) => {
+        if (url === LLO) { estado = "deslogado"; return { url: URL_IDP, titulo: TIT_LOGIN, pendenteMs: 60 }; }
+        if (url === PORTA(0) && estado === "visitante") return { url: URL_VISITANTE, titulo: TIT_LIVRE, semEvento: true };
+        if (url === PORTA(0)) return { url: URL_IDP_COM_CONTEXTO, titulo: TIT_LOGIN };
+        return { titulo: TIT_LOGADA };
+      }, null, { sonda: sondaPor(() => estado), sondaMs: 15 });
+      bg.clicar(); await bg.esperar(60);
+      const aba = [...bg.abas.values()][0];
+      chk(aba.url === URL_VISITANTE && bg.navegacoes.length === 1, "(e) parado na página de visitante, sem evento");
+      bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: aba.url, frameId: 0 }));      // o evento…
+      for (const f of bg.ouvintes.alarme) f({ name: "pactha_roteiro_tick" });               // …e o alarme, juntos
+      await bg.esperar(30);
+      // e um evento ATRASADO da página de visitante, com a ida ao LLO ainda em voo
+      bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: URL_VISITANTE, frameId: 0 }));
+      await bg.esperar(300);
+      chk(bg.navegacoes.filter((u) => u === LLO).length === 1, "(e) a aba foi ao LLO UMA vez só");
+      chk(bg.navegacoes.filter((u) => u === PORTA(0)).length === 2, "(e) e voltou à porta 1 uma vez só");
+      const rot = bg.store.pactha_roteiro;
+      chk(rot && rot.saidasDoLivre === 1 && /passando pelo login/.test(rot.fase), "(e) uma saída contada; esperando o login");
+    }
+
+    // (e2) o alarme cai DEPOIS de o roteiro mandar a aba ao LLO mas ANTES de a navegação
+    //      aparecer nela (a aba ainda mostra a página de visitante, "complete", sem
+    //      pendingUrl): não é "a página seguinte" — voltar à porta 1 ali abortaria o LLO
+    {
+      let estado = "visitante";
+      const bg = montarBg((url) => {
+        if (url === LLO) { estado = "deslogado"; return { url: URL_IDP, titulo: TIT_LOGIN, inicioMs: 40 }; }
+        if (url === PORTA(0) && estado === "visitante") return { url: URL_VISITANTE, titulo: TIT_LIVRE };
+        if (url === PORTA(0)) return { url: URL_IDP_COM_CONTEXTO, titulo: TIT_LOGIN };
+        return { titulo: TIT_LOGADA };
+      }, null, { sonda: sondaPor(() => estado) });
+      bg.clicar();
+      for (let k = 0; k < 100 && !bg.navegacoes.includes(LLO); k++) await bg.esperar(2);
+      const aba = [...bg.abas.values()][0];
+      chk(bg.navegacoes.includes(LLO) && aba.url === URL_VISITANTE && !aba.pendingUrl,
+        "(e2) o roteiro pediu o LLO e a aba ainda mostra a página de visitante");
+      await bg.tick();
+      await bg.esperar(300);
+      chk(JSON.stringify(aba.visitas) === JSON.stringify([URL_VISITANTE, URL_IDP, URL_IDP_COM_CONTEXTO]),
+        "(e2) o LLO carregou ANTES da volta à porta 1 (o sinal velho não conta como a página seguinte)");
+      chk(bg.navegacoes.filter((u) => u === PORTA(0)).length === 2, "(e2) uma volta só à porta 1");
+    }
+
+    // (d1) a captura FINAL barrada por visitante: o motivo de visitante fica para o popup
+    {
+      // títulos sem «Acesso Livre» (o roteiro passa), mas a sonda da porta 1 é de visitante
+      const bg = montarBg(() => ({ titulo: TIT_LOGADA }), null, { sonda: () => HTML_VISITANTE });
+      bg.clicar(); await bg.esperar(400);
+      const fim = bg.store.pactha_roteiro_fim;
+      chk(govbrPosts(bg).length === 0, "(d) captura final de visitante: nada enviado");
+      chk(fim && fim.visitante === true && /Acesso Livre \(visitante\)/.test(fim.barrado || ""),
+        "(d) o motivo gravado é o de VISITANTE (não «não está logado»)");
+      chk(!!bg.store.pactha_visitante && bg.selo.texto === "!", "(d) e o Chrome fica marcado como visitante, com o «!»");
+    }
+
+    // (d2) a captura AUTOMÁTICA barrada por visitante: não navega nada, grava e acende o «!»
+    {
+      let sonda = HTML_VISITANTE;
+      const bg = montarBg(() => ({}), null, { sonda: () => sonda });
+      bg.ouvintes.nav.forEach((f) => f({ tabId: 7, url: URL_VISITANTE, frameId: 0 }));
+      await bg.esperar(100);
+      const v = bg.store.pactha_visitante;
+      chk(v && !isNaN(Date.parse(v.quando)), "(d) automática: grava pactha_visitante {quando}");
+      chk(bg.navegacoes.length === 0 && bg.abas.size === 0, "(d) automática: não navega nem abre aba nenhuma");
+      chk(!bg.posts.some((p) => p.automation_key === "govbr"), "(d) automática: nada enviado");
+      chk(bg.selo.texto === "!" && /ACESSO LIVRE/.test(bg.selo.titulo), "(d) automática: selo «!» com o título do Acesso Livre");
+      await bg.ctx.atualizarSaude({ forcar: true });
+      chk(bg.selo.texto === "!", "(d) a consulta periódica de saúde (servidores vivos) não apaga o «!» do visitante");
+      // a pessoa sai do Acesso Livre e entra: a próxima captura sai e limpa o aviso
+      sonda = HTML_LOGADA;
+      bg.ouvintes.nav.forEach((f) => f({ tabId: 7, url: PORTA(0), frameId: 0 }));
+      await bg.esperar(150);
+      chk(bg.posts.some((p) => p.automation_key === "govbr"), "(d) logado: a captura automática sai");
+      chk(!bg.store.pactha_visitante && bg.selo.texto === "", "(d) e limpa pactha_visitante (o «!» apaga)");
+    }
+
+    // o roteiro NÃO manda aba logada ao LLO: título com «Acesso Livre» mas a sonda diz logado
+    {
+      const bg = montarBg((url) => url === PORTA(0) ? { titulo: TIT_LIVRE } : { titulo: TIT_LOGADA }, null,
+        { sonda: () => HTML_LOGADA });
+      bg.clicar(); await bg.esperar(400);
+      chk(!bg.navegacoes.includes(LLO), "título de Acesso Livre com a sonda LOGADA: a aba NÃO vai ao LLO");
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1, "e o roteiro segue até a captura");
+    }
+
+    // a pessoa clicou «Entrar com gov.br» ANTES de o roteiro voltar à porta 1: não é arrancada do login
+    {
+      let estado = "visitante";
+      const SSO = "https://sso.acesso.gov.br/login?client_id=transferegov";
+      const bg = montarBg((url) => {
+        if (url === LLO) { estado = "deslogado"; return { url: SSO, titulo: "gov.br" }; }
+        if (url === PORTA(0) && estado === "visitante") return { url: URL_VISITANTE, titulo: TIT_LIVRE };
+        return { titulo: TIT_LOGADA };
+      }, null, { sonda: sondaPor(() => estado) });
+      bg.clicar(); await bg.esperar(200);
+      chk(bg.navegacoes.filter((u) => u === PORTA(0)).length === 1 && bg.store.pactha_roteiro
+        && bg.store.pactha_roteiro.saindoDoLivre === true, "no gov.br fazendo o login: o roteiro espera (não volta à porta 1)");
+      // o login termina e o gov.br devolve a um endereço do TransfereGov
+      estado = "logado";
+      const aba = [...bg.abas.values()][0];
+      aba.url = "https://discricionarias.transferegov.sistema.gov.br/voluntarias/Principal.do";
+      aba.title = TIT_LOGADA; aba.status = "complete";
+      bg.ouvintes.nav.forEach((f) => f({ tabId: aba.id, url: aba.url, frameId: 0 }));
+      await bg.esperar(500);
+      chk(!bg.store.pactha_roteiro && govbrPosts(bg).length >= 1
+        && JSON.stringify(aba.visitas.slice(-4)) === JSON.stringify([PORTA(0), PORTA(1), PORTA(2), PORTA(3)]),
+        "de volta logado: porta 1 e as outras, e a captura sai");
+    }
+  }
+
+  console.log("\n16) a faixa na PÁGINA (aviso_pagina.js): avisa sem mexer em nada");
+  {
+    const rodarAviso = ({ titulo, texto, roteiro, semBody, storageQuebrado }) => {
+      const porId = {};
+      const mk = (tag) => ({
+        tag, id: "", style: {}, attrs: {}, filhos: [], ouvintes: {}, textContent: "",
+        setAttribute(k, v) { this.attrs[k] = v; },
+        appendChild(c) { this.filhos.push(c); if (c.id) porId[c.id] = c; return c; },
+        addEventListener(ev, f) { this.ouvintes[ev] = f; },
+        remove() { if (this.id) delete porId[this.id]; this.removido = true; },
+      });
+      const body = semBody ? null : mk("body");
+      if (body) body.innerText = texto || "";
+      const store = roteiro ? { pactha_roteiro: roteiro } : {};
+      const ctx = {
+        Date, String,
+        document: { title: titulo || "", readyState: "complete", body, documentElement: mk("html"),
+          getElementById: (id) => porId[id] || null, createElement: mk, addEventListener() {} },
+        chrome: { storage: { local: { get: (k, cb) => {
+          if (storageQuebrado) throw new Error("Extension context invalidated.");
+          const o = {}; k.forEach((x) => { if (x in store) o[x] = store[x]; }); cb(o);
+        } } } },
+      };
+      vm.createContext(ctx);
+      let erro = null;
+      try { vm.runInContext(ler("aviso_pagina.js"), ctx); } catch (e) { erro = e; }
+      const faixa = porId["pactha-aviso-faixa"] || null;
+      return { faixa, erro, texto: faixa ? faixa.filhos[0].textContent : "" };
+    };
+    const ativo = { tabId: 1, passo: 0, em: Date.now(), inicio: Date.now() };
+    let r = rodarAviso({ titulo: TIT_LIVRE, texto: "Sair do Acesso Livre" });
+    chk(r.faixa && /Acesso Livre \(visitante\)/.test(r.texto) && /«Captura completa»/.test(r.texto) && /«Sair do Acesso Livre»/.test(r.texto),
+      "página de Acesso Livre: faixa de visitante (Captura completa / Sair do Acesso Livre)");
+    r = rodarAviso({ titulo: TIT_LOGIN, texto: "Entrar com gov.br  Acesso livre", roteiro: ativo });
+    chk(r.faixa && /clique em «Entrar com gov\.br»/.test(r.texto) && /Não use «Acesso livre»/.test(r.texto),
+      "tela de login com o roteiro ativo: «clique em Entrar com gov.br; não use Acesso livre»");
+    chk(r.faixa && r.faixa.style.cssText.includes("position:fixed") && /z-index:\s*2147483647/.test(r.faixa.style.cssText),
+      "a faixa é fixa no topo, por cima de tudo");
+    r = rodarAviso({ titulo: "Transferegov", texto: "Entrar com gov.br", roteiro: ativo });
+    chk(!!r.faixa, "tela de login reconhecida também pelo texto «Entrar com gov.br»");
+    r = rodarAviso({ titulo: TIT_LOGIN, texto: "Entrar com gov.br" });
+    chk(!r.faixa, "tela de login SEM roteiro: nenhuma faixa (seria ruído em todo login)");
+    r = rodarAviso({ titulo: TIT_LOGIN, texto: "Entrar com gov.br", roteiro: { ...ativo, em: Date.now() - 30 * 60 * 1000 } });
+    chk(!r.faixa, "roteiro vencido que sobrou no storage não acende a faixa");
+    r = rodarAviso({ titulo: TIT_LOGADA, texto: "Sair  Consultar Proposta", roteiro: ativo });
+    chk(!r.faixa, "página logada: nenhuma faixa");
+    r = rodarAviso({ titulo: TIT_LIVRE });
+    r.faixa.filhos[1].ouvintes.click();
+    chk(r.faixa.removido === true, "o × fecha a faixa");
+    r = rodarAviso({ titulo: TIT_LIVRE, semBody: true });
+    chk(!r.erro, "página sem <body>: não quebra");
+    r = rodarAviso({ titulo: TIT_LOGIN, texto: "Entrar com gov.br", storageQuebrado: true });
+    chk(!r.erro && !r.faixa, "extensão recarregada (storage lança): não quebra a página");
+    const src = ler("aviso_pagina.js");
+    chk(!/\.submit\(|\.click\(|fetch\(|XMLHttpRequest|sendMessage|\.value\s*=|querySelector|\.forms\b|cookie/i.test(src),
+      "o script não clica, não preenche, não lê formulário/cookie e não envia nada");
+  }
+
+  console.log("\n17) manifest, popup e textos da 2.4.5");
+  {
+    const man = JSON.parse(ler("manifest.json"));
+    chk(man.version === "2.4.5", "versão 2.4.5");
+    const cs = (man.content_scripts || [])[0] || {};
+    chk((cs.js || []).includes("aviso_pagina.js")
+      && (cs.matches || []).includes("https://idp.transferegov.sistema.gov.br/*")
+      && (cs.matches || []).includes("https://*.transferegov.sistema.gov.br/*"),
+      "content_scripts: aviso_pagina.js no idp e em *.transferegov");
+    chk(!(man.permissions || []).includes("scripting"), "sem a permissão «scripting»");
+    const pj = ler("popup.js");
+    const ph = ler("popup.html");
+    chk(/fim\.barrado && fim\.visitante/.test(pj), "popup: roteiro barrado por visitante tem mensagem própria");
+    const m = /const PASSO_A_PASSO_LIVRE = ([\s\S]*?");\s*\n/.exec(pj);
+    const passo = m ? vm.runInNewContext(m[1]) : "";
+    chk(/«Captura completa»/.test(passo) && /«Entrar com gov\.br» \(NUNCA em «Acesso livre»\)/.test(passo),
+      "popup: o passo a passo diz «Captura completa» e «Entrar com gov.br», nunca «Acesso livre»");
+    chk(/pactha_visitante/.test(pj) && /AVISO_LIVRE_VALE_MS = 6 \* 60 \* 60 \* 1000/.test(pj) && /recente && !rot/.test(pj),
+      "popup: aviso de Acesso Livre com pactha_visitante < 6h e sem roteiro ativo");
+    chk(/id="aviso-livre"/.test(ph), "popup.html: o lugar do aviso de Acesso Livre");
+    chk(/clique em <strong>«Entrar com gov\.br»<\/strong>,\s*nunca em «Acesso livre»/.test(ph),
+      "popup.html: a ajuda perto do botão diz «Entrar com gov.br», nunca «Acesso livre»");
+    chk(/mud\.pactha_roteiro \|\|/.test(pj) && /setInterval\(\(\) => \{ refreshLastCapture\(\); mostrarRoteiro\(\); \}, 2000\)/.test(pj),
+      "popup: o «Abrindo as 4 portas…» é trocado pelo andamento (ouvinte do storage + relógio de 2s)");
   }
 
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTUDO OK");

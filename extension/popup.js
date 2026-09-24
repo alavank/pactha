@@ -5,6 +5,14 @@ const DEFAULT_API = "https://pactha-api-54-232-208-118.sslip.io/api";
 
 const $ = (id) => document.getElementById(id);
 
+/* ACESSO LIVRE (visitante), medido em 24/09/2026: nesse modo o TransfereGov nunca
+   pede login, então "faça o login" não diz onde. O passo a passo é um só, para as
+   três telas que o mostram (roteiro barrado, aviso do modo automático, manual). */
+const PASSO_A_PASSO_LIVRE = "O que fazer: 1) clique em «Captura completa» — ela sai do Acesso "
+  + "Livre sozinha; 2) na tela de login do TransfereGov, clique em «Entrar com gov.br» (NUNCA em "
+  + "«Acesso livre») e faça o login; 3) o roteiro segue sozinho pelas 4 portas.";
+const AVISO_LIVRE_VALE_MS = 6 * 60 * 60 * 1000;   // o mesmo prazo do selo, no background
+
 // Ver nota em background.js: config salva no dominio morto vence o DEFAULT_API,
 // entao reescrevemos aqui tambem (o popup pode abrir antes do service worker).
 const LEGACY_API_HOSTS = ["pactha.alavank.com.br"];
@@ -152,12 +160,17 @@ async function captureManual() {
     showStatus("Aba atual sem URL valida", "error");
     return;
   }
-  // O mesmo PORTEIRO da captura automática (`chromeEstaLogado`, ambientes.js):
+  // O mesmo PORTEIRO da captura automática (`chromeEstadoLogin`, ambientes.js):
   // jar `govbr` deslogado não sai nem no clique manual — a mensagem diz o que fazer.
-  if ($("automation-key").value === "govbr" && (await chromeEstaLogado()) === false) {
-    showStatus("Este Chrome NÃO está logado no TransfereGov — nada foi enviado. "
-      + "Use «Captura completa» (ela espera você logar).", "error");
-    return;
+  if ($("automation-key").value === "govbr") {
+    const estado = await chromeEstadoLogin();
+    if (estado.valor === false) {
+      showStatus(estado.motivo === "visitante"
+        ? `Este Chrome está no ACESSO LIVRE (visitante) do TransfereGov — nada foi enviado. ${PASSO_A_PASSO_LIVRE}`
+        : "Este Chrome NÃO está logado no TransfereGov — nada foi enviado. "
+          + "Use «Captura completa» (ela espera você logar).", "error");
+      return;
+    }
   }
   showStatus("Coletando cookies (incluindo httpOnly)...", "info");
   const cookies = await getAllCookiesForDomain(host);
@@ -275,6 +288,14 @@ async function refreshLastCapture() {
    alarme de 12 min) e desenha uma linha por ambiente. ⚠️ `textContent`, nunca
    `innerHTML`: os textos vêm do servidor. */
 function textoDoItem(i) {
+  /* 401 NÃO É "sem resposta": o servidor respondeu, e recusou o TOKEN desta
+     extensão (errado, revogado, expirado — o motivo vem dele). O Juranda ficou
+     assim em 23–24/09/2026 dizendo só "HTTP 401", sem ação possível. */
+  if (!i.ok && (i.status === 401 || /^HTTP 401\b/.test(i.detalhe || ""))) {
+    const motivo = String(i.detalhe || "").replace(/^HTTP 401\s*(—\s*)?/, "") || "sem motivo";
+    return `${i.nome}: o servidor RECUSOU o token (${motivo}) — gere um novo token em `
+      + "Configurações › Service Tokens no PACTHA desse cliente e cole em «Configurar token PACTHA»";
+  }
   if (!i.ok) return `${i.nome}: sem resposta (${i.detalhe})`;
   if (i.precisa_recapturar) {
     return `${i.nome}: LOGIN CAIU${i.modulos ? " · " + i.modulos : ""} — recapturar`;
@@ -332,8 +353,20 @@ async function desenharSaude() {
  *  "abrindo…" parado que não diz se travou. */
 async function mostrarRoteiro() {
   const d = await new Promise((r) => chrome.storage.local.get(
-    ["pactha_roteiro", "pactha_roteiro_fim", "pactha_last_capture"], r));
+    ["pactha_roteiro", "pactha_roteiro_fim", "pactha_last_capture", "pactha_visitante"], r));
   const rot = d.pactha_roteiro;
+  /* O modo automático viu o Chrome no ACESSO LIVRE (e não mandou nada): avisa —
+     menos com um roteiro em curso, que é justamente quem está saindo dele. */
+  const aviso = $("aviso-livre");
+  if (aviso) {
+    const v = d.pactha_visitante;
+    const recente = v && v.quando && Date.now() - Date.parse(v.quando) < AVISO_LIVRE_VALE_MS;
+    aviso.classList.toggle("hidden", !(recente && !rot));
+    if (recente && !rot) {
+      aviso.textContent = "⚠ Este Chrome está no ACESSO LIVRE (visitante) do TransfereGov — a "
+        + `captura automática não envia nada assim. ${PASSO_A_PASSO_LIVRE}`;
+    }
+  }
   const morto = rot && (Date.now() - (rot.em || 0) > 20 * 60 * 1000
     || Date.now() - (rot.inicio || rot.em || 0) > 60 * 60 * 1000);
   if (morto) {
@@ -350,6 +383,11 @@ async function mostrarRoteiro() {
   if (fim && Date.now() - Date.parse(fim.quando) < 10 * 60 * 1000) {
     if (fim.venceu) {
       showStatus("A captura completa parou sem terminar (tempo esgotado). Clique de novo.", "error");
+      return;
+    }
+    if (fim.barrado && fim.visitante) {
+      // Não é "faça o login": no Acesso Livre o TransfereGov não pede login.
+      showStatus(`Nada foi enviado: ${fim.barrado}. ${PASSO_A_PASSO_LIVRE}`, "error");
       return;
     }
     if (fim.barrado) {
@@ -453,15 +491,19 @@ async function init() {
 
   // Captura completa: quem conduz é o service worker (o popup FECHA quando a aba
   // nova ganha o foco, e o roteiro morreria junto).
+  // ⚠️ Este "Abrindo…" é só o eco do clique: o roteiro grava `pactha_roteiro` em
+  // milissegundos e o ouvinte do storage abaixo (e o relógio de 2s) o troca pelo
+  // andamento real ("porta N de 4: …").
   $("btn-completa").addEventListener("click", () => {
     chrome.runtime.sendMessage({ tipo: "captura_completa" });
-    showStatus("Abrindo as 4 portas na mesma aba. Se pedir login, faça — o roteiro "
-               + "continua sozinho depois.", "info");
+    showStatus("Abrindo as 4 portas na mesma aba. Se pedir login, clique em «Entrar com "
+               + "gov.br» e faça o login — o roteiro continua sozinho depois.", "info");
   });
   mostrarRoteiro();
   // O roteiro anda no service worker: o popup acompanha pelo storage, ao vivo.
   chrome.storage.onChanged.addListener((mud, area) => {
-    if (area === "local" && (mud.pactha_roteiro || mud.pactha_roteiro_fim || mud.pactha_last_capture)) {
+    if (area === "local" && (mud.pactha_roteiro || mud.pactha_roteiro_fim || mud.pactha_last_capture
+        || mud.pactha_visitante)) {
       mostrarRoteiro();
     }
   });

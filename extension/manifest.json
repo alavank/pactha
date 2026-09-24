@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PACTHA - Captura Automática",
-  "version": "2.4.4",
-  "description": "Captura a sessão gov.br/TransfereGov/FNS e envia a TODOS os ambientes PACTHA de uma vez, mostrando o resultado por ambiente. Mostra no ícone quando a sessão do SERVIDOR cai e abre as 4 portas da captura completa. Não captura na tela de login.",
+  "version": "2.4.5",
+  "description": "Captura a sessão gov.br/TransfereGov/FNS e envia a TODOS os ambientes PACTHA de uma vez, mostrando o resultado por ambiente. Mostra no ícone quando a sessão do SERVIDOR cai e abre as 4 portas da captura completa. Não captura na tela de login nem no Acesso Livre (visitante): a captura completa sai dele sozinha e avisa na página para entrar com gov.br.",
   "permissions": [
     "cookies",
     "activeTab",
@@ -16,6 +16,16 @@
     "https://gov.br/*",
     "https://pactha.alavank.com.br/*",
     "https://*.sslip.io/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://idp.transferegov.sistema.gov.br/*",
+        "https://*.transferegov.sistema.gov.br/*"
+      ],
+      "js": ["aviso_pagina.js"],
+      "run_at": "document_idle"
+    }
   ],
   "action": {
     "default_popup": "popup.html",

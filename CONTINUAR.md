@@ -2365,6 +2365,25 @@ anterior barraria a captura boa em silêncio (só 1 dos 2 envios do fim do rotei
 Previsão a conferir: login de 23/09 11:27 BRT → aviso ~08:27 de 24/09, morte ~11:27 de 24/09 se
 ninguém relogar; a sonda deve virar `erro` nessa hora enquanto o SP ainda diz vivo.
 
+**Medido em 24/09/2026 — o Chrome do dono estava no ACESSO LIVRE (visitante).** Relato: "não captura
+mais". No Chrome do dono (só leitura): no modo visitante a porta 1 **não redireciona para o login** —
+responde 200 em `…/voluntarias/proposta/ConsultarProposta/ConsultarProposta.do`, título
+"Transferegov - Consultar Proposta - Acesso Livre", com `<span class="exit">Sair do Acesso Livre …` e o
+link `/voluntarias?LLO=true` dentro de `<div id="info">`. O LLO tira do visitante e cai em
+`idp.transferegov…/idp/` ("Login do Transferegov"): botão «Entrar com gov.br» e, logo abaixo, o link
+«Acesso livre» (`www.gov.br/transferegov/…/acesso-livre`) — a armadilha, que devolve ao visitante. A
+2.4.4 já barrava a captura de visitante (certo), mas calada: o roteiro abria as 4 portas sem nunca ver
+login e terminava "nada enviado", sem dizer o que fazer. **Não medido:** a página LOGADA (título e HTML)
+— por isso a detecção de visitante usa só marcadores precisos (título, `span.exit`), nunca a frase solta.
+**Hipótese forte (não medida):** login novo no TransfereGov/gov.br encerra a sessão anterior (vidas de
+12h a 79h, sem teto fixo) — o espelho do Chrome precisa levar o login novo, e o visitante numa porta o
+barrava em silêncio. O "HTTP 401" do Juranda no popup vem do servidor (token revogado/trocado/errado);
+o `detail` da resposta não aparecia. **Extensão 2.4.5** (comportamento em `extension/README.md`, "Acesso
+Livre"): a «Captura completa» sai do Acesso Livre sozinha (aba → LLO → porta 1; teto de 3 saídas), o
+modo automático só avisa ("!" + popup, sem navegar), faixa na página (content script `aviso_pagina.js`)
+e o 401 com o motivo e a ação. ⚠️ Copiar para `C:\CONVPREF\extension` inclui o arquivo NOVO
+`aviso_pagina.js` (e o manifest com `content_scripts`); depois recarregar em `chrome://extensions`.
+
 **O que NÃO dá para garantir:** o login gov.br tem reCAPTCHA (não se automatiza, não se guarda senha) e
 o teto do SSO não é publicado nem foi medido isolado — as "vidas" de agosto podem ser sessões emendadas
 por recapturas silenciosas. "Sair" no portal ou logar outro CPF no Chrome derruba os seis (é a mesma
