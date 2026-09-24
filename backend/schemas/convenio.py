@@ -111,9 +111,17 @@ class AlertaVigencia(BaseModel):
     municipio_nome: Optional[str] = None
     nr_convenio: Optional[str] = None
     nr_sigcon: Optional[str] = None
+    # O SIAFI (MG) — secundário: é o número que a contabilidade do Estado usa, mas
+    # não o que a prefeitura chama de "número do convênio" (23/09/2026).
+    nr_siafi: Optional[str] = None
     objeto: Optional[str] = None
     orgao_concedente: Optional[str] = None
     dt_fim_vigencia: Optional[date] = None
     dias_restantes: int
     valor_total: Optional[float] = None
     situacao: Optional[str] = None
+    # A alteração de PRAZO no SIGCON logado (termo aditivo / prorrogação), como o
+    # portal a mostra — `routers.convenios.alteracao_de_prazo`. Sem classificar.
+    alteracao_tipo: Optional[str] = None
+    alteracao_situacao: Optional[str] = None
+    alteracao_data: Optional[str] = None

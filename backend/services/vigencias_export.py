@@ -81,9 +81,46 @@ def _esfera_rotulo(e) -> str:
 
 
 def _numero(a) -> str:
-    """O identificador que a pessoa reconhece. Mesma ordem de queda da tela:
-    nº do convênio, senão o nº SIGCON."""
-    return _texto(getattr(a, "nr_convenio", None) or getattr(a, "nr_sigcon", None))
+    """O identificador que a pessoa reconhece: o nº do CONVÊNIO / instrumento.
+
+    ⚠️ Quando ele não existe, a queda sai ROTULADA (23/09/2026). O relatório da
+    Freitas mostrava 9342516 no "Nº" de Martinho Campos — o SIAFI — e a cliente
+    leu, com razão, como se fosse o número do convênio. Estadual sem número de
+    convênio sai "SIAFI 9342516"; federal sem instrumento sai "Proposta 012345/2024"."""
+    conv = str(getattr(a, "nr_convenio", None) or "").strip()
+    sig = str(getattr(a, "nr_sigcon", None) or "").strip()
+    siafi = str(getattr(a, "nr_siafi", None) or "").strip()
+    if str(getattr(a, "esfera", "") or "").strip().casefold() == "estadual":
+        if conv:
+            return conv
+        resto = siafi or sig
+        return f"SIAFI {resto}" if resto else "—"
+    if conv and conv != sig:
+        return conv
+    if sig:
+        return f"Proposta {sig}"
+    return _texto(conv)
+
+
+def _siafi(a) -> str:
+    """O SIAFI (MG) ao lado do número do convênio — quando é outro número. É o que
+    a contabilidade do Estado usa; vazio quando já está no próprio "Nº"."""
+    siafi = str(getattr(a, "nr_siafi", None) or "").strip()
+    if not siafi or siafi in _numero(a):
+        return ""
+    return siafi
+
+
+def _alteracao(a) -> str:
+    """A alteração de prazo do SIGCON como o portal mostra: "TERMO ADITIVO —
+    <etapa> (<data>)". Vazio quando não foi lida — NUNCA "sem alteração"."""
+    partes = [str(getattr(a, k, None) or "").strip()
+              for k in ("alteracao_tipo", "alteracao_situacao")]
+    txt = " — ".join(p for p in partes if p)
+    data = str(getattr(a, "alteracao_data", None) or "").strip()
+    if txt and data:
+        txt += f" ({data})"
+    return txt
 
 
 def normalizar(alertas: list, municipios: list[str] | None = None) -> dict:
@@ -119,14 +156,17 @@ def normalizar(alertas: list, municipios: list[str] | None = None) -> dict:
             "dias": dias,
             "esfera": _esfera_rotulo(getattr(a, "esfera", None)),
             "numero": _numero(a),
+            "siafi": _siafi(a),
+            "alteracao": _alteracao(a),
             "orgao": _texto(getattr(a, "orgao_concedente", None)),
             "objeto": _texto(getattr(a, "objeto", None)),
             "situacao": _texto(getattr(a, "situacao", None)),
             "dt_fim": getattr(a, "dt_fim_vigencia", None),
             "valor": valor,
         })
+        # `valor` nasce None: município sem nenhum valor coletado não é "R$ 0,00".
         t = por_mun.setdefault(nome, {"municipio": nome, "qtd": 0, "menor": None,
-                                      "valor": 0.0, "sem_valor": 0,
+                                      "valor": None, "sem_valor": 0,
                                       "criticos": 0, "atencao": 0})
         t["qtd"] += 1
         if isinstance(dias, int):
@@ -138,13 +178,14 @@ def normalizar(alertas: list, municipios: list[str] | None = None) -> dict:
         if valor is None:
             t["sem_valor"] += 1
         else:
-            t["valor"] += float(valor)
+            t["valor"] = (t["valor"] or 0.0) + float(valor)
 
     totais = sorted(por_mun.values(), key=lambda x: (-x["qtd"], x["municipio"]))
     geral = {
         "qtd": len(linhas),
         "municipios": len(totais),
-        "valor": sum(t["valor"] for t in totais),
+        "valor": (sum(t["valor"] for t in totais if t["valor"] is not None)
+                  if any(t["valor"] is not None for t in totais) else None),
         "sem_valor": sum(t["sem_valor"] for t in totais),
         "criticos": sum(t["criticos"] for t in totais),
         "atencao": sum(t["atencao"] for t in totais),
@@ -173,6 +214,20 @@ def _p(txt, estilo=_CEL) -> Paragraph:
     s = (str(txt) if txt is not None else "")
     s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return Paragraph(s or "—", estilo)
+
+
+def _esc(s) -> str:
+    return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _duas_linhas(principal, secundaria="") -> Paragraph:
+    """Célula com uma segunda linha menor e cinza (o SIAFI sob o nº do convênio, a
+    alteração do SIGCON sob a situação). Escapa cada parte À MÃO: `_p` escaparia
+    também o <br/>."""
+    txt = _esc(principal) or "—"
+    if secundaria:
+        txt += f'<br/><font size="5.8" color="#64748b">{_esc(secundaria)}</font>'
+    return Paragraph(txt, _CEL)
 
 
 def _estilo_base(n_linhas: int) -> list:
@@ -228,22 +283,25 @@ def gerar_pdf(dados: dict, *, dias: int, municipios: list[str] | None,
 
     # --- Totalizador por município ------------------------------------------
     story.append(Paragraph("Totalizador por município", st_sec))
-    cabs = ["Município", "Instrumentos", f"≤{_CRITICO_ATE}d",
-            f"{_CRITICO_ATE + 1}–{_ATENCAO_ATE}d", "Menor prazo", "Valor total"]
+    cabs = ["Município", "Instrumentos", f"Vencem em até {_CRITICO_ATE} dias",
+            f"Entre {_CRITICO_ATE + 1} e {_ATENCAO_ATE} dias", "Próximo vencimento",
+            "Valor total (dos com valor)"]
     dados_tot = [[_p(c, _CEL_CAB) for c in cabs]]
+
+    def _valor_txt(v, sem):
+        if v is None:
+            return f"sem valor coletado ({sem})" if sem else "—"
+        return _moeda(v) + (f" ({sem} sem valor)" if sem else "")
+
     for t in dados["totais"]:
-        valor_txt = _moeda(t["valor"])
-        if t["sem_valor"]:
-            valor_txt += f" ({t['sem_valor']} sem valor)"
+        valor_txt = _valor_txt(t["valor"], t["sem_valor"])
         dados_tot.append([
             _p(t["municipio"]), _p(t["qtd"]),
             _p(t["criticos"] or "—"), _p(t["atencao"] or "—"),
             _p(f"{t['menor']}d" if t["menor"] is not None else "—"),
             _p(valor_txt),
         ])
-    geral_valor = _moeda(g["valor"])
-    if g["sem_valor"]:
-        geral_valor += f" ({g['sem_valor']} sem valor)"
+    geral_valor = _valor_txt(g["valor"], g["sem_valor"])
     dados_tot.append([_p("TOTAL", _CEL_CAB), _p(g["qtd"], _CEL_CAB),
                       _p(g["criticos"] or "—", _CEL_CAB), _p(g["atencao"] or "—", _CEL_CAB),
                       _p("", _CEL_CAB), _p(geral_valor, _CEL_CAB)])
@@ -261,9 +319,10 @@ def gerar_pdf(dados: dict, *, dias: int, municipios: list[str] | None,
     story.append(t_tot)
     if g["sem_valor"]:
         story.append(Paragraph(
-            f"⚠️ {g['sem_valor']} instrumento(s) sem valor coletado na fonte não "
+            f"Atenção: {g['sem_valor']} instrumento(s) sem valor coletado na fonte não "
             "entram na soma — o total é do que tem valor conhecido, não do total "
-            "de instrumentos.", st_nota))
+            "de instrumentos. «Próximo vencimento» = dias até o instrumento que "
+            "vence primeiro no município.", st_nota))
 
     # --- Lista ---------------------------------------------------------------
     story.append(Spacer(1, 10))
@@ -281,9 +340,12 @@ def gerar_pdf(dados: dict, *, dias: int, municipios: list[str] | None,
                 pinturas.append(("BACKGROUND", (0, i), (0, i), _PDF_ATENCAO))
         dados_lst.append([
             _p(f"{d}d" if isinstance(d, int) else "—"),
-            _p(ln["municipio"]), _p(ln["esfera"]), _p(ln["numero"]),
+            _p(ln["municipio"]), _p(ln["esfera"]),
+            _duas_linhas(ln["numero"], f"SIAFI {ln['siafi']}" if ln["siafi"] else ""),
             _p(_texto(ln["orgao"], 40)), _p(_texto(ln["objeto"], 190)),
-            _p(_texto(ln["situacao"], 40)), _p(_data(ln["dt_fim"])),
+            _duas_linhas(_texto(ln["situacao"], 40),
+                         f"SIGCON: {_texto(ln['alteracao'], 90)}" if ln["alteracao"] else ""),
+            _p(_data(ln["dt_fim"])),
             _p(_moeda(ln["valor"])),
         ])
     t_lst = Table(dados_lst, repeatRows=1, hAlign="LEFT",
@@ -336,21 +398,31 @@ def gerar_xlsx(dados: dict, *, dias: int, municipios: list[str] | None,
     borda = Border(left=fino, right=fino, top=fino, bottom=fino)
 
     def _cabecalho(ws, rotulos, larguras):
+        # ⚠️ Uma largura por rótulo: o `zip` cortaria o último cabeçalho em silêncio.
+        assert len(rotulos) == len(larguras), "um rótulo sem largura some da planilha"
         for i, (rot, larg) in enumerate(zip(rotulos, larguras), start=1):
             ws.column_dimensions[get_column_letter(i)].width = larg
             c = ws.cell(1, i, rot)
             c.fill = azul; c.font = cab_fonte; c.alignment = centro; c.border = borda
+        # Altura da linha 1: sem ela o Excel não aumenta a linha para quebrar o
+        # texto, e o botão do filtro cobre o fim do rótulo — os "cabeçalhos
+        # cortados" que a Freitas mostrou (23/09/2026).
+        ws.row_dimensions[1].height = 32
         ws.freeze_panes = "A2"
-        # Autofiltro no cabeçalho: é o motivo de alguém pedir Excel.
-        ws.auto_filter.ref = f"A1:{get_column_letter(len(rotulos))}1"
+
+    def _filtro(ws, n_colunas, ultima_linha):
+        # Autofiltro no intervalo dos DADOS (e só deles): na linha 1 sozinha o Excel
+        # adivinha o intervalo, e pode pegar a linha TOTAL e movê-la ao ordenar.
+        ws.auto_filter.ref = f"A1:{get_column_letter(n_colunas)}{max(ultima_linha, 1)}"
 
     # --- aba 1: totalizador ---------------------------------------------------
     ws = wb.active
     ws.title = "Totalizador"
-    _cabecalho(ws, ["Município", "Instrumentos", f"Vencendo em ate {_CRITICO_ATE}d",
-                    f"Entre {_CRITICO_ATE + 1} e {_ATENCAO_ATE}d", "Menor prazo (dias)",
-                    "Valor total", "Sem valor coletado"],
-               [34, 13, 20, 18, 17, 18, 18])
+    _cabecalho(ws, ["Município", "Instrumentos", f"Vencem em até {_CRITICO_ATE} dias",
+                    f"Entre {_CRITICO_ATE + 1} e {_ATENCAO_ATE} dias",
+                    "Próximo vencimento (dias)", "Valor total (dos com valor)",
+                    "Qtd. sem valor coletado"],
+               [34, 15, 20, 20, 22, 24, 20])
     r = 2
     for t in dados["totais"]:
         vals = [t["municipio"], t["qtd"], t["criticos"], t["atencao"],
@@ -367,13 +439,17 @@ def gerar_xlsx(dados: dict, *, dias: int, municipios: list[str] | None,
             elif t["menor"] <= _ATENCAO_ATE:
                 ws.cell(r, 5).fill = atencao
         r += 1
+    _filtro(ws, 7, r - 1)
     g = dados["geral"]
     # ⚠️ O TOTAL é FÓRMULA, não número gravado. Quem recebe a planilha filtra e
     # apaga linha; um total constante continuaria exibindo o valor de antes, com
     # cara de certo. `SUM` sobre o intervalo acompanha o que sobrar.
     if dados["totais"]:
+        # Sem nenhum valor coletado, o TOTAL do valor fica EM BRANCO: `SUM` de
+        # células vazias dá 0 e a linha diria "R$ 0,00" — o mesmo engano das linhas.
+        total_valor = f"=SUM(F2:F{r - 1})" if g["valor"] is not None else ""
         for i, v in enumerate(["TOTAL", f"=SUM(B2:B{r - 1})", f"=SUM(C2:C{r - 1})",
-                               f"=SUM(D2:D{r - 1})", "", f"=SUM(F2:F{r - 1})",
+                               f"=SUM(D2:D{r - 1})", "", total_valor,
                                f"=SUM(G2:G{r - 1})"], start=1):
             c = ws.cell(r, i, v)
             c.font = negrito; c.border = borda
@@ -383,19 +459,23 @@ def gerar_xlsx(dados: dict, *, dias: int, municipios: list[str] | None,
 
     # --- aba 2: lista ---------------------------------------------------------
     ws2 = wb.create_sheet("Lista")
-    _cabecalho(ws2, ["Dias restantes", "Município", "Esfera", "Nº", "Órgão",
-                     "Objeto", "Situação", "Fim da vigência", "Valor"],
-               [14, 30, 12, 22, 30, 60, 30, 16, 18])
+    _cabecalho(ws2, ["Dias restantes", "Município", "Esfera", "Nº do instrumento",
+                     "SIAFI (MG)", "Órgão", "Objeto", "Situação",
+                     "Alteração no SIGCON (termo aditivo / prorrogação)",
+                     "Fim da vigência", "Valor"],
+               [16, 30, 12, 24, 14, 30, 60, 30, 40, 18, 18])
+    j = 1
     for j, ln in enumerate(dados["linhas"], start=2):
-        vals = [ln["dias"], ln["municipio"], ln["esfera"], ln["numero"],
-                ln["orgao"], ln["objeto"], ln["situacao"], ln["dt_fim"], ln["valor"]]
+        vals = [ln["dias"], ln["municipio"], ln["esfera"], ln["numero"], ln["siafi"] or None,
+                ln["orgao"], ln["objeto"], ln["situacao"], ln["alteracao"] or None,
+                ln["dt_fim"], ln["valor"]]
         for i, v in enumerate(vals, start=1):
             c = ws2.cell(j, i, v)
             c.font = normal; c.border = borda
-            c.alignment = centro if i in (1, 3, 8) else esq
-            if i == 8 and isinstance(v, (date, datetime)):
+            c.alignment = centro if i in (1, 3, 5, 10) else esq
+            if i == 10 and isinstance(v, (date, datetime)):
                 c.number_format = _FMT_DATA
-            if i == 9:
+            if i == 11:
                 c.number_format = _FMT_MOEDA
         d = ln["dias"]
         if isinstance(d, int):
@@ -403,6 +483,7 @@ def gerar_xlsx(dados: dict, *, dias: int, municipios: list[str] | None,
                 ws2.cell(j, 1).fill = critico
             elif d <= _ATENCAO_ATE:
                 ws2.cell(j, 1).fill = atencao
+    _filtro(ws2, 11, j)
 
     # --- aba 3: o recorte -----------------------------------------------------
     # Uma planilha circula solta por e-mail. Sem esta aba, daqui a um mês ninguém
@@ -419,14 +500,15 @@ def gerar_xlsx(dados: dict, *, dias: int, municipios: list[str] | None,
          else "todos os municípios da carteira"),
         ("Instrumentos", g["qtd"]),
         ("Municípios com vigência a vencer", g["municipios"]),
-        ("Valor total (dos que têm valor)", g["valor"]),
+        ("Valor total (dos que têm valor)", g["valor"] if g["valor"] is not None
+         else "sem valor coletado"),
         ("Sem valor coletado", g["sem_valor"]),
         ("Emitido em", datetime.now().strftime("%d/%m/%Y %H:%M")),
     ]
     for j, (rot, val) in enumerate(linhas_meta, start=1):
         a = ws3.cell(j, 1, rot); a.font = negrito; a.alignment = esq
         b = ws3.cell(j, 2, val); b.font = normal; b.alignment = esq
-        if rot.startswith("Valor total"):
+        if rot.startswith("Valor total") and isinstance(val, (int, float)):
             b.number_format = _FMT_MOEDA
 
     buf = io.BytesIO()

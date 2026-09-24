@@ -562,7 +562,11 @@ async def export_vigencias(
     # A MESMA ordenacao da tela (o modal ordena por dias, nos dois sentidos).
     # `dias_restantes` e obrigatorio no schema, mas o `9999` fica como rede: uma
     # linha sem prazo iria para o fim em vez de estourar a comparacao.
-    alertas = sorted(alertas, key=lambda a: getattr(a, "dias_restantes", None) or 9999,
+    # ⚠️ `is None`, e não `or`: 0 dias (vence HOJE) é falso em Python e ia para o FIM
+    # da lista "menor prazo primeiro" — o mais urgente escondido no fundo.
+    alertas = sorted(alertas, key=lambda a: (getattr(a, "dias_restantes", None)
+                                             if getattr(a, "dias_restantes", None) is not None
+                                             else 9999),
                      reverse=(ordem == "desc"))
 
     from services import vigencias_export as vx

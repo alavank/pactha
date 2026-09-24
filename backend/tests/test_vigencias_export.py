@@ -102,7 +102,65 @@ def test_esfera_sai_com_nome_de_gente():
 def test_numero_cai_do_convenio_para_o_sigcon():
     d = vx.normalizar([_A("X", nr_convenio="ABC", nr_sigcon="999"),
                        _A("X", nr_convenio=None, nr_sigcon="999")], None)
-    assert [l["numero"] for l in d["linhas"]] == ["ABC", "999"]
+    # a queda sai ROTULADA: sem número de convênio, o que sobra é o SIAFI (23/09/2026)
+    assert [l["numero"] for l in d["linhas"]] == ["ABC", "SIAFI 999"]
+
+
+def test_o_caso_de_Martinho_Campos__numero_do_convenio_e_SIAFI_ao_lado():
+    """Relato da Freitas (23/09/2026): o "Nº" mostrava 9342516 (o SIAFI) e a
+    cliente leu como se fosse o número do convênio, que é 1481002318/2022."""
+    a = _A("Martinho Campos", nr_convenio="1481002318/2022", nr_sigcon="9342516")
+    a.nr_siafi = "9342516"
+    ln = vx.normalizar([a], None)["linhas"][0]
+    assert ln["numero"] == "1481002318/2022" and ln["siafi"] == "9342516"
+    sem = _A("X", nr_convenio=None, nr_sigcon="9342516")
+    sem.nr_siafi = "9342516"
+    ln2 = vx.normalizar([sem], None)["linhas"][0]
+    assert ln2["numero"] == "SIAFI 9342516" and ln2["siafi"] == "", "o SIAFI não sai duas vezes"
+
+
+def test_federal_sem_instrumento_sai_rotulada_como_PROPOSTA():
+    d = vx.normalizar([_A("X", esfera="voluntaria", nr_convenio="941314", nr_sigcon="012345/2024"),
+                       _A("X", esfera="voluntaria", nr_convenio="012345/2024", nr_sigcon="012345/2024")],
+                      None)
+    assert [l["numero"] for l in d["linhas"]] == ["941314", "Proposta 012345/2024"]
+
+
+def test_alteracao_do_SIGCON_sai_como_o_portal_mostra__e_vazio_nao_e_sem_alteracao():
+    a = _A("X")
+    a.alteracao_tipo, a.alteracao_situacao, a.alteracao_data = (
+        "TERMO ADITIVO", "ASSINATURA DO CONCEDENTE", "12/09/2026")
+    ln = vx.normalizar([a, _A("X")], None)["linhas"]
+    assert ln[0]["alteracao"] == "TERMO ADITIVO — ASSINATURA DO CONCEDENTE (12/09/2026)"
+    assert ln[1]["alteracao"] == "", "sem leitura não pode virar «sem alteração»"
+
+
+def test_municipio_SEM_nenhum_valor_nao_vira_R0_nem_no_total():
+    d = vx.normalizar([_A("X", valor_total=None), _A("Y", valor_total=50.0)], None)
+    por = {t["municipio"]: t for t in d["totais"]}
+    assert por["X"]["valor"] is None and por["X"]["sem_valor"] == 1
+    assert d["geral"]["valor"] == 50.0
+    so_sem = vx.normalizar([_A("X", valor_total=None)], None)
+    assert so_sem["geral"]["valor"] is None
+    # e o arquivo não quebra nem escreve R$ 0,00
+    import io
+    from openpyxl import load_workbook
+    ws = load_workbook(io.BytesIO(vx.gerar_xlsx(so_sem, dias=120, municipios=None)))["Totalizador"]
+    assert ws["F2"].value is None and ws["F3"].value in (None, ""), "TOTAL sem valor saía R$ 0,00"
+    assert vx.gerar_pdf(so_sem, dias=120, municipios=None)[:5] == b"%PDF-"
+
+
+def test_excel_cabecalho_legivel_e_filtro_no_intervalo_dos_dados():
+    import io
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(vx.gerar_xlsx(_dados(3), dias=120, municipios=None)))
+    tot, lst = wb["Totalizador"], wb["Lista"]
+    assert tot.row_dimensions[1].height and tot.row_dimensions[1].height >= 30
+    assert tot["E1"].value == "Próximo vencimento (dias)"
+    assert tot.auto_filter.ref == "A1:G4", "o filtro não pode pegar a linha TOTAL (linha 5)"
+    rot = [lst.cell(1, i).value for i in range(1, 12)]
+    assert rot[3] == "Nº do instrumento" and rot[4] == "SIAFI (MG)" and rot[10] == "Valor"
+    assert lst.auto_filter.ref == "A1:K4"
 
 
 # ----------------------------------------------------------------- formatos ---

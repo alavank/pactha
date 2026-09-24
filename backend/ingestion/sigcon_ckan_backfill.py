@@ -212,6 +212,11 @@ def _index_dataset(gz_bytes: bytes):
     by_siafi: dict = {}
     by_sigcon: dict = {}
     by_id: dict = {}
+    # ⚠️ O SIAFI NAO E UNICO no dm_convenio (medido em 23/09/2026: 6.584 valores
+    # apontam para mais de um id_convenio, quase todos de ate 2016). Casar por
+    # SIAFI ambiguo gravaria o numero ou a vigencia de OUTRO convenio: essas
+    # entradas levam `ambiguo` e nao escrevem nada novo (ver o UPDATE).
+    ids_por_siafi: dict = {}
     n = 0
     with gzip.open(io.BytesIO(gz_bytes), "rt", encoding="latin-1") as f:
         rd = csv.reader(f, delimiter=";")
@@ -241,8 +246,14 @@ def _index_dataset(gz_bytes: bytes):
             }
             siafi = (g(row, "nr_siafi") or "").strip()
             sigcon = (g(row, "nr_sigcon") or "").strip()
+            # "Numero Convenio / Parceria SIGCON" no dicionario do Estado (ex.:
+            # 1481002318/2022) — o numero que a prefeitura reconhece. O NOSSO
+            # nr_sigcon e, na pratica, o SIAFI (ver o scraper).
+            rec["sigcon"] = sigcon
+            if siafi and rec["id"]:
+                ids_por_siafi.setdefault(siafi, set()).add(rec["id"])
             if siafi and (siafi not in by_siafi or rec["ver"] >= by_siafi[siafi]["ver"]):
-                by_siafi[siafi] = rec
+                by_siafi[siafi] = {**rec, "ambiguo": False}
             if sigcon and (sigcon not in by_sigcon or rec["ver"] >= by_sigcon[sigcon]["ver"]):
                 by_sigcon[sigcon] = rec
             idc = rec["id"]
@@ -252,9 +263,60 @@ def _index_dataset(gz_bytes: bytes):
                               "objetivo": (g(row, "objetivo") or "").strip(),
                               "tp": (g(row, "tp_instrumento") or "").strip(),
                               "dt_pub": _dt(g(row, "dt_publicacao"))}
+    for siafi, ids in ids_por_siafi.items():
+        if len(ids) > 1 and siafi in by_siafi:
+            by_siafi[siafi]["ambiguo"] = True
     log.info(f"dataset CKAN: {n} convenios | by_siafi={len(by_siafi)} "
              f"by_sigcon={len(by_sigcon)} by_id={len(by_id)}")
     return by_siafi, by_sigcon, by_id
+
+
+# ⭐ O ENRIQUECIMENTO de uma linha nossa casada com o dump do Estado.
+#
+# `dt_vigencia_atual` AVANCA com a data oficial (23/09/2026). Antes era COALESCE:
+# so preenchia coluna vazia e NUNCA atualizava — a prorrogacao publicada pelo
+# Estado ficava fora do relatorio de vigencias ate o scraper logado reabrir
+# aquele detalhe (rodizio limitado; municipio sem credencial, nunca). Relato da
+# Freitas: "acredito que nao esta atualizado". O `dm_convenio.dt_vigencia_atual`
+# e a vigencia OFICIAL, que o Estado so muda quando o aditivo e publicado (no
+# caso de Martinho Campos: fim original 28/06/2024, atual 04/11/2026). So AVANCA
+# (GREATEST): uma data mais nova lida da tela logada nao e revertida. Com SIAFI
+# ambiguo, continua o COALESCE antigo — nao se sabe de qual convenio e a data.
+#
+# `raw_data.sigcon` = o numero do convenio do Estado, numa chave SO DESTE
+# coletor: o scraper grava `nr_instrumento` com '' quando a celula da grade vem
+# vazia, e o merge `||` apagaria o que viesse daqui (dois escritores alternando).
+_SQL_ENRIQUECE = """UPDATE convenios_estadual SET
+            valor_contrapartida = COALESCE(valor_contrapartida, %s),
+            dt_vigencia_inicial = COALESCE(dt_vigencia_inicial, %s),
+            dt_vigencia_atual   = CASE WHEN %s::date IS NOT NULL AND NOT %s
+                                       THEN GREATEST(dt_vigencia_atual, %s::date)
+                                       ELSE COALESCE(dt_vigencia_atual, %s::date) END,
+            dt_vigencia_final   = COALESCE(dt_vigencia_final, %s),
+            -- A data de publicacao REAL, so onde nao ha nenhuma. O scraper
+            -- gravava 1o de janeiro como substituto; a migration
+            -- `limpa_dt_publicacao_substituta.sql` zera esses, e daqui vem a
+            -- verdadeira. COALESCE e nao sobrescrita: a data lida da TELA, se
+            -- houver, continua mandando.
+            dt_publicacao = COALESCE(dt_publicacao, %s),
+            objeto = CASE WHEN length(trim(coalesce(objeto, ''))) <= 3
+                          THEN COALESCE(NULLIF(%s, ''), objeto) ELSE objeto END,
+            valor_repassado = CASE WHEN %s::numeric IS NOT NULL THEN %s::numeric ELSE valor_repassado END,
+            raw_data = CASE WHEN %s <> '' AND COALESCE(raw_data->>'sigcon', '') = ''
+                            THEN COALESCE(raw_data, '{}'::jsonb) || jsonb_build_object('sigcon', %s::text)
+                            ELSE raw_data END,
+            updated_at = NOW()
+          WHERE id = %s"""
+
+
+def _params_enriquece(rec: dict, repassado, cid) -> tuple:
+    """Os parametros de `_SQL_ENRIQUECE`, na ordem. Funcao pura (testavel)."""
+    ambiguo = bool(rec.get("ambiguo"))
+    sigcon = "" if ambiguo else (rec.get("sigcon") or "").strip()
+    return (rec["contra"], rec["vig_ini"],
+            rec["vig_atual"], ambiguo, rec["vig_atual"], rec["vig_atual"] or rec["vig_fim"],
+            rec["vig_fim"], rec.get("dt_pub"), rec.get("obj"), repassado, repassado,
+            sigcon, sigcon, cid)
 
 
 _SQL_INSERT = """
@@ -468,24 +530,7 @@ def backfill() -> int:
         repassado = rep_by_id.get(rec.get("id")) if rec.get("id") else None
         if repassado is not None:
             rep_set += 1
-        cur.execute("""UPDATE convenios_estadual SET
-            valor_contrapartida = COALESCE(valor_contrapartida, %s),
-            dt_vigencia_inicial = COALESCE(dt_vigencia_inicial, %s),
-            dt_vigencia_atual   = COALESCE(dt_vigencia_atual, %s),
-            dt_vigencia_final   = COALESCE(dt_vigencia_final, %s),
-            -- A data de publicacao REAL, so onde nao ha nenhuma. O scraper
-            -- gravava 1o de janeiro como substituto; a migration
-            -- `limpa_dt_publicacao_substituta.sql` zera esses, e daqui vem a
-            -- verdadeira. COALESCE e nao sobrescrita: a data lida da TELA, se
-            -- houver, continua mandando.
-            dt_publicacao = COALESCE(dt_publicacao, %s),
-            objeto = CASE WHEN length(trim(coalesce(objeto, ''))) <= 3
-                          THEN COALESCE(NULLIF(%s, ''), objeto) ELSE objeto END,
-            valor_repassado = CASE WHEN %s::numeric IS NOT NULL THEN %s::numeric ELSE valor_repassado END,
-            updated_at = NOW()
-          WHERE id = %s""",
-          (rec["contra"], rec["vig_ini"], rec["vig_atual"] or rec["vig_fim"], rec["vig_fim"],
-           rec.get("dt_pub"), rec.get("obj"), repassado, repassado, cid))
+        cur.execute(_SQL_ENRIQUECE, _params_enriquece(rec, repassado, cid))
         if cur.rowcount:
             upd += 1
     conn.commit()
