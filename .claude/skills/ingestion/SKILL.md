@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 34 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 35 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 34 sources has its own collector file with source-specific gotchas documented
+Each of the 35 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -271,6 +271,31 @@ acts with strong evidence. Full list of traps in the file header; the ones that 
   "Prefeitura Municipal de X", "X/UF" — punctuation is ignored).
 - **The time budget is checked between ACTS**, not only between municípios: on 24/09/2026
   Freitas was killed by the task `timeout` mid-município and wrote no `ingestion_log` row.
+
+## RS State Health Fund payments — SES-RS (`ingestion/fes_rs.py`, 24/09/2026)
+
+Monthly `.xls` (BIFF, `xlrd`) at `saude.rs.gov.br/pagamentos-mes`, whole State, the
+whole year republished DAILY with new file names. Full list in the file header:
+- **Read the links, never build the name** (time prefix). An old link of the same month
+  stays on the page and answers **404** — the newest wins, 404 tries the next.
+- **Header varies** (Feb/2026 has a 37th empty column): columns by NAME; the title's
+  month/year must match the link and the row sum must match the `TOTAIS` row, or the
+  month is refused (`partial`, nothing deleted).
+- ⚠️ **"Cód. Município" is the STATE code, not IBGE** (Nova Palma 083, Santa Maria 109).
+  Matched through `services/municipios_rs_codigo_estadual.py` (versioned, 497/497), built
+  by `scripts/gerar_depara_municipios_rs.py` from a CNPJ chain (fund credor → State
+  expense CSV → FNS REPASSE-FAF → SICONFI). The obvious chain (prefeitura CNPJ ×
+  `Cod_Municipio` of the State expense) is WRONG: there the code is where the money was
+  spent — it produced "96 = Santa Maria" (96 is Porto Alegre).
+- ⚠️ **Same município code = Fundo Municipal + hospitals.** ASSISTIR/MAC/SUS Gaúcho go
+  straight to the hospital. The fund is the credor with most modalidade-41 rows, by CODE
+  (a private hospital in Guaíba also shows 41); everything else is `fundo_municipal =
+  false`, out of the prefeitura's total.
+- **Retention is its own row** (pago 0, retido > 0, motivo). On the fund it is money lost
+  (CONASEMS, recurso 6, auditoria); on the hospital it is mostly tax (`tipo_retencao`).
+- The yearly `/fes-programas-municipais` file is INCOMPLETE (no MAC, hospitals). Don't use.
+- No natural key: delete + insert per (município, ano, mês), month read whole; equal hash
+  (`fes_rs_arquivos`) skips the month.
 
 ## CGU convênios — the spreadsheet, not the API (`ingestion/cgu_convenios.py`, 23/09/2026)
 

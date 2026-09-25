@@ -323,6 +323,13 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
         ("TCE-RS — Obras e origem do recurso (RS)",
          "SELECT max(atualizado_em), count(*) FROM tce_rs_obras",
          "tce_rs_portal"),
+        # ⚠️ A DATA É A DO ÚLTIMO PAGAMENTO DA PLANILHA (`pago_ate`), não a da
+        # rodada: a SES republica todo dia, e o que a tela precisa dizer é até
+        # quando o dado vai.
+        ("SES-RS — Repasses do Fundo Estadual de Saúde (RS)",
+         "SELECT (SELECT max(pago_ate)::timestamptz FROM fes_rs_arquivos), "
+         "count(*) FROM fes_rs_pagamentos",
+         "fes_rs"),
     ],
     "PR": [
         # ⚠️ A DATA É A DA RODADA, NÃO A DO DADO: `tce_pr_arquivos` só muda quando

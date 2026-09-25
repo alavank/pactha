@@ -546,6 +546,13 @@ O desenho atual (13/09/2026, "coleta noturna"):
   1020 s. Migration `add_fns_saldo_conta.sql` (tabela nova) no deploy do #552, 24/09/2026
   ~03:57 UTC: "146/146 em dia" nas sete APIs. **Task criada nos sete em 24/09/2026 ~04:05
   UTC** por `scripts/criar_task_fns_saldo.sh`; primeira rodada no mesmo dia, 06:00 UTC.
+- **`fes-rs` (24/09/2026), escada de 5 min de 05:00 (freitas) a 05:30 UTC
+  (juranda):** as planilhas mensais de pagamento do Fundo Estadual de Saúde da SES-RS
+  (`saude.rs.gov.br/pagamentos-mes`, ~5 MB por mês, o ano corrente) nos tenants com
+  município do RS; nos outros sai antes de baixar (`success`, 0). Mês com o mesmo hash
+  não é relido. Kill 900 s, timeout da task 1020 s. Migration `add_fes_rs_pagamentos.sql`
+  (tabelas novas — DDL: deployar depois das 10:00 UTC). **Task ainda NÃO criada** — rodar
+  `scripts/criar_task_fes_rs.sh` depois do deploy e trocar esta frase pela data.
 - **`emendas-mg` (24/09/2026), escada de 10 min de 07:40 (freitas) a 08:40 UTC
   (juranda):** o CSV de indicações da SEGOV no dados.mg.gov.br (~30 MB; as `.xlsx` do
   emendas.mg.gov.br dão 403 à VPS) nos

@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **34 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026; RS com os repasses do Fundo Estadual de Saúde (SES-RS) desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **35 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -154,6 +154,39 @@ itens 3.2.3 (Anexo 8 ao SIOPE), 3.2.4 (Anexo 12 ao SIOPS), 5.1 (mínimo em educa
   (19,76%). Juranda: SIOPE 3º NÃO declarado (o "!" do 3.2.3), e SIOPS 2º e 3º homologados
   só em 24/08 (com atraso). 1ª rodada 169–244 s para as três UFs (duas medições), 2ª 78–84 s.
 
+## 1.46. Repasses do Fundo Estadual de Saúde do RS — SES-RS (24/09/2026)
+
+Até aqui o PACTHA não tinha repasse ESTADUAL de saúde no RS. Agora tem, na tela
+**Estaduais › Cofinanciamento Saúde** (a mesma de Goiás; `COFINANCIAMENTO_POR_UF` ganhou
+RS com `modo: "pagamentos"`, e a chave `cofinanciamento.ver` passou a `ufs=("GO","RS")`).
+
+- **Fonte:** `saude.rs.gov.br/pagamentos-mes`, uma planilha `.xls` por mês de pagamento
+  ("GERAL PAGOS em <MÊS> Programas Municipais e INCENTIVOS <ANO> FESGERAL"), o Estado
+  inteiro, republicada TODO DIA com nome novo. Coletor `ingestion/fes_rs.py` (armadilhas
+  no cabeçalho), tabelas `fes_rs_pagamentos` + `fes_rs_arquivos`
+  (`add_fes_rs_pagamentos.sql`), rota `GET /api/cofinanciamento/fes-rs`, tela
+  `dashboard/cofinanciamento/FesRs.tsx`. Task `fes-rs` em `scripts/criar_task_fes_rs.sh`.
+- **O código de município da SES NÃO é IBGE** (Nova Palma 083, Santa Maria 109). De-para
+  versionado em `services/municipios_rs_codigo_estadual.py` (497/497), gerado por
+  `scripts/gerar_depara_municipios_rs.py` por uma cadeia de CNPJs sem nome: credor-fundo
+  na planilha do FES → CNPJ na despesa do Estado (CKAN) → IBGE no REPASSE-FAF do FNS →
+  SICONFI. ⚠️ O caminho óbvio (CNPJ da PREFEITURA × `Cod_Municipio` da despesa) deu
+  "96 = Santa Maria" — ali o código é o local do gasto.
+- **Fundo × hospitais:** ASSISTIR, MAC e SUS Gaúcho vão DIRETO ao hospital. O fundo é o
+  credor da modalidade 41 (pelo código); o resto aparece recolhido em "Hospitais e
+  entidades no município", fora do total. **Retenções** do fundo (CONASEMS, recurso 6,
+  multa de auditoria) em destaque; no hospital, a retenção é quase toda tributo.
+- **Conferido num Postgres 16 real contra a fonte (24/09/2026):** Nova Palma 2026 — fundo
+  R$ 878.213,54, retido R$ 3.706,80 (CONASEMS 3.160,80 + recurso 6 546,00), hospital
+  R$ 5.303.742,45; setembro PIAPS 28.673,75, CAPS 12.000, Regulação 9.113,60, hospital
+  ASSISTIR 242.460,04 / MAC 153.512,06 / cofin. ambulatorial 125.000. Santa Maria 2026 —
+  fundo R$ 17.570.879,64, retido R$ 35.268,87, entidades R$ 123,3 mi; setembro 103 linhas,
+  MAC 545.754,25, UPA 520.000, PIAPS 366.884,84, Inverno Gaúcho 310.500, HUCAR MAC
+  2.178.996,04, Casa de Saúde ASSISTIR 908.598,69. 2ª rodada: 9 meses iguais, 0 linhas.
+- **Não usar** o arquivo anual `/fes-programas-municipais`: não tem MAC, Inverno Gaúcho,
+  Piso da Enfermagem nem hospitais.
+
+---
 ## 1.42. Emendas de saúde do FNS na aba Federais — pelo código (25/09/2026)
 
 Cartão "InvestSUS — painéis" do relatório do dono. O cartão pedia raspar o Qlik

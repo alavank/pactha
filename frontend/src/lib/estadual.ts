@@ -349,15 +349,27 @@ export function repassesDaUf(uf?: string | null) {
 }
 
 /** UFs que publicam o COFINANCIAMENTO ESTADUAL DA SAÚDE (repasse do fundo
- *  estadual ao municipal). ⚠️ Cada UF publica de um jeito, e a tela escolhe o
- *  conteúdo pela UF: Goiás dá teto × pago por quadrimestre; Minas (24/09/2026)
- *  dá cada ORDEM DE PAGAMENTO por Resolução SES (`ses_mg_resolucoes.py`). O
- *  Acordo FES de MG continua em tela própria — é DÍVIDA, não repasse. */
-export const COFINANCIAMENTO_POR_UF: Record<string, { titulo: string; fonte: string }> = {
-  GO: { titulo: "Cofinanciamento da Saúde",
+ *  estadual ao municipal). Minas (24/09/2026) dá cada ORDEM DE PAGAMENTO por
+ *  Resolução SES (`ses_mg_resolucoes.py`, componente `FundoAFundoMG`, escolhido
+ *  pela UF); o Acordo FES de MG continua em tela própria — é DÍVIDA, não repasse.
+ *
+ *  ⚠️ `modo` É O FORMATO DA FONTE, e muda a tela inteira. Goiás publica TETO ×
+ *  DESEMPENHO (o que o município deixou de receber pelo ISF); o Rio Grande do
+ *  Sul publica o PAGAMENTO (planilha mensal do Fundo Estadual de Saúde, com as
+ *  retenções e os hospitais que recebem direto). Mesma pergunta, números de
+ *  natureza diferente — por isso cada modo desenha a sua tela e fala com a sua
+ *  rota, em vez de uma tela com metade dos campos vazios. */
+export const COFINANCIAMENTO_POR_UF: Record<string, {
+  titulo: string; fonte: string; modo: "teto" | "pagamentos" | "resolucoes";
+}> = {
+  GO: { titulo: "Cofinanciamento da Saúde", modo: "teto",
         fonte: "SES-GO · Atenção Primária e Vigilância (dados abertos)" },
-  MG: { titulo: "Fundo a fundo estadual da saúde",
+  MG: { titulo: "Fundo a fundo estadual da saúde", modo: "resolucoes",
         fonte: "SES-MG · Pagamento de Resoluções (painel público)" },
+  // saude.rs.gov.br/pagamentos-mes — "Pagamentos do FES", planilhas "GERAL PAGOS
+  // em <mês> Programas Municipais e INCENTIVOS" (`backend/ingestion/fes_rs.py`).
+  RS: { titulo: "Repasses do FES (Saúde)", modo: "pagamentos",
+        fonte: "SES-RS · Fundo Estadual de Saúde — pagamentos do mês" },
 };
 
 export function cofinanciamentoDaUf(uf?: string | null) {

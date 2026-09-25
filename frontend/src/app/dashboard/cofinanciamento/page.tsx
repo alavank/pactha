@@ -20,6 +20,7 @@ import { HeartPulse, TrendingDown, Lock, Loader2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { TituloTela } from "@/components/TituloTela";
 import { FundoAFundoMG } from "@/components/cofinanciamento/FundoAFundoMG";
+import { FesRs } from "./FesRs";
 
 interface ItemAP {
   competencia: string | null;
@@ -48,7 +49,20 @@ interface Resp {
   };
 }
 
+/* O ESTADO ESCOLHE A TELA (`modo` em `COFINANCIAMENTO_POR_UF`): Goiás publica
+   teto × desempenho, o RS publica o pagamento com retenções. Decidir aqui, antes
+   de qualquer busca, evita que a tela gaúcha chame a rota goiana à toa. */
 export default function CofinanciamentoPage() {
+  const { municipioId } = useMunicipio();
+  const uf = useUfDoMunicipio();
+  const info = cofinanciamentoDaUf(uf);
+  if (municipioId && info?.modo === "pagamentos") {
+    return <FesRs key={String(municipioId)} municipioId={String(municipioId)} titulo={info.titulo} fonte={info.fonte} />;
+  }
+  return <CofinanciamentoTeto />;
+}
+
+function CofinanciamentoTeto() {
   const { municipioId } = useMunicipio();
   const uf = useUfDoMunicipio();
   const info = cofinanciamentoDaUf(uf);

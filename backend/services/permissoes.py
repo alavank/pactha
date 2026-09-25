@@ -336,11 +336,14 @@ _RECURSOS: tuple = (
     _Recurso("repasses", SEC_CONVENIOS, "Repasses Estaduais",
              "os repasses estaduais recebidos pelo município", "",
              ("ver",), ufs=("GO",), tela="repasses"),
+    # RS entrou em 24/09/2026: os pagamentos do Fundo Estadual de Saúde da SES-RS
+    # (`ingestion/fes_rs.py`, rota `/api/cofinanciamento/fes-rs`) — mesma tela,
+    # mesma pergunta ("o que o Estado repassa à saúde do município").
     # MG entrou em 24/09/2026: os pagamentos por Resolução SES (fundo a fundo
     # estadual), pela mesma tela e pela mesma chave (`GET /api/cofinanciamento/mg`).
     _Recurso("cofinanciamento", SEC_CONVENIOS, "Cofinanciamento da Saúde",
              "os repasses do fundo estadual ao fundo municipal de saúde", "",
-             ("ver",), ufs=("GO", "MG"), tela="cofinanciamento"),
+             ("ver",), ufs=("GO", "MG", "RS"), tela="cofinanciamento"),
     _Recurso("monitoramento", SEC_CONVENIOS, "Monitoramento de Convênios",
              "os registros mensais de execução dos convênios", "",
              ("ver",), ufs=("RS",), tela="monitoramento"),
