@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **32 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **32 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -119,6 +119,40 @@ conta o DINHEIRO, inclusive o que não tem instrumento (FPM, PAB, PNAE, salário
 - **Task** `cgu-transferencias`: escada de 10 min de 01:00 (freitas) a 02:00 UTC
   (juranda), `scripts/criar_task_cgu_transferencias.sh` — **depois** do deploy. Até isso
   rodar, a task NÃO existe.
+## 1.45. SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC (24/09/2026)
+
+Cartão "SIOPS e RAG" do relatório de fontes do dono. O CAUC só dá "!" ou uma validade nos
+itens 3.2.3 (Anexo 8 ao SIOPE), 3.2.4 (Anexo 12 ao SIOPS), 5.1 (mínimo em educação) e 5.2
+(mínimo em saúde). Agora a Regularidade diz qual bimestre falta, quando foi entregue e o %.
+
+- **Coletor** `ingestion/siops_siope.py` (task `siops-siope`, 1x/noite, todo worker; script
+  `scripts/criar_task_siops_siope.sh`, escada 04:00→05:30 UTC). Quatro fontes públicas, por
+  UF: lista legada de homologados do SIOPS (data), API do SIOPS (% ASPS, indicador 3.2),
+  OData do SIOPE no Olinda/FNDE (DAT_DECL, recibo, % MDE 1.1, FUNDEB 1.2) e a extração do
+  DigiSUS DGMP (Plano, PAS, 1º/2º/3º RDQA, RAG por ano). Armadilhas no cabeçalho do arquivo;
+  a que manda: **a API do SIOPS responde 404 `msg03` para QUALQUER coisa que não acha**
+  (IBGE de 7 dígitos, IBGE inexistente, período 99), então "não entregue" só é gravado com a
+  lista legada provando; `msg03` sozinho = "não sei", sem linha, `partial`.
+- **Tabelas** (`add_siops_siope_rag.sql`, DDL — deploy depois das 10:00 UTC):
+  `saude_educacao_bimestre` (município × SIOPS|SIOPE × ano × bimestre) e
+  `sus_instrumentos_planejamento` (município × instrumento × ano).
+- **Regra única** em `services/saude_educacao.py`: prazo (30 dias após o bimestre; RDQA fim
+  de mai/set/fev; RAG 30/03), situação, cor do %. **O % do bimestre é parcial** (acumulado;
+  o mínimo se apura no 6º): abaixo do mínimo no meio do ano é `atencao`, nunca `critico`.
+- **Alarme falso morto**: `bi_abas.prazos_dos_itens(entregues=)` — usada pelo painel, pelo
+  CONSOLIDADO e pelo push — não avisa mais "vence em N dias" no 3.2.3/3.2.4 quando o
+  bimestre que a validade cobra (`bimestre_do_prazo`: 30/09 → 4º) já está entregue. Nova
+  Palma/RS em 24/09: 4º bimestre homologado no SIOPS em 23/09, CAUC ainda "até 30/09" — o
+  3.2.4 saiu da lista; o 3.2.3 fica, porque o SIOPE ainda não publicou NENHUMA declaração
+  do 4º bimestre em RS, MG ou PR (medido: 0 nas três UFs em 24/09).
+- **Tela**: aba "Saúde e educação" na Regularidade (logo depois do CAUC) + uma frase ao lado
+  dos quatro itens na aba CAUC (`notas_cauc`, pronta do servidor). Rota
+  `GET /api/saude-educacao` com `cauc.ver` + tela `cauc`, como o SICONFI.
+- **Medido num Postgres 16 zerado** (boot inteiro 2x, 149/149 em dia): Monte Sião SIOPS 2026
+  22,22/22,13/24,72% (1º-3º), 4º não homologado; SIOPE 18,75/24,90/27,36%; RDQAs 2023-2025
+  nunca concluídos (11 instrumentos vencidos). Nova Palma: SIOPS 4º homologado 23/09
+  (19,76%). Juranda: SIOPE 3º NÃO declarado (o "!" do 3.2.3), e SIOPS 2º e 3º homologados
+  só em 24/08 (com atraso). 1ª rodada 169–244 s para as três UFs (duas medições), 2ª 78–84 s.
 
 ## 1.42. Emendas de saúde do FNS na aba Federais — pelo código (25/09/2026)
 

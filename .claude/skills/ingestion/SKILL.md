@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 32 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 34 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 32 sources has its own collector file with source-specific gotchas documented
+Each of the 34 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -336,6 +336,28 @@ in the file header; the ones that bite:
 - **Pasta and favorecido group are computed on READ** (`services/transferencias_pasta.py`),
   never stored. Escolas (caixa escolar/APM — may be state schools) and entidades are out of
   the município total but always shown.
+## SIOPS, SIOPE and DigiSUS — the CAUC's health/education items (`ingestion/siops_siope.py`, 24/09/2026)
+
+The detail behind CAUC 3.2.3/3.2.4/5.1/5.2: which bimestre is missing, when it was
+delivered, the % applied, and Plano/PAS/RDQA/RAG. Full trap list in the file header:
+- ⚠️ **The SIOPS API answers 404 `msg03` ("Dados não homologado(s)") for ANY miss** — a
+  7-digit IBGE, an unknown IBGE, year 2030, period 99. `msg03` is never proof of "not
+  delivered". The proof is the legacy list `siops.datasus.gov.br/consmuntransm.php` (POST,
+  one per UF × period, only HOMOLOGATED municípios, with the date; its footer "que
+  Transmitiram N" is checked against the rows). The API is asked only for whom the list
+  says homologated (for the %); `msg03` with no list = no row, run `partial`.
+- **SIOPS period codes are 12, 14, 1, 18, 20, 2** (1st–6th bimestre); SIOPE uses 1..6.
+- **SIOPE (Olinda OData) needs `%20` in `$filter`** — httpx `params=` sends `+` and gets 400.
+  An impossible `COD_MUNI` returns 200 `value: []`, same as "not declared": query the whole
+  UF and only mark a município missing when the UF came back non-empty.
+  `Dados_Gerais_Siope_Dados_Responsaveis` carries personal data — not read.
+- **DigiSUS DGMP** is HTML named `.xls`; columns come from the two `thead` rows (never by
+  position), the `tfoot` total is checked, fase 2 = 2022–2025, fase 9 = 2026–2029.
+- **The bimestral % is cumulative and PARTIAL** — the minimum (15% ASPS, 25% MDE) is only
+  judged on the 6th bimestre. The rule (`services/saude_educacao.py`) never paints a partial
+  bimestre `critico`.
+- It feeds `bi_abas.prazos_dos_itens(entregues=)`: a 3.2.3/3.2.4 validity whose bimestre is
+  already delivered is not a deadline anymore (Nova Palma's false "vence em 6 dias").
 
 ## Authenticated sources
 

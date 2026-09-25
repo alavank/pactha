@@ -163,6 +163,13 @@ _SOURCES = [
     ("SICONFI — Contas no Tesouro",
      "SELECT max(atualizado_em), count(*) FROM siconfi_entregas",
      "siconfi"),
+    # SIOPS, SIOPE e DigiSUS (24/09/2026). NACIONAL: todo municipio ativo com
+    # ibge_code, por UF. Conta os BIMESTRES (entregues ou nao — "nao entregue"
+    # so e gravado com prova); os instrumentos do SUS saem da mesma rodada e do
+    # mesmo `source`.
+    ("SIOPS / SIOPE / RAG — Saúde e educação",
+     "SELECT max(atualizado_em), count(*) FROM saude_educacao_bimestre",
+     "siops_siope"),
     # DOU federal (22/09/2026). NACIONAL: todo municipio ativo com ibge_code. A
     # data e a da COBERTURA (ultima busca feita inteira), nao a do ato: semana
     # sem nada no DOU sobre o municipio e resultado, e nao coleta parada. Conta

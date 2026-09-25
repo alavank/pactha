@@ -57,6 +57,9 @@ ONDE_OLHAR = {
     "fns_saldo": "portalfns.saude.gov.br/downloads (REPASSE-FAF-COM-POPULACAO-<ANO>, anual)",
     "emendas_mg": "dados.mg.gov.br portal_emendas_estaduais (CSV de indicacoes da SEGOV)",
     "ses_mg_resolucoes": "pagamentoderesolucoes.saude.mg.gov.br (formulario por municipio e ano)",
+    "siops_siope": ("siops.datasus.gov.br/consmuntransm.php (homologados), "
+                    "siops-consulta-publica-api.saude.gov.br, fnde.gov.br/olinda-ide "
+                    "(SIOPE) e digisusgmp.saude.gov.br (RDQA/RAG)"),
     "cagec": "cagec.mg.gov.br/convenente-web (consulta publica por CNPJ)",
     "cauc": "CAUC/Tesouro (consulta por CNPJ)",
     "acordofes": "Acordo FES-MG",

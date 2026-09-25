@@ -150,6 +150,11 @@ FRESCOR_HORAS_NACIONAL = {
     # + folga. NACIONAL: varre todo municipio ativo com ibge_code, sem recorte
     # de estado — o lugar e aqui, nunca no mapa por UF.
     "siconfi": 30,
+    # SIOPS/SIOPE/DigiSUS (24/09/2026): task `siops-siope` 1x/noite em todo
+    # worker, NACIONAL (por UF da carteira). 30h = um dia + folga. Lista legada
+    # fora do ar, UF vazia com prazo vencido ou arquivo do DGMP recusado gravam
+    # 'partial', que aqui nao conta como sucesso.
+    "siops_siope": 30,
     # DOU federal (22/09/2026): task diaria em todo worker, NACIONAL (todo
     # municipio ativo, sem recorte de UF). 30h = um dia + folga. Busca que falhou
     # ou estouro de orcamento gravam 'partial', que aqui nao conta como sucesso.

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **32 official data sources** (federal +
+emendas) for Brazilian municipalities, tracking **34 official data sources** (federal +
 MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is SES-MG's **pagamento de
 resoluções** (`ses_mg_resolucoes.py`): every payment order from the State health fund
 to the Fundo Municipal, per Resolução SES — MG's ordinary health fundo a fundo, which
@@ -18,7 +18,16 @@ Saúde, which now opens in MG too. Also new that day: **"Recursos recebidos por 
 transfer to the município and its funds (FPM, FUNDEB, fundo a fundo, FNDE, FNAS...), by
 ação and favorecido. ⚠️ Município by SIAFI code, never by name; the current month is
 partial and FPM/FUNDEB only appear after it closes; the download host has an AWS WAF that
-answers 405 + CAPTCHA to bursts (measured) — the collector pauses and stops on it. Before them, the **FNS account balance**
+answers 405 + CAPTCHA to bursts (measured) — the collector pauses and stops on it. And **SIOPS, SIOPE and the SUS planning
+instruments** (`siops_siope.py`): the detail the CAUC hides behind "!" or a date in items
+3.2.3/3.2.4/5.1/5.2 — which bimestre is missing, when it was homologated/declared, the % in
+ASPS (min. 15%) and MDE (min. 25%, PARTIAL until the 6th bimestre), plus Plano/PAS/RDQA/RAG
+from DigiSUS -> `saude_educacao_bimestre` + `sus_instrumentos_planejamento`, tab "Saúde e
+educação" of Regularidade. ⚠️ The SIOPS API answers 404 `msg03` ("não homologado") for ANY
+miss, even a wrong IBGE: "not delivered" is proven by the legacy homologation list, never
+by `msg03`. It also kills a false alarm: `bi_abas.prazos_dos_itens(entregues=)` stops
+warning "vence em N dias" on 3.2.3/3.2.4 when the bimestre that validity covers was already
+delivered. Before them, the **FNS account balance**
 (`fns_saldo.py`): the Portal FNS's yearly `REPASSE-FAF-COM-POPULACAO-<ANO>` file is the
 ONLY public source of how much sits in each Fundo Municipal de Saúde bank account
 (ConsultaFNS's API has no balance — its statement endpoint is 404) -> `fns_saldo_conta`,
