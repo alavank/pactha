@@ -108,6 +108,8 @@ SQL_EMENDAS_COM_CONVENIO = """
                -- NULO = a planilha não trouxe esta indicação; ZERO = afirmou zero.
                valor_empenhado, valor_liquidado, valor_pago, valor_resto_saldo,
                execucao_em,
+               -- Objeto e fase do plano (TE-MG não vira convênio; 25/09/2026).
+               emendas_estaduais.objeto, fase_plano,
                c.conv_id, c.conv_nr, c.conv_objeto
         FROM emendas_estaduais
         LEFT JOIN LATERAL (
@@ -238,7 +240,7 @@ async def outros_beneficiarios(
     rows = (await db.execute(text("""
         SELECT nr_indicacao, ano, nome_responsavel, tipo_indicacao, tipo_beneficiario,
                beneficiario, cnpj_beneficiario, valor_indicacao, valor_pago,
-               status_indicacao, execucao_em
+               status_indicacao, execucao_em, objeto, fase_plano
           FROM emendas_estaduais_outros
          WHERE municipio_id = :m
          ORDER BY ano DESC NULLS LAST, valor_indicacao DESC NULLS LAST
@@ -249,4 +251,5 @@ async def outros_beneficiarios(
         "valor_indicacao": float(r[7]) if r[7] is not None else None,
         "valor_pago": float(r[8]) if r[8] is not None else None,
         "status": r[9], "execucao_em": r[10].isoformat() if r[10] else None,
+        "objeto": r[11], "fase_plano": r[12],
     } for r in rows]

@@ -56,6 +56,14 @@ AS ARMADILHAS, medidas em 24/09/2026:
    IGUALDADE, entre os municípios de MG do tenant — nunca por "contém" (a lição
    da Santa Maria do Herval). Em MG o nome é único dentro do estado.
 
+8. ⚠️ **A TE-MG NÃO VIRA CONVÊNIO — O OBJETO VEM DAQUI** (25/09/2026). A tela só
+   mostrava o objeto do convênio ligado, e a TE aparecia sem dizer para que é o
+   dinheiro. `objeto` = título do plano de trabalho, da proposta ou a descrição
+   da indicação (Resolução SES e doação de bens só têm esta); `fase_plano` = a
+   situação do instrumento (ANÁLISE TÉCNICA, ADEQUAÇÃO, VIGENTE...). Em 2026, das
+   3.834 TE: 3.327 vigentes, 22 em ADEQUAÇÃO — a prefeitura precisa corrigir o
+   plano. O SIGCON não tem nenhum dos dois, então aqui a fonte manda sempre.
+
 Rodável por Scheduled Task (worker de tenant com município de MG) ou à mão:
     python -u ingestion/emendas_mg.py            # coleta de verdade
     python -u ingestion/emendas_mg.py --dry      # baixa, lê, casa e mostra
@@ -104,9 +112,13 @@ COLUNAS = {
     "valor_liquidado": "valor_liquidado", "valor_pago": "valor_pago",
     "instrumento": "instrumento_numero",
 }
+# O OBJETO (armadilha 8): o primeiro preenchido. TE e convênio têm plano de
+# trabalho; Resolução SES, doação de bens e execução direta, só a descrição.
+OBJETO = ("plano_titulo", "proposta_titulo", "descricao_indicacao")
+FASE = "status_instrumento"         # ANÁLISE TÉCNICA, ADEQUAÇÃO, VIGENTE...
 # Vão só para o raw_data: o caminho da indicação até o dinheiro.
-EXTRAS = ("proposta_numero", "status_instrumento", "numero_siafi", "data_publicacao",
-          "data_validade", "descricao_indicacao")
+EXTRAS = ("proposta_numero", "plano_numero", "status_instrumento", "numero_siafi",
+          "data_publicacao", "data_validade", "descricao_indicacao", "acao_nome")
 
 
 def _norm(s) -> str:
@@ -192,7 +204,7 @@ def ler_csv(conteudo: bytes) -> list[dict]:
     """Linhas normalizadas. ValueError se faltar coluna (armadilha 4)."""
     leitor = csv.DictReader(io.StringIO(conteudo.decode("utf-8-sig")), delimiter=";")
     cab = [c.strip() for c in leitor.fieldnames or []]
-    falta = [c for c in COLUNAS.values() if c not in cab]
+    falta = [c for c in (*COLUNAS.values(), *OBJETO, FASE) if c not in cab]
     if falta:
         raise ValueError(f"CSV fora do layout medido — faltam {falta[:5]}")
     linhas = []
@@ -226,6 +238,8 @@ def ler_csv(conteudo: bytes) -> list[dict]:
             "valor_pago": _dec(g("valor_pago")),
             "valor_resto_saldo": None,       # o CSV aberto não tem a coluna
             "instrumento": _texto(g("instrumento")),
+            "objeto": next((_texto(r.get(c)) for c in OBJETO if _texto(r.get(c))), None),
+            "fase_plano": (_texto(r.get(FASE)) or "")[:80] or None,
             "extras": {k: _texto(_sem_decimal(r.get(k)) if k == "numero_siafi" else r.get(k))
                        for k in EXTRAS if _texto(r.get(k))},
         })
@@ -274,12 +288,12 @@ INSERT INTO emendas_estaduais (
     municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao, uo_codigo, uo_sigla,
     cnpj_beneficiario, beneficiario, grupo_despesa, tipo_atendimento, valor_indicacao,
     status_indicacao, ano, raw_data, valor_empenhado, valor_liquidado, valor_pago,
-    valor_resto_saldo, execucao_em, created_at, updated_at)
+    valor_resto_saldo, execucao_em, objeto, fase_plano, created_at, updated_at)
 VALUES (
     %(mid)s, %(nr)s, %(autor)s, %(tipo)s, %(uo_codigo)s, %(uo_sigla)s, %(cnpj)s,
     %(beneficiario)s, %(grupo)s, %(tipo_atendimento)s, %(valor_indicacao)s, %(status)s,
     %(ano)s, %(raw)s::jsonb, %(valor_empenhado)s, %(valor_liquidado)s, %(valor_pago)s,
-    %(valor_resto_saldo)s, %(execucao_em)s, NOW(), NOW())
+    %(valor_resto_saldo)s, %(execucao_em)s, %(objeto)s, %(fase_plano)s, NOW(), NOW())
 ON CONFLICT (municipio_id, nr_indicacao) DO UPDATE SET
     {", ".join(_campo_sigcon(c).format(t=t) for c, t in _TIPOS_COL.items())},
     ano = COALESCE(emendas_estaduais.ano, EXCLUDED.ano),
@@ -290,6 +304,9 @@ ON CONFLICT (municipio_id, nr_indicacao) DO UPDATE SET
     valor_pago = EXCLUDED.valor_pago,
     valor_resto_saldo = EXCLUDED.valor_resto_saldo,
     execucao_em = EXCLUDED.execucao_em,
+    -- O SIGCON não tem estes dois: a fonte é a dona (armadilha 8).
+    objeto = COALESCE(EXCLUDED.objeto, emendas_estaduais.objeto),
+    fase_plano = EXCLUDED.fase_plano,
     updated_at = NOW()
 """
 
@@ -298,12 +315,12 @@ INSERT INTO emendas_estaduais_outros (
     municipio_id, nr_indicacao, ano, nome_responsavel, tipo_indicacao, tipo_beneficiario,
     beneficiario, cnpj_beneficiario, uo_sigla, tipo_atendimento, valor_indicacao,
     valor_empenhado, valor_liquidado, valor_pago, status_indicacao, execucao_em,
-    raw_data, atualizado_em)
+    raw_data, objeto, fase_plano, atualizado_em)
 VALUES (
     %(mid)s, %(nr)s, %(ano)s, %(autor)s, %(tipo)s, %(tipo_beneficiario)s,
     %(beneficiario)s, %(cnpj)s, %(uo_sigla)s, %(tipo_atendimento)s, %(valor_indicacao)s,
     %(valor_empenhado)s, %(valor_liquidado)s, %(valor_pago)s, %(status)s,
-    %(execucao_em)s, %(raw)s::jsonb, NOW())
+    %(execucao_em)s, %(raw)s::jsonb, %(objeto)s, %(fase_plano)s, NOW())
 ON CONFLICT (municipio_id, nr_indicacao) DO UPDATE SET
     ano = EXCLUDED.ano, nome_responsavel = EXCLUDED.nome_responsavel,
     tipo_indicacao = EXCLUDED.tipo_indicacao, tipo_beneficiario = EXCLUDED.tipo_beneficiario,
@@ -312,7 +329,8 @@ ON CONFLICT (municipio_id, nr_indicacao) DO UPDATE SET
     valor_indicacao = EXCLUDED.valor_indicacao, valor_empenhado = EXCLUDED.valor_empenhado,
     valor_liquidado = EXCLUDED.valor_liquidado, valor_pago = EXCLUDED.valor_pago,
     status_indicacao = EXCLUDED.status_indicacao, execucao_em = EXCLUDED.execucao_em,
-    raw_data = EXCLUDED.raw_data, atualizado_em = NOW()
+    raw_data = EXCLUDED.raw_data, objeto = EXCLUDED.objeto,
+    fase_plano = EXCLUDED.fase_plano, atualizado_em = NOW()
 """
 
 

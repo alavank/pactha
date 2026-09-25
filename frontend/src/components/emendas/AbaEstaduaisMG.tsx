@@ -58,6 +58,20 @@ interface Emenda {
   valor_empenhado?: number | null;
   valor_pago?: number | null;
   execucao_em?: string | null;
+  /** Dados da SEGOV (25/09/2026): para que é o dinheiro — título do plano de
+   *  trabalho ou descrição da indicação — e a fase do instrumento. A TE-MG não
+   *  vira convênio, então sem isto ela aparecia sem objeto nenhum. */
+  objeto?: string | null;
+  fase_plano?: string | null;
+}
+
+/** Fase do plano que pede AÇÃO da prefeitura (corrigir o plano) ganha destaque;
+ *  "vigente" e "registrado" não aparecem — é o normal. */
+function faseTom(fase: string): "atencao" | "neutro" {
+  return /ADEQUA/i.test(fase) ? "atencao" : "neutro";
+}
+function faseVisivel(fase?: string | null): fase is string {
+  return !!fase && !/^(VIGENTE|REGISTRADO NO SIAFI|CADASTRADO)$/i.test(fase.trim());
 }
 
 interface Stats {
@@ -356,7 +370,7 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
                       <ItemLinha
                         key={em.id}
                         onClick={onAbrir ? () => onAbrir(em.id) : undefined}
-                        titulo={em.tipo_atendimento || em.beneficiario || "Indicação"}
+                        titulo={em.objeto || em.tipo_atendimento || em.beneficiario || "Indicação"}
                         valor={formatCurrency(em.valor_indicacao)}
                         meta={
                           <>
@@ -392,6 +406,12 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
                               {em.cnpj_beneficiario ? `· CNPJ ${em.cnpj_beneficiario}` : ""}
                             </span>
                             {/* Convênio relacionado (casado pelo nº da indicação, #3). */}
+                            {faseVisivel(em.fase_plano) && (
+                              <Selo tom={faseTom(em.fase_plano)}
+                                    title="Fase do plano de trabalho / instrumento na SEGOV">
+                                plano: {em.fase_plano.toLowerCase()}
+                              </Selo>
+                            )}
                             {em.conv_nr && (
                               <Selo tom="ok" title={em.conv_objeto || `Convênio ${em.conv_nr}`}>
                                 Convênio {em.conv_nr}
@@ -432,7 +452,7 @@ interface OutroMG {
   nr_indicacao: string; ano: number | null; autor: string | null; tipo_indicacao: string | null;
   tipo_beneficiario: string | null; beneficiario: string | null; cnpj: string | null;
   valor_indicacao: number | null; valor_pago: number | null; status: string | null;
-  execucao_em: string | null;
+  execucao_em: string | null; objeto?: string | null; fase_plano?: string | null;
 }
 
 /** Indicações a quem está no município e NÃO é o município (OSC, caixa escolar,
@@ -477,6 +497,7 @@ function OutrosBeneficiariosMG({ municipioId }: { municipioId: string }) {
               meta={
                 <>
                   <span className="font-mono">nº {o.nr_indicacao}</span>
+                  {o.objeto && <span className="truncate" title={o.objeto}>{o.objeto}</span>}
                   {o.autor && <span>· {o.autor}</span>}
                   {o.tipo_beneficiario && <span>· {o.tipo_beneficiario.toLowerCase()}</span>}
                 </>

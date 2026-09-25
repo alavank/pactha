@@ -444,6 +444,17 @@ def test_situacao_da_indicacao_estadual(pago, empenhado, fim, e_pago):
     assert l["area"] == "INFRAESTRUTURA"     # SEINFRA
 
 
+def test_indicacao_estadual_diz_o_objeto_quando_a_segov_traz():
+    """A TE-MG não vira convênio: sem o objeto, a linha dizia só "Obras – Município
+    de Bom Despacho". Sem objeto, a linha continua a de antes."""
+    com = linha_estadual(dict(IND, objeto="CONSTRUÇÃO DA COBERTURA DA QUADRA POLIESPORTIVA"))
+    sem = linha_estadual(IND)
+    assert "quadra poliesportiva" in com["recurso"].lower()
+    assert "Bom Despacho" in com["recurso"]
+    assert sem["recurso"].startswith("Obras")
+    assert com["area"] == sem["area"]          # a área continua pela UO/tipo
+
+
 @pytest.mark.parametrize("uo,tipo,area", [
     ("SES", "Obras", "SAÚDE"),            # a obra da saúde é SAÚDE, não OUTROS
     ("SEE", "Obras", "EDUCAÇÃO"),
