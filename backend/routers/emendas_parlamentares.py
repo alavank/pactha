@@ -506,7 +506,7 @@ async def _detalhe_federal(db: AsyncSession, municipio_id: int, codigo: str) -> 
 
 
 def _execucao_mg(it: dict) -> None:
-    """Decimal/date da indicação de MG -> JSON (valores da planilha da SEGOV)."""
+    """Decimal/date da indicação de MG -> JSON (valores dos dados da SEGOV)."""
     for k in ("valor_indicacao", "valor_empenhado", "valor_liquidado", "valor_pago",
               "valor_resto_saldo"):
         it[k] = _f(it.get(k))
@@ -543,14 +543,14 @@ async def _detalhe_sigcon(db: AsyncSession, municipio_id: int, emenda_id: int) -
                 convenio[c] = str(convenio[c]) if convenio.get(c) else None
     return {
         "dados": {"emenda": e, "convenio": convenio,
-                  # A planilha oficial da SEGOV (emendas_mg.py) traz o pago DESTA
-                  # indicação; sem ela, o que existe é o convênio ligado.
+                  # Os dados abertos da SEGOV (emendas_mg.py) trazem o pago DESTA
+                  # indicação; sem eles, o que existe é o convênio ligado.
                   "sem_pagamento_motivo": (
-                      f"O pagamento vem da planilha oficial da SEGOV "
-                      f"(emendas.mg.gov.br), com dados de {e['execucao_em']}."
+                      f"O pagamento vem dos dados abertos da SEGOV "
+                      f"(dados.mg.gov.br), atualizados em {e['execucao_em']}."
                       if e.get("valor_pago") is not None and e.get("execucao_em") else
                       "O SIGCON-MG não publica o pagamento por emenda, e esta "
-                      "indicação não está na planilha da SEGOV; o valor e a "
+                      "indicação não está nos dados da SEGOV; o valor e a "
                       "vigência são os do convênio ligado.")},
         "autores": [n.strip() for n in str(e.get("nome_responsavel") or "").split(",")
                     if len(n.strip()) >= 3],

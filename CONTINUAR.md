@@ -181,7 +181,16 @@ arquivo tem e nada mais tem é o **SALDO DA CONTA** do Fundo Municipal, por cont
 - Conferido num Postgres real com o arquivo real: Monte Sião, 12 contas com R$ 4,51 mi em
   30/11/2025; Nova Palma, 7 contas com R$ 1,16 mi.
 
-## 1.38. Emendas estaduais de MG pela planilha oficial da SEGOV (24/09/2026)
+## 1.38. Emendas estaduais de MG pelos dados oficiais da SEGOV (24/09/2026)
+
+> ⚠️ **Corrigido na noite de 24/09/2026:** a 1ª versão lia as planilhas `.xlsx` do
+> emendas.mg.gov.br, e o site devolve **403 a IP de datacenter** (VPS e runner do
+> GitHub; 200 do IP residencial) — a 1ª rodada nos três tenants de MG não gravou nada.
+> O coletor passou a ler o CSV `vw_sg_v2_ep_indic_recursos_tw.csv` do pacote
+> `portal_emendas_estaduais` no dados.mg.gov.br: mesma base, atualizado em 23/09/2026
+> (a planilha parou em 12/05), mas só de 2023 em diante e sem o saldo de restos a
+> pagar. Monte Sião pela fonte nova: 48 indicações ao município (R$ 4,90 mi pagos) e 15
+> a entidades. O que está abaixo sobre layouts e aba "12-05" é da 1ª versão.
 
 Sétima fonte do relatório do dono ("emendas.mg.gov.br — emendas impositivas e TE
 estadual", prioridade 1). O cartão dizia que o PACTHA "deriva o parlamentar do texto do

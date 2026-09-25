@@ -13,11 +13,12 @@ ONLY public source of how much sits in each Fundo Municipal de Saúde bank accou
 one row per account (the file repeats the balance per estratégia), shown on the InvestSUS
 screen WITH its date (the 2025 file came out in 01/2026 with the 30/11/2025 balance).
 Before it, MG's **official emendas
-spreadsheet** (`emendas_mg.py`, SEGOV's `DADOS_EMENDAS_*.xlsx` at emendas.mg.gov.br, no
-login): it COMPLETES `emendas_estaduais` (same indicação number as SIGCON) with
-empenhado/liquidado/pago, the Resolução SES health transfers and the municípios without a
-SIGCON password — SIGCON keeps its own fields. ⚠️ The spreadsheet is NOT bimonthly: it
-sat at 12/05/2026 for months, so `execucao_em` carries its date to the screen. Before it,
+data** (`emendas_mg.py`, SEGOV's CSV in the `portal_emendas_estaduais` package at
+dados.mg.gov.br, 2023 onward, no login): it COMPLETES `emendas_estaduais` (same indicação
+number as SIGCON) with empenhado/liquidado/pago, the Resolução SES health transfers and
+the municípios without a SIGCON password — SIGCON keeps its own fields. ⚠️ Not the
+`.xlsx` at emendas.mg.gov.br: that site returns 403 to the VPS and to GitHub runners (and
+sat at 12/05/2026); `execucao_em` carries the CKAN date to the screen. Before it,
 Tocantins' **TRANSFERE.TO**
 (`convenios_to.py`): the State's convênio system has a PUBLIC "pesquisa externa" hidden
 behind a button of the transparency portal — one page per convênio, walked by id (~3.200,

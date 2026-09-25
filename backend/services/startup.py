@@ -658,7 +658,7 @@ MIGRATION_FILES = [
     # coletores descartavam (23/09/2026). Tabela nova, so com FK para `municipios`
     # — fora de `convenios_estadual` para ficar fora das contas por construcao.
     "add_convenios_estadual_outros.sql",
-    # Emendas estaduais de MG pela planilha oficial do emendas.mg.gov.br
+    # Emendas estaduais de MG pelos dados abertos da SEGOV (dados.mg.gov.br)
     # (24/09/2026): colunas de EXECUCAO em `emendas_estaduais` (ADD COLUMN IF NOT
     # EXISTS) e a tabela das indicacoes a entidade, fora das contas.
     "add_emendas_estaduais_execucao.sql",

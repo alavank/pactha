@@ -239,9 +239,9 @@ FRESCOR_HORAS_POR_UF = {
         # estado tem prazo em UM lugar — `test_frescor_vs_cron.py` agora reprova
         # a mesma fonte nos dois mapas.
         "acordofes": 30,
-        # Planilha oficial de emendas da SEGOV (emendas.mg.gov.br), 1x/dia. O
-        # que se vigia aqui é a RODADA; a idade da PLANILHA (parada desde maio em
-        # 24/09/2026) vira `partial` com a data na nota, pelo próprio coletor.
+        # Emendas estaduais da SEGOV pelo dados.mg.gov.br, 1x/dia. O
+        # que se vigia aqui é a RODADA; a idade dos DADOS (a planilha do site parou
+        # em maio de 2026) vira `partial` com a data na nota, pelo próprio coletor.
         "emendas_mg": 30,
     },
     "ES": {"gconv_es": 30},
