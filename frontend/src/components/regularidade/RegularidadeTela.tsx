@@ -37,6 +37,7 @@ import {
 import { Bloco, BlocoHead, Lista, Selo, Vazio, situacaoTom } from "@/components/ui/superficies";
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
 import { TituloTela } from "@/components/TituloTela";
+import { NotaCauc, SaudeEducacaoAba, type SaudeEducacaoResp } from "./SaudeEducacao";
 
 interface Item {
   codigo: string;
@@ -656,7 +657,14 @@ function ContasNoTesouro({ ano }: { ano: NonNullable<SiconfiResp["exercicios"]>[
  *  O CAGEC não tem coluna de código: aqueles identificadores são NOSSOS (o CRC
  *  não os imprime) e os informativos — os oito "Item 3.1.2 -…" — já vêm no
  *  próprio rótulo. */
-function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc" | "cagec" }) {
+function Exigencias({ itens, esfera = "cauc", notas }: {
+  itens: Item[];
+  esfera?: "cauc" | "cagec";
+  /** Frase do SIOPS/SIOPE ao lado dos itens 3.2.3, 3.2.4, 5.1 e 5.2 do CAUC:
+   *  qual bimestre falta, se já foi entregue, o % aplicado. Vem pronta do
+   *  servidor (`/api/saude-educacao`, `notas_cauc`). */
+  notas?: SaudeEducacaoResp["notas_cauc"];
+}) {
   if (!itens.length) {
     return <Vazio>Nenhuma exigência detalhada nesta esfera.</Vazio>;
   }
@@ -760,6 +768,8 @@ function Exigencias({ itens, esfera = "cauc" }: { itens: Item[]; esfera?: "cauc"
                           {it.nota}
                         </div>
                       )}
+                      {/* O detalhe que o extrato não dá (aba "Saúde e educação"). */}
+                      {esfera === "cauc" && <NotaCauc nota={notas?.[it.codigo]} />}
                     </div>
                     <span className="min-w-0">
                       {/* O documento dizia "Vigente" quando foi lido; hoje o prazo
@@ -1050,6 +1060,9 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
   const [contas, setContas] = useState<ContasResp | null>(null);
   const [tesouro, setTesouro] = useState<SiconfiResp | null>(null);
   const [negativos, setNegativos] = useState<NegativosResp | null>(null);
+  /* SIOPS, SIOPE e instrumentos do SUS — o detalhe dos itens 3.2.3/3.2.4/5.1/5.2
+     do CAUC. Aba própria, e uma frase ao lado de cada um desses itens. */
+  const [saude, setSaude] = useState<SaudeEducacaoResp | null>(null);
   const [loading, setLoading] = useState(true);
   /* ⚠️ A ABA VIVE NA URL (`?aba=`). Sem isso, um link mandado para o
      jurídico ("olha o CADIN do fundo") abre no CAUC, e a pessoa tem de
@@ -1079,7 +1092,7 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
     // render em cascata (mesma convenção do resto do app).
     if (!municipioId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setCauc(null); setCagec(null); setContas(null); setTesouro(null);
+      setCauc(null); setCagec(null); setContas(null); setTesouro(null); setSaude(null);
       setLoading(false); return;
     }
     setLoading(true);
@@ -1091,12 +1104,14 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
       api.get<ContasResp>("/contas-irregulares", { params: { municipio_id: municipioId } }),
       api.get<SiconfiResp>("/siconfi", { params: { municipio_id: municipioId } }),
       api.get<NegativosResp>("/cadastros-negativos", { params: { municipio_id: municipioId } }),
-    ]).then(([a, b, c, d, e]) => {
+      api.get<SaudeEducacaoResp>("/saude-educacao", { params: { municipio_id: municipioId } }),
+    ]).then(([a, b, c, d, e, f]) => {
       setCauc(a.status === "fulfilled" ? a.value.data : null);
       setCagec(b.status === "fulfilled" ? b.value.data : null);
       setContas(c.status === "fulfilled" ? c.value.data : null);
       setTesouro(d.status === "fulfilled" ? d.value.data : null);
       setNegativos(e.status === "fulfilled" ? e.value.data : null);
+      setSaude(f.status === "fulfilled" ? f.value.data : null);
     }).finally(() => setLoading(false));
   }, [municipioId]);
 
@@ -1153,6 +1168,11 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
     const lista: Array<{ id: string; label: string; sub: string; alerta: boolean }> = [
       { id: "cauc", label: "CAUC", sub: "União",
         alerta: !!cauc?.tem_dados && !cauc.regular },
+      /* Logo depois do CAUC porque é o detalhe de quatro itens dele. O ponto
+         vermelho vem do servidor: bimestre com prazo vencido, instrumento do
+         SUS vencido ou reprovado. */
+      { id: "saude", label: "Saúde e educação", sub: "SIOPS, SIOPE e RAG",
+        alerta: !!saude?.tem_dados && !!saude.alerta },
       { id: "estadual", label: siglaEst,
         sub: NOME_UF[ufDoMunicipio] || "estadual",
         /* O alerta considera TODAS as entidades: prefeitura regular com fundo
@@ -1173,7 +1193,7 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
                  alerta: false });
     return lista;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cauc, cagec, contas, negativos, siglaEst, ufDoMunicipio, chaveCadin, chaveCfil]);
+  }, [cauc, cagec, contas, negativos, saude, siglaEst, ufDoMunicipio, chaveCadin, chaveCfil]);
 
   /* Aba de URL que não existe neste município (um link de Nova Palma aberto
      num ambiente de Minas pede `?aba=cfil`) volta para a primeira, em vez de
@@ -1225,7 +1245,8 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
           <TituloTela>Regularidade</TituloTela>
           <p className="mt-1 text-sm" style={{ color: "var(--bi-muted)" }}>
             Exigências para assinar convênio, uma aba por cadastro: a <strong>federal</strong>{" "}
-            (CAUC), a <strong>estadual</strong> — o cadastro de convenentes do estado deste
+            (CAUC), a de <strong>saúde e educação</strong> (SIOPS, SIOPE e RAG), a{" "}
+            <strong>estadual</strong> — o cadastro de convenentes do estado deste
             município —, os <strong>cadastros negativos</strong> (CADIN, CFIL) e o{" "}
             <strong>Tesouro Nacional</strong> (CAPAG e contas entregues).
           </p>
@@ -1300,11 +1321,14 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
                     ? " — apto a receber transferências voluntárias da União."
                     : ` — itens ${(cauc.pendencias_codigos || []).join(", ")} podem travar transferências.`)}
                 />
-                <Exigencias itens={cauc.itens || []} esfera="cauc" />
+                <Exigencias itens={cauc.itens || []} esfera="cauc" notas={saude?.notas_cauc} />
 
               </>
             )}
           </section>
+
+          {/* ---------------- Saúde e educação (SIOPS, SIOPE, DigiSUS) ---------------- */}
+          {aba === "saude" && <SaudeEducacaoAba dados={saude} />}
 
           {/* ---------------- Cadastro estadual (CAGEC em MG, CHE no RS) ---------------- */}
           <section className={aba === "estadual" ? "space-y-2.5" : "hidden"}>
