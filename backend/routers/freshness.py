@@ -163,6 +163,13 @@ _SOURCES = [
     ("SICONFI — Contas no Tesouro",
      "SELECT max(atualizado_em), count(*) FROM siconfi_entregas",
      "siconfi"),
+    # SIOPS, SIOPE e DigiSUS (24/09/2026). NACIONAL: todo municipio ativo com
+    # ibge_code, por UF. Conta os BIMESTRES (entregues ou nao — "nao entregue"
+    # so e gravado com prova); os instrumentos do SUS saem da mesma rodada e do
+    # mesmo `source`.
+    ("SIOPS / SIOPE / RAG — Saúde e educação",
+     "SELECT max(atualizado_em), count(*) FROM saude_educacao_bimestre",
+     "siops_siope"),
     # DOU federal (22/09/2026). NACIONAL: todo municipio ativo com ibge_code. A
     # data e a da COBERTURA (ultima busca feita inteira), nao a do ato: semana
     # sem nada no DOU sobre o municipio e resultado, e nao coleta parada. Conta
@@ -175,6 +182,13 @@ _SOURCES = [
      "SELECT (SELECT max(carregado_em) FROM cgu_convenios_carga), "
      "(SELECT count(*) FROM cgu_convenios)",
      "cgu_convenios"),
+    # Recursos recebidos por pasta (24/09/2026). NACIONAL (código SIAFI do
+    # município + CNPJ). A data é a da CARGA do mês mais recente; o mês corrente
+    # é parcial por natureza (a tela diz isso), não é coleta parada.
+    ("CGU — Recursos recebidos por pasta (transferências)",
+     "SELECT (SELECT max(carregado_em) FROM cgu_transferencias_carga), "
+     "(SELECT count(*) FROM cgu_transferencias)",
+     "cgu_transferencias"),
     ("DOU — Diário Oficial da União",
      "SELECT (SELECT max(atualizado_em) FROM dou_cobertura), "
      "(SELECT count(*) FROM dou_atos_municipio WHERE evidencia <> 'cidade')",
@@ -239,6 +253,14 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
          "SELECT max(execucao_em)::timestamptz, count(*) FILTER (WHERE execucao_em IS NOT NULL) "
          "FROM emendas_estaduais",
          "emendas_mg"),
+        # Fundo a fundo estadual da saúde (SES-MG, pagamento por Resolução,
+        # 24/09/2026). A data é a da última fatia LIDA INTEIRA (`ses_mg_cobertura`):
+        # um município sem pagamento no ano não tem linha em `ses_mg_pagamentos`,
+        # e ainda assim foi conferido.
+        ("SES-MG — Pagamento de Resoluções (fundo a fundo)",
+         "SELECT (SELECT max(coletado_em) FROM ses_mg_cobertura), "
+         "(SELECT count(*) FROM ses_mg_pagamentos)",
+         "ses_mg_resolucoes"),
         # ⚠️ FILTRA POR FONTE. Desde que `cagec_situacao` passou a guardar o
         # cadastro estadual de outros estados (CHE-RS), contar a tabela inteira
         # aqui creditaria a Minas linha coletada no Rio Grande do Sul — o mesmo

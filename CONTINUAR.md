@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **31 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **34 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -28,6 +28,131 @@
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
 
 ---
+
+## 1.43. Fundo a fundo estadual da saúde de MG — pagamento de Resoluções da SES (24/09/2026)
+
+De saúde estadual em MG a plataforma tinha a DÍVIDA (Acordo FES) e a emenda INDICADA
+(`emendas_mg`). O dinheiro ordinário que a SES paga todo mês ao Fundo Municipal não estava
+em lugar nenhum. Fonte: o painel público `pagamentoderesolucoes.saude.mg.gov.br`
+(Pagamentos Orçamentários e Restos a Pagar), um formulário Laravel (GET para o cookie e o
+`_token`, POST com o ANO e o NOME do município), 200 da VPS. As armadilhas estão no
+cabeçalho de `ingestion/ses_mg_resolucoes.py`; as que decidem o desenho:
+
+- **Nome fora da lista = tabela vazia com 200.** O nome é conferido na lista de opções do
+  próprio formulário antes do POST (846 de 853 são o nome do IBGE sem acento; as 5 grafias
+  próprias ficam por IBGE em `APELIDOS_FORMULARIO`).
+- **A busca é por nome; a verdade é o CNPJ.** Em Divinópolis a busca traz dois consórcios
+  junto do Fundo. Credor conferido por: raiz do CNPJ da prefeitura → fundo que o FNS lista
+  pelo IBGE (`fns_saldo_conta`) → cadastro da Receita (BrasilAPI, reserva minhareceita,
+  guardado em `ses_mg_credores`) com o IBGE do município e natureza jurídica municipal.
+  O resto fica gravado com `do_municipio = false`, fora das contas.
+- **Emenda × ordinário pelo CÓDIGO da UPG:** 666/675 = emenda (o dropdown chama de
+  "EMENDAS PARLAMENTARES SES", a tabela de "ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS"); 650 =
+  emenda federal; 948 = recomposição do Acordo FES. Emenda fica À PARTE (já soma em
+  Emendas parlamentares › Estaduais) e liga à indicação da SEGOV pela chave (nº da
+  Resolução, conta sem dígito) — `emendas_mg` passou a guardar a `conta` no `raw_data`.
+  Chave repetida não casa.
+- **Restos a pagar à parte**; o de empenho que está no Acordo FES leva selo pela chave
+  (CNPJ, ano, nº do empenho) de `acordofes_empenho`, que `acordofes_ingest.py` passou a
+  gravar (num SAVEPOINT: sem a tabela nova, o agregado segue).
+- **Idempotente por (município, tipo, ano)**, só com a resposta lida inteira; fatia que
+  tinha linhas e voltou vazia não apaga. Histórico de 2019 em diante, um ano por noite.
+
+**Tela:** ESTADUAIS › Cofinanciamento Saúde, que agora abre também em MG (mesma chave
+`cofinanciamento`, `ufs=("GO","MG")`) com o componente `FundoAFundoMG` e a rota
+`GET /api/cofinanciamento/mg`; a conta mora em `services/ses_mg_fundo.py`.
+
+Conferido num Postgres 16 real contra a fonte real, duas rodadas: Monte Sião 2026 = 26
+pagamentos, R$ 4.440.015,08 (ordinário R$ 431.951,08 em 5 UPGs; emenda R$ 4.008.064,00,
+10 de 15 ligadas à indicação), restos R$ 427.662,80 (os 8 da Res. 6949/2019, todos
+empenho do Acordo FES); Araújos 2026 = 16 pagamentos, R$ 1.052.730,70, restos
+R$ 266.347,79. 2026 idêntico nas duas rodadas. ⚠️ A SEGOV ainda dá `valor_pago` 0 em
+indicações que a SES pagou em junho — a tela mostra as duas.
+
+**Pendente:** criar a task (`scripts/criar_task_ses_mg_resolucoes.sh`) depois do merge e do
+deploy, e conferir a 1ª rodada (freitas 22:30 UTC) em `ingestion_log`.
+## 1.44. Recursos recebidos por pasta — as transferências da CGU mês a mês (24/09/2026)
+
+Todo o dinheiro que a União transfere ao município e aos fundos dele, mês a mês, por
+órgão/programa/ação — FPM, FUNDEB, o fundo a fundo da saúde, FNDE, FNAS, PNAB, Defesa
+Civil, royalties —, pelo arquivo `transferencias/AAAAMM` do Portal da Transparência (sem
+token; ZIP de 3-5 MB com um CSV de 110-145 MB). As outras telas contam INSTRUMENTO; esta
+conta o DINHEIRO, inclusive o que não tem instrumento (FPM, PAB, PNAE, salário-educação).
+
+- **Coletor** `ingestion/cgu_transferencias.py` (as 9 armadilhas no cabeçalho); tabelas
+  `cgu_transferencias` + `cgu_transferencias_carga` (`add_cgu_transferencias.sql`). Por
+  rodada: o mês corrente, o anterior e até 4 meses da carga inicial (janela de 24). O
+  (município, mês) é trocado inteiro numa transação — não há chave natural.
+- **Não há IBGE, há o código SIAFI** (Monte Sião 4867, Nova Palma 8765). Ele sai de
+  `cauc_situacao.cod_siafi`, ou do CSV de municípios do CAUC no CKAN do Tesouro (IBGE ↔
+  SIAFI dos 5.569), ou — só se faltarem os dois — das linhas em que o CNPJ da prefeitura é
+  o favorecido. Nunca do nome (Santa Maria do Herval é 7337). Chave (código, UF).
+- ⚠️ **O mês corrente é parcial e as constitucionais (FPM, FUNDEB, ITR, royalties) só
+  entram depois que ele fecha** — o arquivo de 09/2026 lido em 24/09 não tinha nenhuma. E
+  o arquivo muda ao longo do dia. A tela diz isso mês a mês (`parcial`,
+  `sem_constitucionais`).
+- ⛔ **O host de download (`dadosabertos-download.cgu.gov.br`) tem WAF.** Na conferência,
+  do IP residencial do dono, depois de ~30 arquivos em 25 min (24 num minuto, a carga
+  inicial ainda sem pausa) ele passou a responder **405 com `x-amzn-waf-action:
+  captcha`** a tudo. É o mesmo host de `cgu_convenios` e `portal_transparencia` — um
+  bloqueio do IP da VPS derrubaria as três fontes nos sete. Daí a pausa de 30 s entre
+  arquivos, o teto de 6 arquivos por rodada e a parada imediata no 405/429. O CAPTCHA
+  passou sozinho em ~25 min sem nenhum pedido (a rodada seguinte, já com o teto, baixou
+  os 6 arquivos com 200).
+- **Classificação na LEITURA** (`services/transferencias_pasta.py`), não gravada: PASTA
+  (royalties pela ação → constitucionais pelo tipo → defesa civil pela subfunção 182 →
+  saúde/educação/assistência/cultura pela função ou pelo órgão → outras) e FAVORECIDO
+  (prefeitura, fundo, secretaria, órgão municipal = o total da tela; escola — caixa
+  escolar/APM, pode ser estadual — e entidade ficam FORA da conta, visíveis).
+- **Tela** FEDERAIS › «Recursos recebidos por pasta» (`/dashboard/cgu-transferencias`,
+  logo depois dos Planos de Ação); permissão `cgu_transferencias.ver` (catálogo 103 →
+  104), concedida por `add_tela_cgu_transferencias.sql` a quem tem `usuarios.conceder`.
+- **Conferido num Postgres 16 zerado** com os arquivos reais (150/150 migrations depois
+  do rebase sobre a main de 25/09, duas vezes, sem `falhou`): todos os números do relatório bateram ao centavo — Monte Sião 08/2026 FPM
+  3.088.067,34; FUNDEB 641.762,93; PAB 235.640,89; salário-educação 168.526,80 (na
+  SECRETARIA); petróleo 89.121,15; PNAE 33.765,50; PNATE 10.344,19; FNAS 21.872,08. Nova
+  Palma: FPM 1.211.820,09; PAR 159.027,33; PAB 88.317,82; FUNDEB 65.301,83; complementação
+  8.756,83; PNATE 28.608,87; PNAE 4.399,75; FNAS 12.493,56. Em 09/2026 Monte Sião tem **13**
+  caixas escolares no PDDE (o relatório dizia 12), R$ 50.225, e a Funasa R$ 105.000. A
+  carga de 24 meses dos três municípios: 2.393 linhas em 62 s. Reler o mesmo arquivo dá o
+  mesmo banco.
+- **Task** `cgu-transferencias`: escada de 10 min de 01:00 (freitas) a 02:00 UTC
+  (juranda), `scripts/criar_task_cgu_transferencias.sh` — **depois** do deploy. Até isso
+  rodar, a task NÃO existe.
+## 1.45. SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC (24/09/2026)
+
+Cartão "SIOPS e RAG" do relatório de fontes do dono. O CAUC só dá "!" ou uma validade nos
+itens 3.2.3 (Anexo 8 ao SIOPE), 3.2.4 (Anexo 12 ao SIOPS), 5.1 (mínimo em educação) e 5.2
+(mínimo em saúde). Agora a Regularidade diz qual bimestre falta, quando foi entregue e o %.
+
+- **Coletor** `ingestion/siops_siope.py` (task `siops-siope`, 1x/noite, todo worker; script
+  `scripts/criar_task_siops_siope.sh`, escada 04:00→05:30 UTC). Quatro fontes públicas, por
+  UF: lista legada de homologados do SIOPS (data), API do SIOPS (% ASPS, indicador 3.2),
+  OData do SIOPE no Olinda/FNDE (DAT_DECL, recibo, % MDE 1.1, FUNDEB 1.2) e a extração do
+  DigiSUS DGMP (Plano, PAS, 1º/2º/3º RDQA, RAG por ano). Armadilhas no cabeçalho do arquivo;
+  a que manda: **a API do SIOPS responde 404 `msg03` para QUALQUER coisa que não acha**
+  (IBGE de 7 dígitos, IBGE inexistente, período 99), então "não entregue" só é gravado com a
+  lista legada provando; `msg03` sozinho = "não sei", sem linha, `partial`.
+- **Tabelas** (`add_siops_siope_rag.sql`, DDL — deploy depois das 10:00 UTC):
+  `saude_educacao_bimestre` (município × SIOPS|SIOPE × ano × bimestre) e
+  `sus_instrumentos_planejamento` (município × instrumento × ano).
+- **Regra única** em `services/saude_educacao.py`: prazo (30 dias após o bimestre; RDQA fim
+  de mai/set/fev; RAG 30/03), situação, cor do %. **O % do bimestre é parcial** (acumulado;
+  o mínimo se apura no 6º): abaixo do mínimo no meio do ano é `atencao`, nunca `critico`.
+- **Alarme falso morto**: `bi_abas.prazos_dos_itens(entregues=)` — usada pelo painel, pelo
+  CONSOLIDADO e pelo push — não avisa mais "vence em N dias" no 3.2.3/3.2.4 quando o
+  bimestre que a validade cobra (`bimestre_do_prazo`: 30/09 → 4º) já está entregue. Nova
+  Palma/RS em 24/09: 4º bimestre homologado no SIOPS em 23/09, CAUC ainda "até 30/09" — o
+  3.2.4 saiu da lista; o 3.2.3 fica, porque o SIOPE ainda não publicou NENHUMA declaração
+  do 4º bimestre em RS, MG ou PR (medido: 0 nas três UFs em 24/09).
+- **Tela**: aba "Saúde e educação" na Regularidade (logo depois do CAUC) + uma frase ao lado
+  dos quatro itens na aba CAUC (`notas_cauc`, pronta do servidor). Rota
+  `GET /api/saude-educacao` com `cauc.ver` + tela `cauc`, como o SICONFI.
+- **Medido num Postgres 16 zerado** (boot inteiro 2x, 149/149 em dia): Monte Sião SIOPS 2026
+  22,22/22,13/24,72% (1º-3º), 4º não homologado; SIOPE 18,75/24,90/27,36%; RDQAs 2023-2025
+  nunca concluídos (11 instrumentos vencidos). Nova Palma: SIOPS 4º homologado 23/09
+  (19,76%). Juranda: SIOPE 3º NÃO declarado (o "!" do 3.2.3), e SIOPS 2º e 3º homologados
+  só em 24/08 (com atraso). 1ª rodada 169–244 s para as três UFs (duas medições), 2ª 78–84 s.
 
 ## 1.42. Emendas de saúde do FNS na aba Federais — pelo código (25/09/2026)
 

@@ -336,9 +336,11 @@ _RECURSOS: tuple = (
     _Recurso("repasses", SEC_CONVENIOS, "Repasses Estaduais",
              "os repasses estaduais recebidos pelo município", "",
              ("ver",), ufs=("GO",), tela="repasses"),
+    # MG entrou em 24/09/2026: os pagamentos por Resolução SES (fundo a fundo
+    # estadual), pela mesma tela e pela mesma chave (`GET /api/cofinanciamento/mg`).
     _Recurso("cofinanciamento", SEC_CONVENIOS, "Cofinanciamento da Saúde",
              "os repasses do fundo estadual ao fundo municipal de saúde", "",
-             ("ver",), ufs=("GO",), tela="cofinanciamento"),
+             ("ver",), ufs=("GO", "MG"), tela="cofinanciamento"),
     _Recurso("monitoramento", SEC_CONVENIOS, "Monitoramento de Convênios",
              "os registros mensais de execução dos convênios", "",
              ("ver",), ufs=("RS",), tela="monitoramento"),
@@ -471,6 +473,12 @@ _RECURSOS: tuple = (
     _Recurso("cgu_convenios", SEC_CONVENIOS, "Defesa Civil e outros repasses (CGU)",
              "os repasses federais publicados pela CGU que o TransfereGov não tem", "",
              ("ver",), fonte="no Portal da Transparência", tela="cgu_convenios"),
+    # Recursos recebidos por pasta (24/09/2026): todo repasse da União ao
+    # município e aos fundos dele, mês a mês (FPM, FUNDEB, fundo a fundo, FNDE,
+    # FNAS...), pelo arquivo de transferências da CGU. Só `ver`.
+    _Recurso("cgu_transferencias", SEC_CONVENIOS, "Recursos recebidos por pasta",
+             "os repasses federais recebidos pelo município, por pasta", "",
+             ("ver",), fonte="no Portal da Transparência", tela="cgu_transferencias"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG",

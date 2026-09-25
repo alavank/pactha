@@ -98,6 +98,15 @@ def test_caixa_escolar_sem_ibge_e_cnpj_que_perdeu_o_zero():
     assert x["cnpj"] == "01834744000174"                   # float perde o zero
 
 
+def test_conta_da_resolucao_ses_vai_para_o_raw_sem_a_casa_decimal():
+    """(instrumento = nº da Resolução, conta) liga o pagamento da SES-MG
+    (`ses_mg_resolucoes.py`) à indicação — cada indicação tem conta própria."""
+    cab = CABECALHO + ["conta"]
+    linha = _linha(204322, tipo="RESOLUÇÃO SES", instrumento_numero="011058/2026") + ";26101,0"
+    x, = em.ler_csv(_csv([linha], cabecalho=cab))
+    assert x["instrumento"] == "011058/2026" and x["extras"]["conta"] == "26101"
+
+
 @pytest.mark.parametrize("bruto,esperado", [
     ("TRANSFERÊNCIA ESPECIAL", "Transferência Especial"),
     ("CELEBRAÇÃO DE CONVÊNIO", "Convênio"),

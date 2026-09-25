@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv=îContent-Typeî content=îtext/html; charset=utf-8">
+        
+        <meta name="viewport" content="width=device-width, initial scale=1">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        
+        <title>Pagamento de Resolu√ß√µes: Pagamentos Or√ßament√°rios</title>
+
+    	
+        <link rel="stylesheet" href="http://pagamentoderesolucoes.saude.mg.gov.br/assets/css/app.css">
+        
+        
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+        
+        
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.0.1/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.datatables.net/1.10.25/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+        <link href="https://cdn.datatables.net/1.10.25/css/jquery.dataTables.min.css" rel="stylesheet">
+        <link href="https://cdn.datatables.net/buttons/1.7.1/css/buttons.dataTables.min.css" rel="stylesheet">
+
+        
+        <link rel="stylesheet" href="http://pagamentoderesolucoes.saude.mg.gov.br/assets/css/acessibilidade.css">
+
+        
+        <link href="https://fonts.googleapis.com/css2?family=Roboto" rel="stylesheet">
+
+        
+        <script type="text/javascript" src="https://code.jquery.com/jquery-1.12.3.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.0/jquery.mask.js"></script>
+        <script type="text/javascript" src="http://pagamentoderesolucoes.saude.mg.gov.br/assets/js/javascript.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/1.10.25/js/jquery.dataTables.min.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/1.10.25/js/dataTables.bootstrap5.min.js"></script>
+
+        <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.7.1/js/dataTables.buttons.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.7.1/js/buttons.html5.min.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.7.1/js/buttons.print.min.js"></script>
+
+
+
+	
+	<script type="text/javascript" src="https://cdn.datatables.net/buttons/2.0.0/js/buttons.colVis.min.js"></script>	
+
+
+        <script src="https://kit.fontawesome.com/cabf0d962e.js" crossorigin="anonymous"></script>
+
+           
+    </head>
+<body>
+<form action="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios" method="post">
+    <input type="hidden" name="_token" value="5Op2ROBbfxB7ibASIyzwSL9HkRvIT5d7Iw8Hhuzz">
+    <div class="row g-3">
+        <div class="col">
+            <div class="form-floating">
+                <select class="form-select" id="ano_pagamento" name="data_pgto">
+                    <option value="" selected>Selecione o ano de Pagamento</option>
+                                            <option>2019</option>
+                                            <option>2020</option>
+                                            <option>2021</option>
+                                            <option>2022</option>
+                                            <option>2023</option>
+                                            <option>2024</option>
+                                            <option>2025</option>
+                                            <option>2026</option>
+                                    </select>
+                <label for="ano">Ano do Pagamento<strong style="color: red;"> *</strong></label>
+            </div>
+        </div>
+        <div class="col">
+	        <div class="form-floating">
+                <select class="form-select" id="dsc_municipio" name="dsc_municipio">
+                    <option value="" selected>Selecione o municipio</option>
+                                            <option>ABADIA DOS DOURADOS</option>
+                                            <option>ABAETE</option>
+                                            <option>ABRE CAMPO</option>
+                                            <option>ACAIACA</option>
+                                            <option>ACUCENA</option>
+                                            <option>AGUA BOA</option>
+                                            <option>AGUA COMPRIDA</option>
+                                            <option>AGUANIL</option>
+                                            <option>AGUAS FORMOSAS</option>
+                                            <option>AGUAS VERMELHAS</option>
+                                            <option>AIMORES</option>
+                                            <option>AIURUOCA</option>
+                                            <option>ALAGOA</option>
+                                            <option>ALBERTINA</option>
+                                            <option>ALEM PARAIBA</option>
+                                            <option>ALFENAS</option>
+                                            <option>ALFREDO VASCONCELOS</option>
+                                            <option>ALMENARA</option>
+                                            <option>ALPERCATA</option>
+                                            <option>ALPINOPOLIS</option>
+                                            <option>ALTEROSA</option>
+                                            <option>ALTO CAPARAO</option>
+                                            <option>ALTO JEQUITIBA</option>
+                                            <option>ALTO RIO DOCE</option>
+                                            <option>ALVARENGA</option>
+                                            <option>ALVINOPOLIS</option>
+                                            <option>ALVORADA DE MINAS</option>
+                                            <option>AMPARO DO SERRA</option>
+                                            <option>ANDRADAS</option>
+                                            <option>ANDRELANDIA</option>
+                                            <option>ANGELANDIA</option>
+                                            <option>ANTONIO CARLOS</option>
+                                            <option>ANTONIO DIAS</option>
+                                            <option>ANTONIO PRADO DE MINAS</option>
+                                            <option>ARACAI</option>
+                                            <option>ARACITABA</option>
+                                            <option>ARACUAI</option>
+                                            <option>ARAGUARI</option>
+                                            <option>ARANTINA</option>
+                                            <option>ARAPONGA</option>
+                                            <option>ARAPORA</option>
+                                            <option>ARAPUA</option>
+                                            <option>ARAUJOS</option>
+                                            <option>ARAXA</option>
+                                            <option>ARCEBURGO</option>
+                                            <option>ARCOS</option>
+                                            <option>AREADO</option>
+                                            <option>ARGIRITA</option>
+                                            <option>ARICANDUVA</option>
+                                            <option>ARINOS</option>
+                                            <option>ASTOLFO DUTRA</option>
+                                            <option>ATALEIA</option>
+                                            <option>AUGUSTO DE LIMA</option>
+                                            <option>BAEPENDI</option>
+                                            <option>BALDIM</option>
+                                            <option>BAMBUI</option>
+                                            <option>BANDEIRA</option>
+                                            <option>BANDEIRA DO SUL</option>
+                                            <option>BARAO DE COCAIS</option>
+                                            <option>BARAO DE MONTE ALTO</option>
+                                            <option>BARBACENA</option>
+                                            <option>BARRA LONGA</option>
+                                            <option>BARROSO</option>
+                                            <option>BELA VISTA DE MINAS</option>
+                                            <option>BELMIRO BRAGA</option>
+                                            <option>BELO HORIZONTE</option>
+                                            <option>BELO ORIENTE</option>
+                                            <option>BELO VALE</option>
+                                            <option>BERILO</option>
+                                            <option>BERIZAL</option>
+                                            <option>BERTOPOLIS</option>
+                                            <option>BETIM</option>
+                                            <option>BIAS FORTES</option>
+                                            <option>BICAS</option>
+                                            <option>BIQUINHAS</option>
+                                            <option>BOA ESPERANCA</option>
+                                            <option>BOCAINA DE MINAS</option>
+                                            <option>BOCAIUVA</option>
+                                            <option>BOM DESPACHO</option>
+                                            <option>BOM JARDIM DE MINAS</option>
+                                            <option>BOM JESUS DA PENHA</option>
+                                            <option>BOM JESUS DO AMPARO</option>
+                                            <option>BOM JESUS DO GALHO</option>
+                                            <option>BOM REPOUSO</option>
+                                            <option>BOM SUCESSO</option>
+                                            <option>BONFIM</option>
+                                            <option>BONFINOPOLIS DE MINAS</option>
+                                            <option>BONITO DE MINAS</option>
+                                            <option>BORDA DA MATA</option>
+                                            <option>BOTELHOS</option>
+                                            <option>BOTUMIRIM</option>
+                                            <option>BRAS PIRES</option>
+                                            <option>BRASILANDIA DE MINAS</option>
+                                            <option>BRASILIA DE MINAS</option>
+                                            <option>BRASOPOLIS</option>
+                                            <option>BRAUNAS</option>
+                                            <option>BRUMADINHO</option>
+                                            <option>BUENO BRANDAO</option>
+                                            <option>BUENOPOLIS</option>
+                                            <option>BUGRE</option>
+                                            <option>BURITIS</option>
+                                            <option>BURITIZEIRO</option>
+                                            <option>CABECEIRA GRANDE</option>
+                                            <option>CABO VERDE</option>
+                                            <option>CACHOEIRA DA PRATA</option>
+                                            <option>CACHOEIRA DE MINAS</option>
+                                            <option>CACHOEIRA DE PAJEU</option>
+                                            <option>CACHOEIRA DOURADA</option>
+                                            <option>CAETANOPOLIS</option>
+                                            <option>CAETE</option>
+                                            <option>CAIANA</option>
+                                            <option>CAJURI</option>
+                                            <option>CALDAS</option>
+                                            <option>CAMACHO</option>
+                                            <option>CAMANDUCAIA</option>
+                                            <option>CAMBUI</option>
+                                            <option>CAMBUQUIRA</option>
+                                            <option>CAMPANARIO</option>
+                                            <option>CAMPANHA</option>
+                                            <option>CAMPESTRE</option>
+                                            <option>CAMPINA VERDE</option>
+                                            <option>CAMPO AZUL</option>
+                                            <option>CAMPO BELO</option>
+                                            <option>CAMPO DO MEIO</option>
+                                            <option>CAMPO FLORIDO</option>
+                                            <option>CAMPOS ALTOS</option>
+                                            <option>CAMPOS GERAIS</option>
+                                            <option>CANA VERDE</option>
+                                            <option>CANAA</option>
+                                            <option>CANAPOLIS</option>
+                                            <option>CANDEIAS</option>
+                                            <option>CANTAGALO</option>
+                                            <option>CAPARAO</option>
+                                            <option>CAPELA NOVA</option>
+                                            <option>CAPELINHA</option>
+                                            <option>CAPETINGA</option>
+                                            <option>CAPIM BRANCO</option>
+                                            <option>CAPINOPOLIS</option>
+                                            <option>CAPITAO ANDRADE</option>
+                                            <option>CAPITAO ENEAS</option>
+                                            <option>CAPITOLIO</option>
+                                            <option>CAPUTIRA</option>
+                                            <option>CARAI</option>
+                                            <option>CARANAIBA</option>
+                                            <option>CARANDAI</option>
+                                            <option>CARANGOLA</option>
+                                            <option>CARATINGA</option>
+                                            <option>CARBONITA</option>
+                                            <option>CAREACU</option>
+                                            <option>CARLOS CHAGAS</option>
+                                            <option>CARMESIA</option>
+                                            <option>CARMO DA CACHOEIRA</option>
+                                            <option>CARMO DA MATA</option>
+                                            <option>CARMO DE MINAS</option>
+                                            <option>CARMO DO CAJURU</option>
+                                            <option>CARMO DO PARANAIBA</option>
+                                            <option>CARMO DO RIO CLARO</option>
+                                            <option>CARMOPOLIS DE MINAS</option>
+                                            <option>CARNEIRINHO</option>
+                                            <option>CARRANCAS</option>
+                                            <option>CARVALHOPOLIS</option>
+                                            <option>CARVALHOS</option>
+                                            <option>CASA GRANDE</option>
+                                            <option>CASCALHO RICO</option>
+                                            <option>CASSIA</option>
+                                            <option>CATAGUASES</option>
+                                            <option>CATAS ALTAS</option>
+                                            <option>CATAS ALTAS DA NORUEGA</option>
+                                            <option>CATUJI</option>
+                                            <option>CATUTI</option>
+                                            <option>CAXAMBU</option>
+                                            <option>CEDRO DO ABAETE</option>
+                                            <option>CENTRAL DE MINAS</option>
+                                            <option>CENTRALINA</option>
+                                            <option>CHACARA</option>
+                                            <option>CHALE</option>
+                                            <option>CHAPADA DO NORTE</option>
+                                            <option>CHAPADA GAUCHA</option>
+                                            <option>CHIADOR</option>
+                                            <option>CIPOTANEA</option>
+                                            <option>CLARAVAL</option>
+                                            <option>CLARO DOS POCOES</option>
+                                            <option>CLAUDIO</option>
+                                            <option>COIMBRA</option>
+                                            <option>COLUNA</option>
+                                            <option>COMENDADOR GOMES</option>
+                                            <option>COMERCINHO</option>
+                                            <option>CONCEICAO DA APARECIDA</option>
+                                            <option>CONCEICAO DA BARRA DE MINAS</option>
+                                            <option>CONCEICAO DAS ALAGOAS</option>
+                                            <option>CONCEICAO DAS PEDRAS</option>
+                                            <option>CONCEICAO DE IPANEMA</option>
+                                            <option>CONCEICAO DO MATO DENTRO</option>
+                                            <option>CONCEICAO DO PARA</option>
+                                            <option>CONCEICAO DO RIO VERDE</option>
+                                            <option>CONCEICAO DOS OUROS</option>
+                                            <option>CONEGO MARINHO</option>
+                                            <option>CONFINS</option>
+                                            <option>CONGONHAL</option>
+                                            <option>CONGONHAS</option>
+                                            <option>CONGONHAS DO NORTE</option>
+                                            <option>CONQUISTA</option>
+                                            <option>CONSELHEIRO LAFAIETE</option>
+                                            <option>CONSELHEIRO PENA</option>
+                                            <option>CONSOLACAO</option>
+                                            <option>CONTAGEM</option>
+                                            <option>COQUEIRAL</option>
+                                            <option>CORACAO DE JESUS</option>
+                                            <option>CORDISBURGO</option>
+                                            <option>CORDISLANDIA</option>
+                                            <option>CORINTO</option>
+                                            <option>COROACI</option>
+                                            <option>COROMANDEL</option>
+                                            <option>CORONEL FABRICIANO</option>
+                                            <option>CORONEL MURTA</option>
+                                            <option>CORONEL PACHECO</option>
+                                            <option>CORONEL XAVIER CHAVES</option>
+                                            <option>CORREGO DANTA</option>
+                                            <option>CORREGO DO BOM JESUS</option>
+                                            <option>CORREGO FUNDO</option>
+                                            <option>CORREGO NOVO</option>
+                                            <option>COUTO DE MAGALHAES DE MINAS</option>
+                                            <option>CRISOLITA</option>
+                                            <option>CRISTAIS</option>
+                                            <option>CRISTALIA</option>
+                                            <option>CRISTIANO OTONI</option>
+                                            <option>CRISTINA</option>
+                                            <option>CRUCILANDIA</option>
+                                            <option>CRUZEIRO DA FORTALEZA</option>
+                                            <option>CRUZILIA</option>
+                                            <option>CUPARAQUE</option>
+                                            <option>CURRAL DE DENTRO</option>
+                                            <option>CURVELO</option>
+                                            <option>DATAS</option>
+                                            <option>DELFIM MOREIRA</option>
+                                            <option>DELFINOPOLIS</option>
+                                            <option>DELTA</option>
+                                            <option>DESCOBERTO</option>
+                                            <option>DESTERRO DE ENTRE RIOS</option>
+                                            <option>DESTERRO DO MELO</option>
+                                            <option>DIAMANTINA</option>
+                                            <option>DIOGO DE VASCONCELOS</option>
+                                            <option>DIONISIO</option>
+                                            <option>DIVINESIA</option>
+                                            <option>DIVINO</option>
+                                            <option>DIVINO DAS LARANJEIRAS</option>
+                                            <option>DIVINOLANDIA DE MINAS</option>
+                                            <option>DIVINOPOLIS</option>
+                                            <option>DIVISA ALEGRE</option>
+                                            <option>DIVISA NOVA</option>
+                                            <option>DIVISOPOLIS</option>
+                                            <option>DOM BOSCO</option>
+                                            <option>DOM CAVATI</option>
+                                            <option>DOM JOAQUIM</option>
+                                            <option>DOM SILVERIO</option>
+                                            <option>DOM VICOSO</option>
+                                            <option>DONA EUSEBIA</option>
+                                            <option>DORES DE CAMPOS</option>
+                                            <option>DORES DE GUANHAES</option>
+                                            <option>DORES DO INDAIA</option>
+                                            <option>DORES DO TURVO</option>
+                                            <option>DORESOPOLIS</option>
+                                            <option>DOURADOQUARA</option>
+                                            <option>DURANDE</option>
+                                            <option>ELOI MENDES</option>
+                                            <option>ENGENHEIRO CALDAS</option>
+                                            <option>ENGENHEIRO NAVARRO</option>
+                                            <option>ENTRE FOLHAS</option>
+                                            <option>ENTRE RIOS DE MINAS</option>
+                                            <option>ERVALIA</option>
+                                            <option>ESMERALDAS</option>
+                                            <option>ESPERA FELIZ</option>
+                                            <option>ESPINOSA</option>
+                                            <option>ESPIRITO SANTO DO DOURADO</option>
+                                            <option>ESTIVA</option>
+                                            <option>ESTRELA DALVA</option>
+                                            <option>ESTRELA DO INDAIA</option>
+                                            <option>ESTRELA DO SUL</option>
+                                            <option>EUGENOPOLIS</option>
+                                            <option>EWBANK DA CAMARA</option>
+                                            <option>EXTREMA</option>
+                                            <option>FAMA</option>
+                                            <option>FARIA LEMOS</option>
+                                            <option>FELICIO DOS SANTOS</option>
+                                            <option>FELISBURGO</option>
+                                            <option>FELIXLANDIA</option>
+                                            <option>FERNANDES TOURINHO</option>
+                                            <option>FERROS</option>
+                                            <option>FERVEDOURO</option>
+                                            <option>FLORESTAL</option>
+                                            <option>FORMIGA</option>
+                                            <option>FORMOSO</option>
+                                            <option>FORTALEZA DE MINAS</option>
+                                            <option>FORTUNA DE MINAS</option>
+                                            <option>FRANCISCO BADARO</option>
+                                            <option>FRANCISCO DUMONT</option>
+                                            <option>FRANCISCO SA</option>
+                                            <option>FRANCISCOPOLIS</option>
+                                            <option>FREI GASPAR</option>
+                                            <option>FREI INOCENCIO</option>
+                                            <option>FREI LAGONEGRO</option>
+                                            <option>FRONTEIRA</option>
+                                            <option>FRONTEIRA DOS VALES</option>
+                                            <option>FRUTA DE LEITE</option>
+                                            <option>FRUTAL</option>
+                                            <option>FUNILANDIA</option>
+                                            <option>GALILEIA</option>
+                                            <option>GAMELEIRAS</option>
+                                            <option>GLAUCILANDIA</option>
+                                            <option>GOIABEIRA</option>
+                                            <option>GOIANA</option>
+                                            <option>GONCALVES</option>
+                                            <option>GONZAGA</option>
+                                            <option>GOUVEIA</option>
+                                            <option>GOVERNADOR VALADARES</option>
+                                            <option>GRAO MOGOL</option>
+                                            <option>GRUPIARA</option>
+                                            <option>GUANHAES</option>
+                                            <option>GUAPE</option>
+                                            <option>GUARACIABA</option>
+                                            <option>GUARACIAMA</option>
+                                            <option>GUARANESIA</option>
+                                            <option>GUARANI</option>
+                                            <option>GUARARA</option>
+                                            <option>GUARDA-MOR</option>
+                                            <option>GUAXUPE</option>
+                                            <option>GUIDOVAL</option>
+                                            <option>GUIMARANIA</option>
+                                            <option>GUIRICEMA</option>
+                                            <option>GURINHATA</option>
+                                            <option>HELIODORA</option>
+                                            <option>IAPU</option>
+                                            <option>IBERTIOGA</option>
+                                            <option>IBIA</option>
+                                            <option>IBIAI</option>
+                                            <option>IBIRACATU</option>
+                                            <option>IBIRACI</option>
+                                            <option>IBIRITE</option>
+                                            <option>IBITIURA DE MINAS</option>
+                                            <option>IBITURUNA</option>
+                                            <option>ICARAI DE MINAS</option>
+                                            <option>IGARAPE</option>
+                                            <option>IGARATINGA</option>
+                                            <option>IGUATAMA</option>
+                                            <option>IJACI</option>
+                                            <option>ILICINEA</option>
+                                            <option>IMBE DE MINAS</option>
+                                            <option>INCONFIDENTES</option>
+                                            <option>INDAIABIRA</option>
+                                            <option>INDIANOPOLIS</option>
+                                            <option>INGAI</option>
+                                            <option>INHAPIM</option>
+                                            <option>INHAUMA</option>
+                                            <option>INIMUTABA</option>
+                                            <option>IPABA</option>
+                                            <option>IPANEMA</option>
+                                            <option>IPATINGA</option>
+                                            <option>IPIACU</option>
+                                            <option>IPUIUNA</option>
+                                            <option>IRAI DE MINAS</option>
+                                            <option>ITABIRA</option>
+                                            <option>ITABIRINHA</option>
+                                            <option>ITABIRITO</option>
+                                            <option>ITACAMBIRA</option>
+                                            <option>ITACARAMBI</option>
+                                            <option>ITAGUARA</option>
+                                            <option>ITAIPE</option>
+                                            <option>ITAJUBA</option>
+                                            <option>ITAMARANDIBA</option>
+                                            <option>ITAMARATI DE MINAS</option>
+                                            <option>ITAMBACURI</option>
+                                            <option>ITAMBE DO MATO DENTRO</option>
+                                            <option>ITAMOGI</option>
+                                            <option>ITAMONTE</option>
+                                            <option>ITANHANDU</option>
+                                            <option>ITANHOMI</option>
+                                            <option>ITAOBIM</option>
+                                            <option>ITAPAGIPE</option>
+                                            <option>ITAPECERICA</option>
+                                            <option>ITAPEVA</option>
+                                            <option>ITATIAIUCU</option>
+                                            <option>ITAU DE MINAS</option>
+                                            <option>ITAUNA</option>
+                                            <option>ITAVERAVA</option>
+                                            <option>ITINGA</option>
+                                            <option>ITUETA</option>
+                                            <option>ITUIUTABA</option>
+                                            <option>ITUMIRIM</option>
+                                            <option>ITURAMA</option>
+                                            <option>ITUTINGA</option>
+                                            <option>JABOTICATUBAS</option>
+                                            <option>JACINTO</option>
+                                            <option>JACUI</option>
+                                            <option>JACUTINGA</option>
+                                            <option>JAGUARACU</option>
+                                            <option>JAIBA</option>
+                                            <option>JAMPRUCA</option>
+                                            <option>JANAUBA</option>
+                                            <option>JANUARIA</option>
+                                            <option>JAPARAIBA</option>
+                                            <option>JAPONVAR</option>
+                                            <option>JECEABA</option>
+                                            <option>JENIPAPO DE MINAS</option>
+                                            <option>JEQUERI</option>
+                                            <option>JEQUITAI</option>
+                                            <option>JEQUITIBA</option>
+                                            <option>JEQUITINHONHA</option>
+                                            <option>JESUANIA</option>
+                                            <option>JOAIMA</option>
+                                            <option>JOANESIA</option>
+                                            <option>JOAO MONLEVADE</option>
+                                            <option>JOAO PINHEIRO</option>
+                                            <option>JOAQUIM FELICIO</option>
+                                            <option>JORDANIA</option>
+                                            <option>JOSE GONCALVES DE MINAS</option>
+                                            <option>JOSE RAYDAN</option>
+                                            <option>JOSENOPOLIS</option>
+                                            <option>JUATUBA</option>
+                                            <option>JUIZ DE FORA</option>
+                                            <option>JURAMENTO</option>
+                                            <option>JURUAIA</option>
+                                            <option>JUVENILIA</option>
+                                            <option>LADAINHA</option>
+                                            <option>LAGAMAR</option>
+                                            <option>LAGOA DA PRATA</option>
+                                            <option>LAGOA DOS PATOS</option>
+                                            <option>LAGOA DOURADA</option>
+                                            <option>LAGOA FORMOSA</option>
+                                            <option>LAGOA GRANDE</option>
+                                            <option>LAGOA SANTA</option>
+                                            <option>LAJINHA</option>
+                                            <option>LAMBARI</option>
+                                            <option>LAMIM</option>
+                                            <option>LARANJAL</option>
+                                            <option>LASSANCE</option>
+                                            <option>LAVRAS</option>
+                                            <option>LEANDRO FERREIRA</option>
+                                            <option>LEME DO PRADO</option>
+                                            <option>LEOPOLDINA</option>
+                                            <option>LIBERDADE</option>
+                                            <option>LIMA DUARTE</option>
+                                            <option>LIMEIRA DO OESTE</option>
+                                            <option>LONTRA</option>
+                                            <option>LUISBURGO</option>
+                                            <option>LUISLANDIA</option>
+                                            <option>LUMINARIAS</option>
+                                            <option>LUZ</option>
+                                            <option>MACHACALIS</option>
+                                            <option>MACHADO</option>
+                                            <option>MADRE DE DEUS DE MINAS</option>
+                                            <option>MALACACHETA</option>
+                                            <option>MAMONAS</option>
+                                            <option>MANGA</option>
+                                            <option>MANHUACU</option>
+                                            <option>MANHUMIRIM</option>
+                                            <option>MANTENA</option>
+                                            <option>MAR DE ESPANHA</option>
+                                            <option>MARAVILHAS</option>
+                                            <option>MARIA DA FE</option>
+                                            <option>MARIANA</option>
+                                            <option>MARILAC</option>
+                                            <option>MARIO CAMPOS</option>
+                                            <option>MARIPA DE MINAS</option>
+                                            <option>MARLIERIA</option>
+                                            <option>MARMELOPOLIS</option>
+                                            <option>MARTINHO CAMPOS</option>
+                                            <option>MARTINS SOARES</option>
+                                            <option>MATA VERDE</option>
+                                            <option>MATERLANDIA</option>
+                                            <option>MATEUS LEME</option>
+                                            <option>MATHIAS LOBATO</option>
+                                            <option>MATIAS BARBOSA</option>
+                                            <option>MATIAS CARDOSO</option>
+                                            <option>MATIPO</option>
+                                            <option>MATO VERDE</option>
+                                            <option>MATOZINHOS</option>
+                                            <option>MATUTINA</option>
+                                            <option>MEDEIROS</option>
+                                            <option>MEDINA</option>
+                                            <option>MENDES PIMENTEL</option>
+                                            <option>MERCES</option>
+                                            <option>MESQUITA</option>
+                                            <option>MINAS NOVAS</option>
+                                            <option>MINDURI</option>
+                                            <option>MIRABELA</option>
+                                            <option>MIRADOURO</option>
+                                            <option>MIRAI</option>
+                                            <option>MIRAVANIA</option>
+                                            <option>MOEDA</option>
+                                            <option>MOEMA</option>
+                                            <option>MONJOLOS</option>
+                                            <option>MONSENHOR PAULO</option>
+                                            <option>MONTALVANIA</option>
+                                            <option>MONTE ALEGRE DE MINAS</option>
+                                            <option>MONTE AZUL</option>
+                                            <option>MONTE BELO</option>
+                                            <option>MONTE CARMELO</option>
+                                            <option>MONTE FORMOSO</option>
+                                            <option>MONTE SANTO DE MINAS</option>
+                                            <option>MONTE SIAO</option>
+                                            <option>MONTES CLAROS</option>
+                                            <option>MONTEZUMA</option>
+                                            <option>MORADA NOVA DE MINAS</option>
+                                            <option>MORRO DA GARCA</option>
+                                            <option>MORRO DO PILAR</option>
+                                            <option>MUNHOZ</option>
+                                            <option>MURIAE</option>
+                                            <option>MUTUM</option>
+                                            <option>MUZAMBINHO</option>
+                                            <option>NACIP RAYDAN</option>
+                                            <option>NANUQUE</option>
+                                            <option>NAQUE</option>
+                                            <option>NATALANDIA</option>
+                                            <option>NATERCIA</option>
+                                            <option>NAZARENO</option>
+                                            <option>NEPOMUCENO</option>
+                                            <option>NINHEIRA</option>
+                                            <option>NOVA BELEM</option>
+                                            <option>NOVA ERA</option>
+                                            <option>NOVA LIMA</option>
+                                            <option>NOVA MODICA</option>
+                                            <option>NOVA PONTE</option>
+                                            <option>NOVA PORTEIRINHA</option>
+                                            <option>NOVA RESENDE</option>
+                                            <option>NOVA SERRANA</option>
+                                            <option>NOVA UNIAO</option>
+                                            <option>NOVO CRUZEIRO</option>
+                                            <option>NOVO ORIENTE DE MINAS</option>
+                                            <option>NOVORIZONTE</option>
+                                            <option>OLARIA</option>
+                                            <option>OLHOS-D&#039;AGUA</option>
+                                            <option>OLIMPIO NORONHA</option>
+                                            <option>OLIVEIRA</option>
+                                            <option>OLIVEIRA FORTES</option>
+                                            <option>ONCA DE PITANGUI</option>
+                                            <option>ORATORIOS</option>
+                                            <option>ORIZANIA</option>
+                                            <option>OURO BRANCO</option>
+                                            <option>OURO FINO</option>
+                                            <option>OURO PRETO</option>
+                                            <option>OURO VERDE DE MINAS</option>
+                                            <option>PADRE CARVALHO</option>
+                                            <option>PADRE PARAISO</option>
+                                            <option>PAI PEDRO</option>
+                                            <option>PAINEIRAS</option>
+                                            <option>PAINS</option>
+                                            <option>PAIVA</option>
+                                            <option>PALMA</option>
+                                            <option>PALMOPOLIS</option>
+                                            <option>PAPAGAIOS</option>
+                                            <option>PARA DE MINAS</option>
+                                            <option>PARACATU</option>
+                                            <option>PARAGUACU</option>
+                                            <option>PARAISOPOLIS</option>
+                                            <option>PARAOPEBA</option>
+                                            <option>PASSA QUATRO</option>
+                                            <option>PASSA TEMPO</option>
+                                            <option>PASSA-VINTE</option>
+                                            <option>PASSABEM</option>
+                                            <option>PASSOS</option>
+                                            <option>PATIS</option>
+                                            <option>PATOS DE MINAS</option>
+                                            <option>PATROCINIO</option>
+                                            <option>PATROCINIO DO MURIAE</option>
+                                            <option>PAULA CANDIDO</option>
+                                            <option>PAULISTAS</option>
+                                            <option>PAVAO</option>
+                                            <option>PECANHA</option>
+                                            <option>PEDRA AZUL</option>
+                                            <option>PEDRA BONITA</option>
+                                            <option>PEDRA DO ANTA</option>
+                                            <option>PEDRA DO INDAIA</option>
+                                            <option>PEDRA DOURADA</option>
+                                            <option>PEDRALVA</option>
+                                            <option>PEDRAS DE MARIA DA CRUZ</option>
+                                            <option>PEDRINOPOLIS</option>
+                                            <option>PEDRO LEOPOLDO</option>
+                                            <option>PEDRO TEIXEIRA</option>
+                                            <option>PEQUERI</option>
+                                            <option>PEQUI</option>
+                                            <option>PERDIGAO</option>
+                                            <option>PERDIZES</option>
+                                            <option>PERDOES</option>
+                                            <option>PERIQUITO</option>
+                                            <option>PESCADOR</option>
+                                            <option>PIAU</option>
+                                            <option>PIEDADE DE CARATINGA</option>
+                                            <option>PIEDADE DE PONTE NOVA</option>
+                                            <option>PIEDADE DO RIO GRANDE</option>
+                                            <option>PIEDADE DOS GERAIS</option>
+                                            <option>PIMENTA</option>
+                                            <option>PINGO-D&#039;AGUA</option>
+                                            <option>PINTOPOLIS</option>
+                                            <option>PIRACEMA</option>
+                                            <option>PIRAJUBA</option>
+                                            <option>PIRANGA</option>
+                                            <option>PIRANGUCU</option>
+                                            <option>PIRANGUINHO</option>
+                                            <option>PIRAPETINGA</option>
+                                            <option>PIRAPORA</option>
+                                            <option>PIRAUBA</option>
+                                            <option>PITANGUI</option>
+                                            <option>PIUMHI</option>
+                                            <option>PLANURA</option>
+                                            <option>POCO FUNDO</option>
+                                            <option>POCOS DE CALDAS</option>
+                                            <option>POCRANE</option>
+                                            <option>POMPEU</option>
+                                            <option>PONTE NOVA</option>
+                                            <option>PONTO CHIQUE</option>
+                                            <option>PONTO DOS VOLANTES</option>
+                                            <option>PORTEIRINHA</option>
+                                            <option>PORTO FIRME</option>
+                                            <option>POTE</option>
+                                            <option>POUSO ALEGRE</option>
+                                            <option>POUSO ALTO</option>
+                                            <option>PRADOS</option>
+                                            <option>PRATA</option>
+                                            <option>PRATAPOLIS</option>
+                                            <option>PRATINHA</option>
+                                            <option>PRESIDENTE BERNARDES</option>
+                                            <option>PRESIDENTE JUSCELINO</option>
+                                            <option>PRESIDENTE KUBITSCHEK</option>
+                                            <option>PRESIDENTE OLEGARIO</option>
+                                            <option>PRUDENTE DE MORAIS</option>
+                                            <option>QUARTEL GERAL</option>
+                                            <option>QUELUZITO</option>
+                                            <option>RAPOSOS</option>
+                                            <option>RAUL SOARES</option>
+                                            <option>RECREIO</option>
+                                            <option>REDUTO</option>
+                                            <option>RESENDE COSTA</option>
+                                            <option>RESPLENDOR</option>
+                                            <option>RESSAQUINHA</option>
+                                            <option>RIACHINHO</option>
+                                            <option>RIACHO DOS MACHADOS</option>
+                                            <option>RIBEIRAO DAS NEVES</option>
+                                            <option>RIBEIRAO VERMELHO</option>
+                                            <option>RIO ACIMA</option>
+                                            <option>RIO CASCA</option>
+                                            <option>RIO DO PRADO</option>
+                                            <option>RIO DOCE</option>
+                                            <option>RIO ESPERA</option>
+                                            <option>RIO MANSO</option>
+                                            <option>RIO NOVO</option>
+                                            <option>RIO PARANAIBA</option>
+                                            <option>RIO PARDO DE MINAS</option>
+                                            <option>RIO PIRACICABA</option>
+                                            <option>RIO POMBA</option>
+                                            <option>RIO PRETO</option>
+                                            <option>RIO VERMELHO</option>
+                                            <option>RITAPOLIS</option>
+                                            <option>ROCHEDO DE MINAS</option>
+                                            <option>RODEIRO</option>
+                                            <option>ROMARIA</option>
+                                            <option>ROSARIO DA LIMEIRA</option>
+                                            <option>RUBELITA</option>
+                                            <option>RUBIM</option>
+                                            <option>SABARA</option>
+                                            <option>SABINOPOLIS</option>
+                                            <option>SACRAMENTO</option>
+                                            <option>SALINAS</option>
+                                            <option>SALTO DA DIVISA</option>
+                                            <option>SANTA BARBARA</option>
+                                            <option>SANTA BARBARA DO LESTE</option>
+                                            <option>SANTA BARBARA DO MONTE VERDE</option>
+                                            <option>SANTA BARBARA DO TUGURIO</option>
+                                            <option>SANTA CRUZ DE MINAS</option>
+                                            <option>SANTA CRUZ DE SALINAS</option>
+                                            <option>SANTA CRUZ DO ESCALVADO</option>
+                                            <option>SANTA EFIGENIA DE MINAS</option>
+                                            <option>SANTA FE DE MINAS</option>
+                                            <option>SANTA HELENA DE MINAS</option>
+                                            <option>SANTA JULIANA</option>
+                                            <option>SANTA LUZIA</option>
+                                            <option>SANTA MARGARIDA</option>
+                                            <option>SANTA MARIA DE ITABIRA</option>
+                                            <option>SANTA MARIA DO SALTO</option>
+                                            <option>SANTA MARIA DO SUACUI</option>
+                                            <option>SANTA RITA DE CALDAS</option>
+                                            <option>SANTA RITA DE IBITIPOCA</option>
+                                            <option>SANTA RITA DE JACUTINGA</option>
+                                            <option>SANTA RITA DE MINAS</option>
+                                            <option>SANTA RITA DO ITUETO</option>
+                                            <option>SANTA RITA DO SAPUCAI</option>
+                                            <option>SANTA ROSA DA SERRA</option>
+                                            <option>SANTA VITORIA</option>
+                                            <option>SANTANA DA VARGEM</option>
+                                            <option>SANTANA DE CATAGUASES</option>
+                                            <option>SANTANA DE PIRAPAMA</option>
+                                            <option>SANTANA DO DESERTO</option>
+                                            <option>SANTANA DO GARAMBEU</option>
+                                            <option>SANTANA DO JACARE</option>
+                                            <option>SANTANA DO MANHUACU</option>
+                                            <option>SANTANA DO PARAISO</option>
+                                            <option>SANTANA DO RIACHO</option>
+                                            <option>SANTANA DOS MONTES</option>
+                                            <option>SANTO ANTONIO DO AMPARO</option>
+                                            <option>SANTO ANTONIO DO AVENTUREIRO</option>
+                                            <option>SANTO ANTONIO DO GRAMA</option>
+                                            <option>SANTO ANTONIO DO ITAMBE</option>
+                                            <option>SANTO ANTONIO DO JACINTO</option>
+                                            <option>SANTO ANTONIO DO MONTE</option>
+                                            <option>SANTO ANTONIO DO RETIRO</option>
+                                            <option>SANTO ANTONIO DO RIO ABAIXO</option>
+                                            <option>SANTO HIPOLITO</option>
+                                            <option>SANTOS DUMONT</option>
+                                            <option>SAO BENTO ABADE</option>
+                                            <option>SAO BRAS DO SUACUI</option>
+                                            <option>SAO DOMINGOS DAS DORES</option>
+                                            <option>SAO DOMINGOS DO PRATA</option>
+                                            <option>SAO FELIX DE MINAS</option>
+                                            <option>SAO FRANCISCO</option>
+                                            <option>SAO FRANCISCO DE PAULA</option>
+                                            <option>SAO FRANCISCO DE SALES</option>
+                                            <option>SAO FRANCISCO DO GLORIA</option>
+                                            <option>SAO GERALDO</option>
+                                            <option>SAO GERALDO DA PIEDADE</option>
+                                            <option>SAO GERALDO DO BAIXIO</option>
+                                            <option>SAO GONCALO DO ABAETE</option>
+                                            <option>SAO GONCALO DO PARA</option>
+                                            <option>SAO GONCALO DO RIO ABAIXO</option>
+                                            <option>SAO GONCALO DO RIO PRETO</option>
+                                            <option>SAO GONCALO DO SAPUCAI</option>
+                                            <option>SAO GOTARDO</option>
+                                            <option>SAO JOAO BATISTA DO GLORIA</option>
+                                            <option>SAO JOAO DA LAGOA</option>
+                                            <option>SAO JOAO DA MATA</option>
+                                            <option>SAO JOAO DA PONTE</option>
+                                            <option>SAO JOAO DAS MISSOES</option>
+                                            <option>SAO JOAO DEL REI</option>
+                                            <option>SAO JOAO DO MANHUACU</option>
+                                            <option>SAO JOAO DO MANTENINHA</option>
+                                            <option>SAO JOAO DO ORIENTE</option>
+                                            <option>SAO JOAO DO PACUI</option>
+                                            <option>SAO JOAO DO PARAISO</option>
+                                            <option>SAO JOAO EVANGELISTA</option>
+                                            <option>SAO JOAO NEPOMUCENO</option>
+                                            <option>SAO JOAQUIM DE BICAS</option>
+                                            <option>SAO JOSE DA BARRA</option>
+                                            <option>SAO JOSE DA LAPA</option>
+                                            <option>SAO JOSE DA SAFIRA</option>
+                                            <option>SAO JOSE DA VARGINHA</option>
+                                            <option>SAO JOSE DO ALEGRE</option>
+                                            <option>SAO JOSE DO DIVINO</option>
+                                            <option>SAO JOSE DO GOIABAL</option>
+                                            <option>SAO JOSE DO JACURI</option>
+                                            <option>SAO JOSE DO MANTIMENTO</option>
+                                            <option>SAO LOURENCO</option>
+                                            <option>SAO MIGUEL DO ANTA</option>
+                                            <option>SAO PEDRO DA UNIAO</option>
+                                            <option>SAO PEDRO DO SUACUI</option>
+                                            <option>SAO PEDRO DOS FERROS</option>
+                                            <option>SAO ROMAO</option>
+                                            <option>SAO ROQUE DE MINAS</option>
+                                            <option>SAO SEBASTIAO DA BELA VISTA</option>
+                                            <option>SAO SEBASTIAO DA VARGEM ALEGRE</option>
+                                            <option>SAO SEBASTIAO DO ANTA</option>
+                                            <option>SAO SEBASTIAO DO MARANHAO</option>
+                                            <option>SAO SEBASTIAO DO OESTE</option>
+                                            <option>SAO SEBASTIAO DO PARAISO</option>
+                                            <option>SAO SEBASTIAO DO RIO PRETO</option>
+                                            <option>SAO SEBASTIAO DO RIO VERDE</option>
+                                            <option>SAO THOME DAS LETRAS</option>
+                                            <option>SAO TIAGO</option>
+                                            <option>SAO TOMAS DE AQUINO</option>
+                                            <option>SAO VICENTE DE MINAS</option>
+                                            <option>SAPUCAI-MIRIM</option>
+                                            <option>SARDOA</option>
+                                            <option>SARZEDO</option>
+                                            <option>SEM INFORMACAO</option>
+                                            <option>SEM-PEIXE</option>
+                                            <option>SENADOR AMARAL</option>
+                                            <option>SENADOR CORTES</option>
+                                            <option>SENADOR FIRMINO</option>
+                                            <option>SENADOR JOSE BENTO</option>
+                                            <option>SENADOR MODESTINO GONCALVES</option>
+                                            <option>SENHORA DE OLIVEIRA</option>
+                                            <option>SENHORA DO PORTO</option>
+                                            <option>SENHORA DOS REMEDIOS</option>
+                                            <option>SERICITA</option>
+                                            <option>SERITINGA</option>
+                                            <option>SERRA AZUL DE MINAS</option>
+                                            <option>SERRA DA SAUDADE</option>
+                                            <option>SERRA DO SALITRE</option>
+                                            <option>SERRA DOS AIMORES</option>
+                                            <option>SERRANIA</option>
+                                            <option>SERRANOPOLIS DE MINAS</option>
+                                            <option>SERRANOS</option>
+                                            <option>SERRO</option>
+                                            <option>SETE LAGOAS</option>
+                                            <option>SETUBINHA</option>
+                                            <option>SILVEIRANIA</option>
+                                            <option>SILVIANOPOLIS</option>
+                                            <option>SIMAO PEREIRA</option>
+                                            <option>SIMONESIA</option>
+                                            <option>SOBRALIA</option>
+                                            <option>SOLEDADE DE MINAS</option>
+                                            <option>TABULEIRO</option>
+                                            <option>TAIOBEIRAS</option>
+                                            <option>TAPARUBA</option>
+                                            <option>TAPIRA</option>
+                                            <option>TAPIRAI</option>
+                                            <option>TAQUARACU DE MINAS</option>
+                                            <option>TARUMIRIM</option>
+                                            <option>TEIXEIRAS</option>
+                                            <option>TEOFILO OTONI</option>
+                                            <option>TIMOTEO</option>
+                                            <option>TIRADENTES</option>
+                                            <option>TIROS</option>
+                                            <option>TOCANTINS</option>
+                                            <option>TOCOS DO MOJI</option>
+                                            <option>TOLEDO</option>
+                                            <option>TOMBOS</option>
+                                            <option>TRES CORACOES</option>
+                                            <option>TRES MARIAS</option>
+                                            <option>TRES PONTAS</option>
+                                            <option>TUMIRITINGA</option>
+                                            <option>TUPACIGUARA</option>
+                                            <option>TURMALINA</option>
+                                            <option>TURVOLANDIA</option>
+                                            <option>UBA</option>
+                                            <option>UBAI</option>
+                                            <option>UBAPORANGA</option>
+                                            <option>UBERABA</option>
+                                            <option>UBERLANDIA</option>
+                                            <option>UMBURATIBA</option>
+                                            <option>UNAI</option>
+                                            <option>UNIAO DE MINAS</option>
+                                            <option>URUANA DE MINAS</option>
+                                            <option>URUCANIA</option>
+                                            <option>URUCUIA</option>
+                                            <option>VARGEM ALEGRE</option>
+                                            <option>VARGEM BONITA</option>
+                                            <option>VARGEM GRANDE DO RIO PARDO</option>
+                                            <option>VARGINHA</option>
+                                            <option>VARJAO DE MINAS</option>
+                                            <option>VARZEA DA PALMA</option>
+                                            <option>VARZELANDIA</option>
+                                            <option>VAZANTE</option>
+                                            <option>VERDELANDIA</option>
+                                            <option>VEREDINHA</option>
+                                            <option>VERISSIMO</option>
+                                            <option>VERMELHO NOVO</option>
+                                            <option>VESPASIANO</option>
+                                            <option>VICOSA</option>
+                                            <option>VIEIRAS</option>
+                                            <option>VIRGEM DA LAPA</option>
+                                            <option>VIRGINIA</option>
+                                            <option>VIRGINOPOLIS</option>
+                                            <option>VIRGOLANDIA</option>
+                                            <option>VISCONDE DO RIO BRANCO</option>
+                                            <option>VOLTA GRANDE</option>
+                                            <option>WENCESLAU BRAZ</option>
+                     
+                </select>
+</form>
+</body>
+</html>

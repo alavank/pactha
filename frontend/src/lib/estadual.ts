@@ -349,11 +349,15 @@ export function repassesDaUf(uf?: string | null) {
 }
 
 /** UFs que publicam o COFINANCIAMENTO ESTADUAL DA SAÚDE (repasse do fundo
- *  estadual ao municipal). Em MG o equivalente é o Acordo FES — que é DÍVIDA,
- *  não repasse, e por isso tem tela própria. */
+ *  estadual ao municipal). ⚠️ Cada UF publica de um jeito, e a tela escolhe o
+ *  conteúdo pela UF: Goiás dá teto × pago por quadrimestre; Minas (24/09/2026)
+ *  dá cada ORDEM DE PAGAMENTO por Resolução SES (`ses_mg_resolucoes.py`). O
+ *  Acordo FES de MG continua em tela própria — é DÍVIDA, não repasse. */
 export const COFINANCIAMENTO_POR_UF: Record<string, { titulo: string; fonte: string }> = {
   GO: { titulo: "Cofinanciamento da Saúde",
         fonte: "SES-GO · Atenção Primária e Vigilância (dados abertos)" },
+  MG: { titulo: "Fundo a fundo estadual da saúde",
+        fonte: "SES-MG · Pagamento de Resoluções (painel público)" },
 };
 
 export function cofinanciamentoDaUf(uf?: string | null) {

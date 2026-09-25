@@ -539,6 +539,10 @@ MIGRATION_FILES = [
     # CGU/Defesa Civil (23/09/2026): tela e acao a quem tem `usuarios.conceder`,
     # pelo mesmo desenho. Nao toca as tabelas de `add_cgu_convenios.sql`.
     "add_tela_cgu_convenios.sql",
+    # Recursos recebidos por pasta (24/09/2026): tela e acao a quem tem
+    # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
+    # `add_cgu_transferencias.sql`.
+    "add_tela_cgu_transferencias.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.
@@ -672,6 +676,19 @@ MIGRATION_FILES = [
     # não vira convênio, então era a única coisa sem dizer para que é o dinheiro.
     # Só ADD COLUMN IF NOT EXISTS nas duas tabelas de add_emendas_estaduais_execucao.
     "add_emendas_estaduais_objeto.sql",
+    # SES-MG: pagamentos por Resolução SES aos Fundos Municipais (fundo a fundo
+    # estadual), a cobertura por (município, tipo, ano), o cadastro da Receita dos
+    # credores e o Acordo FES por empenho (24/09/2026). Tabelas novas, FK só para
+    # `municipios`.
+    "add_ses_mg_resolucoes.sql",
+    # Recursos recebidos por pasta: as transferencias da CGU mes a mes e o que ja
+    # entrou por (municipio, mes) (24/09/2026). Tabelas novas, FK so para
+    # `municipios`.
+    "add_cgu_transferencias.sql",
+    # SIOPS (saúde), SIOPE (educação) e os instrumentos de planejamento do SUS
+    # (Plano, PAS, RDQA, RAG) — o detalhe dos itens 3.2.3/3.2.4/5.1/5.2 do CAUC
+    # (24/09/2026). Tabelas novas, só com FK para `municipios`.
+    "add_siops_siope_rag.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

@@ -17,7 +17,7 @@ from routers import (
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
-    uso, mcp_tokens, consolidado, tce_pr, cgu_convenios,
+    uso, mcp_tokens, consolidado, tce_pr, cgu_convenios, cgu_transferencias, saude_educacao,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -197,6 +197,9 @@ app.include_router(tce_pr.router)
 # /api/cgu-convenios: o dinheiro federal fora do TransfereGov (Defesa Civil),
 # pela planilha da CGU — `ingestion/cgu_convenios.py`.
 app.include_router(cgu_convenios.router)
+# /api/cgu-transferencias: os recursos recebidos por pasta (FPM, FUNDEB, fundo a
+# fundo...), mês a mês — `ingestion/cgu_transferencias.py`.
+app.include_router(cgu_transferencias.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)
@@ -246,6 +249,10 @@ app.include_router(siconfi.router)
 # inscricao real da carteira em 07/09/2026 era de um fundo municipal que nem
 # cadastro estadual tem.
 app.include_router(negativos.router)
+# QUINTA leitura da mesma tela (chave `cauc.ver`, tela `cauc`): SIOPS, SIOPE e os
+# instrumentos de planejamento do SUS — o detalhe dos itens 3.2.3, 3.2.4, 5.1 e
+# 5.2 do CAUC (qual bimestre falta, % aplicado, RDQA/RAG).
+app.include_router(saude_educacao.router)
 app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 # /api/obrasgov/* (CIPI): as obras federais de TODAS as areas — o que o SISMOB
 # (saude) e o SIMEC (educacao) nao cobrem. Repete de proposito a obra que ja

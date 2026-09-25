@@ -1,0 +1,25 @@
+{
+ "@odata.context": "https://www.fnde.gov.br/olinda-ide/servico/DADOS_ABERTOS_SIOPE/versao/v1/odata$metadata#_Dados_Gerais_Siope(TIPO,NUM_ANO,NUM_PERI,COD_MUNI,NOM_MUNI,NUM_RECI,DAT_DECL,IDN_DECL_RETI)",
+ "value": [
+  {
+   "TIPO": "Municipal",
+   "NUM_ANO": 2026,
+   "NUM_PERI": 3,
+   "COD_MUNI": 431306,
+   "NOM_MUNI": "Nova Hartz",
+   "NUM_RECI": 446142,
+   "DAT_DECL": "2026-07-30",
+   "IDN_DECL_RETI": "N"
+  },
+  {
+   "TIPO": "Municipal",
+   "NUM_ANO": 2026,
+   "NUM_PERI": 3,
+   "COD_MUNI": 431310,
+   "NOM_MUNI": "Nova Palma",
+   "NUM_RECI": 444376,
+   "DAT_DECL": "2026-07-16",
+   "IDN_DECL_RETI": "N"
+  }
+ ]
+}

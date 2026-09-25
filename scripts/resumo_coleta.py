@@ -56,6 +56,10 @@ ONDE_OLHAR = {
     "sigcon_emendas": "portal SIGCON-MG > Emendas",
     "fns_saldo": "portalfns.saude.gov.br/downloads (REPASSE-FAF-COM-POPULACAO-<ANO>, anual)",
     "emendas_mg": "dados.mg.gov.br portal_emendas_estaduais (CSV de indicacoes da SEGOV)",
+    "ses_mg_resolucoes": "pagamentoderesolucoes.saude.mg.gov.br (formulario por municipio e ano)",
+    "siops_siope": ("siops.datasus.gov.br/consmuntransm.php (homologados), "
+                    "siops-consulta-publica-api.saude.gov.br, fnde.gov.br/olinda-ide "
+                    "(SIOPE) e digisusgmp.saude.gov.br (RDQA/RAG)"),
     "cagec": "cagec.mg.gov.br/convenente-web (consulta publica por CNPJ)",
     "cauc": "CAUC/Tesouro (consulta por CNPJ)",
     "acordofes": "Acordo FES-MG",
@@ -84,6 +88,7 @@ ONDE_OLHAR = {
     "tce_pr": "pit.tce.pr.gov.br (zip anual do SIM-AM, lido por HTTP Range)",
     "dou_federal": "in.gov.br (busca publica do DOU + pagina de cada ato)",
     "cgu_convenios": "Portal da Transparencia/CGU (planilha de convenios, download-de-dados)",
+    "cgu_transferencias": "Portal da Transparencia/CGU (transferencias/AAAAMM, mes corrente + anterior)",
     "convenios_pr": "transparencia.download.pr.gov.br (CONVENIOS-{ANO}.zip, o SIT aberto)",
     "convenios_to": "convenio.to.gov.br/PesquisaExterna (TRANSFERE.TO, VisualizarConvenio por id)",
     "regularidade_pr": "certidões públicas da SEFA-PR (www4.pr.gov.br) e do TCE-PR (Liberatória)",

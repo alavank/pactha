@@ -87,7 +87,7 @@ export const TELAS: TelaDef[] = [
   // REPASSES_POR_UF: Goiás publica a EXECUÇÃO (pagamento) em vez do instrumento.
   { key: "repasses", label: "Repasses Estaduais", ufs: ["GO"] },
   // COFINANCIAMENTO_POR_UF: o repasse do fundo estadual ao municipal de saúde.
-  { key: "cofinanciamento", label: "Cofinanciamento da Saúde", ufs: ["GO"] },
+  { key: "cofinanciamento", label: "Cofinanciamento da Saúde", ufs: ["GO", "MG"] },
   // MONITORAMENTO_POR_UF: onde a norma estadual cria o registro mensal (RS).
   { key: "monitoramento", label: "Monitoramento de Convênios", ufs: ["RS"] },
   // CONSULTA_POPULAR_POR_UF: o orçamento participativo dos COREDEs.
@@ -122,6 +122,8 @@ export const TELAS: TelaDef[] = [
   { key: "faf_planos", label: "Planos de Ação (Fundo a Fundo)" },
   // CGU (23/09/2026): os repasses federais que o TransfereGov não tem.
   { key: "cgu_convenios", label: "Defesa Civil e outros repasses (CGU)" },
+  // Recursos recebidos por pasta (24/09/2026): as transferências da CGU mês a mês.
+  { key: "cgu_transferencias", label: "Recursos recebidos por pasta" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },

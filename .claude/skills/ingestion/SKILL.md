@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 31 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 34 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 31 sources has its own collector file with source-specific gotchas documented
+Each of the 34 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -288,6 +288,76 @@ and the pre-2009 SIAFI history. The traps (full list in the file header):
   enter; non-prefeitura rows stay, flagged `municipal = false`, out of totals.
 - **The OB list has no natural key** (850 repeated (convênio, OB) pairs): replaced whole.
 - Whole spreadsheet in memory would pass 1 GB: two passes over the zip instead.
+
+## SES-MG — payments by Resolução SES (`ingestion/ses_mg_resolucoes.py`, 24/09/2026)
+
+MG's ordinary health fundo a fundo, from the public panel
+`pagamentoderesolucoes.saude.mg.gov.br` (a Laravel form: GET for cookie + `_token`, POST
+with the payment YEAR and the município NAME; 419 = expired token, re-GET once). Full
+list in the file header; the ones that bite:
+- **A name the form does not know returns 200 with an EMPTY table** — identical to "paid
+  nothing". The name is checked against the form's own `<option>` list BEFORE the POST
+  (IBGE name without accents for 846 of 853; five spellings by IBGE in
+  `APELIDOS_FORMULARIO`).
+- **Search by name, truth by CNPJ.** The filter returns every creditor SEATED in the city
+  (Divinópolis: two consortia next to the Fundo). `ConfereCredor`: prefeitura CNPJ root →
+  `fns_saldo_conta` by IBGE → Receita (BrasilAPI, fallback minhareceita; cached in
+  `ses_mg_credores`) with the same IBGE and a municipal legal nature (1333, 1244...;
+  consortium 1210 is not). Unknown creditor (APIs down) = the slice is not written.
+- **Emenda vs ordinary by UPG CODE** (666/675 emenda, 650 federal emenda, 948 Acordo FES
+  recomposição): the dropdown and the result table give the same code different names.
+- **The page mixes encodings** (a Windows-1252 byte in the `<meta>`, UTF-8 data): decode
+  with `errors="replace"`. The restos page's title says "Pagamentos Orçamentários" too —
+  validate by the header columns.
+- Replaced per (município, tipo, ano) only with the whole answer read; a slice that had
+  rows and came back empty is not deleted.
+## Recursos recebidos por pasta — the CGU transfers file (`ingestion/cgu_transferencias.py`, 24/09/2026)
+
+Every federal transfer to the município and its funds, month by month, by ação and
+favorecido (FPM, FUNDEB, fundo a fundo, FNDE, FNAS, PNAB, Defesa Civil, royalties), from
+`portaldatransparencia.gov.br/download-de-dados/transferencias/AAAAMM`. Full list of traps
+in the file header; the ones that bite:
+- **No IBGE, a SIAFI município code** (4 digits, zero-padded; key = (code, UF)). It comes
+  from `cauc_situacao.cod_siafi`, else the Tesouro's CAUC municipalities CSV (IBGE ↔ SIAFI),
+  else the rows where the PREFEITURA's CNPJ is the favorecido — never the name (Santa
+  Maria do Herval is 7337, Santa Maria 8841). A resolved code that no prefeitura row
+  carries is `partial` and nothing is written for that município-month.
+- **The current month is partial and the constitucionais (FPM, FUNDEB, ITR, royalties)
+  only appear after it closes**; the file also changes during the day. Each run rereads the
+  current and the previous month; `cgu_transferencias_carga.mes_fechado` records which.
+- ⛔ **The download host (`dadosabertos-download.cgu.gov.br`) has an AWS WAF.** Measured
+  24/09/2026: ~30 files in 25 min (24 in one minute) → **HTTP 405 with
+  `x-amzn-waf-action: captcha`** on everything. Same host as `cgu_convenios` and
+  `portal_transparencia` — a block of the VPS IP kills all three in the seven tenants. So:
+  30 s between files, at most 6 files per run (current + previous + 4 of the 24-month
+  initial load), and a 405/429 stops the run at once. Never "speed up" the initial load.
+- **No natural key** (same ação × favorecido several times a month): the (município, mês)
+  is replaced whole in one transaction; a closed month with no rows deletes nothing.
+- **Pasta and favorecido group are computed on READ** (`services/transferencias_pasta.py`),
+  never stored. Escolas (caixa escolar/APM — may be state schools) and entidades are out of
+  the município total but always shown.
+## SIOPS, SIOPE and DigiSUS — the CAUC's health/education items (`ingestion/siops_siope.py`, 24/09/2026)
+
+The detail behind CAUC 3.2.3/3.2.4/5.1/5.2: which bimestre is missing, when it was
+delivered, the % applied, and Plano/PAS/RDQA/RAG. Full trap list in the file header:
+- ⚠️ **The SIOPS API answers 404 `msg03` ("Dados não homologado(s)") for ANY miss** — a
+  7-digit IBGE, an unknown IBGE, year 2030, period 99. `msg03` is never proof of "not
+  delivered". The proof is the legacy list `siops.datasus.gov.br/consmuntransm.php` (POST,
+  one per UF × period, only HOMOLOGATED municípios, with the date; its footer "que
+  Transmitiram N" is checked against the rows). The API is asked only for whom the list
+  says homologated (for the %); `msg03` with no list = no row, run `partial`.
+- **SIOPS period codes are 12, 14, 1, 18, 20, 2** (1st–6th bimestre); SIOPE uses 1..6.
+- **SIOPE (Olinda OData) needs `%20` in `$filter`** — httpx `params=` sends `+` and gets 400.
+  An impossible `COD_MUNI` returns 200 `value: []`, same as "not declared": query the whole
+  UF and only mark a município missing when the UF came back non-empty.
+  `Dados_Gerais_Siope_Dados_Responsaveis` carries personal data — not read.
+- **DigiSUS DGMP** is HTML named `.xls`; columns come from the two `thead` rows (never by
+  position), the `tfoot` total is checked, fase 2 = 2022–2025, fase 9 = 2026–2029.
+- **The bimestral % is cumulative and PARTIAL** — the minimum (15% ASPS, 25% MDE) is only
+  judged on the 6th bimestre. The rule (`services/saude_educacao.py`) never paints a partial
+  bimestre `critico`.
+- It feeds `bi_abas.prazos_dos_itens(entregues=)`: a 3.2.3/3.2.4 validity whose bimestre is
+  already delivered is not a deadline anymore (Nova Palma's false "vence em 6 dias").
 
 ## Authenticated sources
 

@@ -117,8 +117,12 @@ COLUNAS = {
 OBJETO = ("plano_titulo", "proposta_titulo", "descricao_indicacao")
 FASE = "status_instrumento"         # ANÁLISE TÉCNICA, ADEQUAÇÃO, VIGENTE...
 # Vão só para o raw_data: o caminho da indicação até o dinheiro.
+# `conta` (sem o dígito, que vem em `conta_dv`): na Resolução SES cada indicação
+# ganha conta própria no Fundo Municipal, e (instrumento = nº da Resolução, conta)
+# é a chave que liga o pagamento da SES-MG (`ses_mg_resolucoes.py`) à indicação.
 EXTRAS = ("proposta_numero", "plano_numero", "status_instrumento", "numero_siafi",
-          "data_publicacao", "data_validade", "descricao_indicacao", "acao_nome")
+          "data_publicacao", "data_validade", "descricao_indicacao", "acao_nome", "conta")
+_EXTRAS_NUMERICOS = ("numero_siafi", "conta")      # exportados como float ("26101,0")
 
 
 def _norm(s) -> str:
@@ -240,7 +244,7 @@ def ler_csv(conteudo: bytes) -> list[dict]:
             "instrumento": _texto(g("instrumento")),
             "objeto": next((_texto(r.get(c)) for c in OBJETO if _texto(r.get(c))), None),
             "fase_plano": (_texto(r.get(FASE)) or "")[:80] or None,
-            "extras": {k: _texto(_sem_decimal(r.get(k)) if k == "numero_siafi" else r.get(k))
+            "extras": {k: _texto(_sem_decimal(r.get(k)) if k in _EXTRAS_NUMERICOS else r.get(k))
                        for k in EXTRAS if _texto(r.get(k))},
         })
     return linhas

@@ -150,6 +150,11 @@ FRESCOR_HORAS_NACIONAL = {
     # + folga. NACIONAL: varre todo municipio ativo com ibge_code, sem recorte
     # de estado — o lugar e aqui, nunca no mapa por UF.
     "siconfi": 30,
+    # SIOPS/SIOPE/DigiSUS (24/09/2026): task `siops-siope` 1x/noite em todo
+    # worker, NACIONAL (por UF da carteira). 30h = um dia + folga. Lista legada
+    # fora do ar, UF vazia com prazo vencido ou arquivo do DGMP recusado gravam
+    # 'partial', que aqui nao conta como sucesso.
+    "siops_siope": 30,
     # DOU federal (22/09/2026): task diaria em todo worker, NACIONAL (todo
     # municipio ativo, sem recorte de UF). 30h = um dia + folga. Busca que falhou
     # ou estouro de orcamento gravam 'partial', que aqui nao conta como sucesso.
@@ -158,6 +163,10 @@ FRESCOR_HORAS_NACIONAL = {
     # arquivo da CGU muda poucas vezes por mês, mas a rodada que o acha igual
     # grava `success` do mesmo jeito — então 30h continua medindo a TASK.
     "cgu_convenios": 30,
+    # CGU / recursos recebidos por pasta (24/09/2026): task diária em todo worker
+    # (relê o mês corrente e o anterior toda noite). Mês não publicado ou carga
+    # inicial que não coube gravam 'partial', que aqui não conta como sucesso.
+    "cgu_transferencias": 30,
     # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
     # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
     # limit — e o CIPI muda devagar. 54h = dois dias + folga.
@@ -243,6 +252,10 @@ FRESCOR_HORAS_POR_UF = {
         # que se vigia aqui é a RODADA; a idade dos DADOS (a planilha do site parou
         # em maio de 2026) vira `partial` com a data na nota, pelo próprio coletor.
         "emendas_mg": 30,
+        # Pagamentos da SES-MG por Resolução (fundo a fundo estadual), task
+        # `ses-mg-resolucoes` 1x/noite. A idade do PAINEL (atualiza às 07:00 BRT)
+        # vira `partial` pelo próprio coletor.
+        "ses_mg_resolucoes": 30,
     },
     "ES": {"gconv_es": 30},
     "GO": {"transfvol_go": 30, "cofin_ses_go": 30, "tcm_go": 30},
