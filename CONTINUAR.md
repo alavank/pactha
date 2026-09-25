@@ -54,7 +54,9 @@ conta o DINHEIRO, inclusive o que não tem instrumento (FPM, PAB, PNAE, salário
   inicial ainda sem pausa) ele passou a responder **405 com `x-amzn-waf-action:
   captcha`** a tudo. É o mesmo host de `cgu_convenios` e `portal_transparencia` — um
   bloqueio do IP da VPS derrubaria as três fontes nos sete. Daí a pausa de 30 s entre
-  arquivos, o teto de 6 arquivos por rodada e a parada imediata no 405/429.
+  arquivos, o teto de 6 arquivos por rodada e a parada imediata no 405/429. O CAPTCHA
+  passou sozinho em ~25 min sem nenhum pedido (a rodada seguinte, já com o teto, baixou
+  os 6 arquivos com 200).
 - **Classificação na LEITURA** (`services/transferencias_pasta.py`), não gravada: PASTA
   (royalties pela ação → constitucionais pelo tipo → defesa civil pela subfunção 182 →
   saúde/educação/assistência/cultura pela função ou pelo órgão → outras) e FAVORECIDO
@@ -63,8 +65,8 @@ conta o DINHEIRO, inclusive o que não tem instrumento (FPM, PAB, PNAE, salário
 - **Tela** FEDERAIS › «Recursos recebidos por pasta» (`/dashboard/cgu-transferencias`,
   logo depois dos Planos de Ação); permissão `cgu_transferencias.ver` (catálogo 103 →
   104), concedida por `add_tela_cgu_transferencias.sql` a quem tem `usuarios.conceder`.
-- **Conferido num Postgres 16 zerado** com os arquivos reais (149/149 migrations, duas
-  vezes): todos os números do relatório bateram ao centavo — Monte Sião 08/2026 FPM
+- **Conferido num Postgres 16 zerado** com os arquivos reais (150/150 migrations depois
+  do rebase sobre a main de 25/09, duas vezes, sem `falhou`): todos os números do relatório bateram ao centavo — Monte Sião 08/2026 FPM
   3.088.067,34; FUNDEB 641.762,93; PAB 235.640,89; salário-educação 168.526,80 (na
   SECRETARIA); petróleo 89.121,15; PNAE 33.765,50; PNATE 10.344,19; FNAS 21.872,08. Nova
   Palma: FPM 1.211.820,09; PAR 159.027,33; PAB 88.317,82; FUNDEB 65.301,83; complementação
