@@ -20,6 +20,7 @@ playwright-stealth>=2.0.0  # evasao anti-bot gov.br (import: playwright_stealth.
 cryptography>=43.0.0
 slowapi>=0.1.9
 beautifulsoup4>=4.12.0
+lxml>=5.0  # parser do simec_par (o html.parser perdia o PNAE); vinha só de carona do python-docx
 reportlab>=4.2.0
 # leitura de PDF: o CRC do CAGEC so existe em PDF (ver ingestion/cagec_scraper.py)
 pypdf>=5.1.0

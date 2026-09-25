@@ -81,7 +81,11 @@ def _parse_data(s: str) -> date | None:
 
 def parse_relatorio(html: str) -> dict:
     """Parseia o HTML do relatorio. Retorna {'dimensoes': [...], 'liberacoes': [...]}."""
-    soup = BeautifulSoup(html, "html.parser")
+    # ⚠️ lxml, NUNCA html.parser (25/09/2026): o relatório tem HTML malformado e o
+    # html.parser desmonta a tabela da ALIMENTAÇÃO ESCOLAR (PNAE) — sobrava 1 linha
+    # sem OB, que o upsert descarta. Monte Sião: 6 liberações contra 45, e o PNAE
+    # (40 parcelas) sumia de todos os tenants sem erro nenhum.
+    soup = BeautifulSoup(html, "lxml")
     tables = soup.find_all("table")
     dimensoes = []
     liberacoes = []
