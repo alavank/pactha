@@ -5,8 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **31 official data sources** (federal +
-MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is the **FNS account balance**
+emendas) for Brazilian municipalities, tracking **32 official data sources** (federal +
+MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is **SIOPS, SIOPE and the SUS planning
+instruments** (`siops_siope.py`): the detail the CAUC hides behind "!" or a date in items
+3.2.3/3.2.4/5.1/5.2 — which bimestre is missing, when it was homologated/declared, the % in
+ASPS (min. 15%) and MDE (min. 25%, PARTIAL until the 6th bimestre), plus Plano/PAS/RDQA/RAG
+from DigiSUS -> `saude_educacao_bimestre` + `sus_instrumentos_planejamento`, tab "Saúde e
+educação" of Regularidade. ⚠️ The SIOPS API answers 404 `msg03` ("não homologado") for ANY
+miss, even a wrong IBGE: "not delivered" is proven by the legacy homologation list, never
+by `msg03`. It also kills a false alarm: `bi_abas.prazos_dos_itens(entregues=)` stops
+warning "vence em N dias" on 3.2.3/3.2.4 when the bimestre that validity covers was already
+delivered. Before it, the **FNS account balance**
 (`fns_saldo.py`): the Portal FNS's yearly `REPASSE-FAF-COM-POPULACAO-<ANO>` file is the
 ONLY public source of how much sits in each Fundo Municipal de Saúde bank account
 (ConsultaFNS's API has no balance — its statement endpoint is 404) -> `fns_saldo_conta`,
@@ -186,7 +195,7 @@ that area. Read the relevant one before making changes there:
 
 | Skill | Area |
 |---|---|
-| `ingestion` | scrapers/collectors, the 28 data sources, scheduling |
+| `ingestion` | scrapers/collectors, the 32 data sources, scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
 | — | **Permissão: Módulo › Tela › Ação** — a regra inteira em `docs/PERMISSOES_POR_TELA.md` |

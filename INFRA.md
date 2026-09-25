@@ -543,6 +543,14 @@ O desenho atual (13/09/2026, "coleta noturna"):
   coletas PAUSADAS pelo botão de parada, que é o que a regra protege: "145/145 em dia"
   nas sete APIs, sem `falhou`. **Task criada nos sete em 24/09/2026 ~03:40 UTC** por
   `scripts/criar_task_emendas_mg.sh`.
+- **`siops-siope` (24/09/2026), escada de 15 min de 04:00 (freitas) a 05:30 UTC
+  (juranda):** SIOPS (lista legada de homologados + API), SIOPE (OData do FNDE) e DigiSUS
+  DGMP, por UF da carteira — quatro hosts que nenhuma outra task usa. Medido localmente com
+  MG+RS+PR: 1ª rodada 244 s, 2ª 78 s (ano anterior completo não é perguntado de novo).
+  Orçamento interno 1200 s (`SIOPS_SIOPE_BUDGET_S`), kill 1500 s, timeout da task 1620 s.
+  Migration `add_siops_siope_rag.sql` (DDL: duas tabelas novas) — deploy depois das 10:00
+  UTC. **Task ainda NÃO criada**: rodar `scripts/criar_task_siops_siope.sh` depois do deploy
+  e conferir "Migration OK" nas sete APIs.
 - **`convenios-to` (23/09/2026), escada de UMA HORA de 01:00 (freitas) a 07:00 UTC
   (juranda):** varre todos os ids do TRANSFERE.TO (~3.200 páginas, ~0,45 s cada da VPS,
   ~25 min) no worker que tem município do TO; nos outros sai em segundos (`success`, 0).
