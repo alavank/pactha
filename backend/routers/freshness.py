@@ -175,6 +175,13 @@ _SOURCES = [
      "SELECT (SELECT max(carregado_em) FROM cgu_convenios_carga), "
      "(SELECT count(*) FROM cgu_convenios)",
      "cgu_convenios"),
+    # Recursos recebidos por pasta (24/09/2026). NACIONAL (código SIAFI do
+    # município + CNPJ). A data é a da CARGA do mês mais recente; o mês corrente
+    # é parcial por natureza (a tela diz isso), não é coleta parada.
+    ("CGU — Recursos recebidos por pasta (transferências)",
+     "SELECT (SELECT max(carregado_em) FROM cgu_transferencias_carga), "
+     "(SELECT count(*) FROM cgu_transferencias)",
+     "cgu_transferencias"),
     ("DOU — Diário Oficial da União",
      "SELECT (SELECT max(atualizado_em) FROM dou_cobertura), "
      "(SELECT count(*) FROM dou_atos_municipio WHERE evidencia <> 'cidade')",

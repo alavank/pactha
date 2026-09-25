@@ -206,6 +206,10 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- tem. Só `ver`; a concessão aos que já estão no ar é de
     -- `add_tela_cgu_convenios.sql`.
     ('cgu_convenios.ver', 'convenios', FALSE),
+    -- Recursos recebidos por pasta (24/09/2026): as transferências da CGU mês a
+    -- mês. Só `ver`; a concessão aos que já estão no ar é de
+    -- `add_tela_cgu_transferencias.sql`.
+    ('cgu_transferencias.ver', 'convenios', FALSE),
     ('cauc.ver', 'convenios', FALSE),
     ('cauc.exportar', 'convenios', FALSE),
     ('cauc.atualizar', 'convenios', TRUE),
@@ -432,6 +436,7 @@ WITH marca AS (
         ('tce_rs', 'tce_rs.ver', FALSE),
         ('tce_pr', 'tce_pr.ver', FALSE),
         ('cgu_convenios', 'cgu_convenios.ver', FALSE),
+        ('cgu_transferencias', 'cgu_transferencias.ver', FALSE),
         -- Parametros: tela NULL e admin, como as demais abas de administracao.
         (NULL, 'parametros.ver', TRUE),
         (NULL, 'parametros.editar', TRUE),

@@ -435,5 +435,8 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     #
     # 23/09/2026: 102 -> 103. `cgu_convenios.ver` — os repasses federais que o
     # TransfereGov nao tem (Defesa Civil), pela planilha da CGU. So LE.
-    assert len(permissoes.CATALOGO) == 103
+    #
+    # 24/09/2026: 103 -> 104. `cgu_transferencias.ver` — os recursos recebidos
+    # por pasta (FPM, FUNDEB, fundo a fundo...), pelas transferências da CGU. So LE.
+    assert len(permissoes.CATALOGO) == 104
     assert not any("propri" in c for c in permissoes.CATALOGO)

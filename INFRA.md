@@ -528,6 +528,18 @@ O desenho atual (13/09/2026, "coleta noturna"):
   1020 s. **Criada nos sete em 23/09/2026 ~01:25 UTC** por
   `scripts/criar_task_cgu_convenios.sh` (idempotente), depois do deploy do #539 — a
   migration conferida "143/143 em dia" no log das sete APIs.
+- **`cgu-transferencias` (24/09/2026), escada de 10 min de 01:00 (freitas) a 02:00 UTC
+  (juranda):** recursos recebidos por pasta — os arquivos mensais de transferências da
+  CGU (ZIP de 3-5 MB cada) no MESMO host (`dadosabertos-download.cgu.gov.br`) da
+  `cgu-convenios` e da `portal-transparencia`, e por isso longe das duas. ⛔ Esse host
+  tem WAF que responde 405 + CAPTCHA a rajada (medido em 24/09 num IP residencial: ~30
+  arquivos em 25 min); um bloqueio do IP da VPS derruba as três fontes nos sete. Cada
+  rodada baixa no máximo 6 arquivos (corrente, anterior e 4 da carga inicial de 24
+  meses) com 30 s entre eles, ~3,5 min por tenant; depois da carga inicial (~6 noites),
+  2 arquivos. Orçamento 600 s, kill 900 s, timeout da task 1020 s. Migration
+  `add_cgu_transferencias.sql` (DDL, tabela nova). Criação:
+  `scripts/criar_task_cgu_transferencias.sh`, **depois** do deploy do PR que trouxe o
+  coletor — até isso rodar, a task NÃO existe em nenhum worker.
 - **`fns-saldo` (24/09/2026), escada de 5 min de 06:00 (freitas) a 06:30 UTC
   (juranda):** um GET da página de downloads do Portal FNS; o arquivo anual (~16 MB) só é
   baixado quando sai o ano novo ou entra município novo. Kill 900 s, timeout da task

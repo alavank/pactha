@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 31 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 32 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 31 sources has its own collector file with source-specific gotchas documented
+Each of the 32 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -288,6 +288,32 @@ and the pre-2009 SIAFI history. The traps (full list in the file header):
   enter; non-prefeitura rows stay, flagged `municipal = false`, out of totals.
 - **The OB list has no natural key** (850 repeated (convênio, OB) pairs): replaced whole.
 - Whole spreadsheet in memory would pass 1 GB: two passes over the zip instead.
+
+## Recursos recebidos por pasta — the CGU transfers file (`ingestion/cgu_transferencias.py`, 24/09/2026)
+
+Every federal transfer to the município and its funds, month by month, by ação and
+favorecido (FPM, FUNDEB, fundo a fundo, FNDE, FNAS, PNAB, Defesa Civil, royalties), from
+`portaldatransparencia.gov.br/download-de-dados/transferencias/AAAAMM`. Full list of traps
+in the file header; the ones that bite:
+- **No IBGE, a SIAFI município code** (4 digits, zero-padded; key = (code, UF)). It comes
+  from `cauc_situacao.cod_siafi`, else the Tesouro's CAUC municipalities CSV (IBGE ↔ SIAFI),
+  else the rows where the PREFEITURA's CNPJ is the favorecido — never the name (Santa
+  Maria do Herval is 7337, Santa Maria 8841). A resolved code that no prefeitura row
+  carries is `partial` and nothing is written for that município-month.
+- **The current month is partial and the constitucionais (FPM, FUNDEB, ITR, royalties)
+  only appear after it closes**; the file also changes during the day. Each run rereads the
+  current and the previous month; `cgu_transferencias_carga.mes_fechado` records which.
+- ⛔ **The download host (`dadosabertos-download.cgu.gov.br`) has an AWS WAF.** Measured
+  24/09/2026: ~30 files in 25 min (24 in one minute) → **HTTP 405 with
+  `x-amzn-waf-action: captcha`** on everything. Same host as `cgu_convenios` and
+  `portal_transparencia` — a block of the VPS IP kills all three in the seven tenants. So:
+  30 s between files, at most 6 files per run (current + previous + 4 of the 24-month
+  initial load), and a 405/429 stops the run at once. Never "speed up" the initial load.
+- **No natural key** (same ação × favorecido several times a month): the (município, mês)
+  is replaced whole in one transaction; a closed month with no rows deletes nothing.
+- **Pasta and favorecido group are computed on READ** (`services/transferencias_pasta.py`),
+  never stored. Escolas (caixa escolar/APM — may be state schools) and entidades are out of
+  the município total but always shown.
 
 ## Authenticated sources
 

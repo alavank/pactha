@@ -25,7 +25,7 @@ import {
   Activity, Archive, ArrowLeftRight, BadgeDollarSign, BarChart3, Bookmark,
   Building2, CalendarClock, Coins, Edit2, FileSignature, FileText, HandCoins,
   Handshake, HardHat, HeartPulse, KeyRound, Landmark, LayoutGrid, Layers,
-  LifeBuoy, Newspaper, Radar, Scale, ScrollText, Settings, ShieldAlert, ShieldCheck,
+  LifeBuoy, Newspaper, PiggyBank, Radar, Scale, ScrollText, Settings, ShieldAlert, ShieldCheck,
   SlidersHorizontal, Sparkles, Stethoscope, Target, UserCircle2, Users, Vote,
   Wallet, XCircle,
 } from "lucide-react";
@@ -52,6 +52,7 @@ const ICONES: Record<string, Icone> = {
   "/dashboard/transferegov-voluntarias": Handshake,
   "/dashboard/parcerias": HandCoins,              // o mesmo dos KPIs da tela
   "/dashboard/faf-planos": Wallet,                // idem
+  "/dashboard/cgu-transferencias": PiggyBank,     // Recursos recebidos por pasta
   "/dashboard/cgu-convenios": ShieldAlert,        // Defesa Civil (CGU)
   "/dashboard/transferegov-rejeitadas": XCircle,
   "/dashboard/transferegov-encerradas": Archive,

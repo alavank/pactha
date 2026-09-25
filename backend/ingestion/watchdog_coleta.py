@@ -158,6 +158,10 @@ FRESCOR_HORAS_NACIONAL = {
     # arquivo da CGU muda poucas vezes por mês, mas a rodada que o acha igual
     # grava `success` do mesmo jeito — então 30h continua medindo a TASK.
     "cgu_convenios": 30,
+    # CGU / recursos recebidos por pasta (24/09/2026): task diária em todo worker
+    # (relê o mês corrente e o anterior toda noite). Mês não publicado ou carga
+    # inicial que não coube gravam 'partial', que aqui não conta como sucesso.
+    "cgu_transferencias": 30,
     # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
     # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
     # limit — e o CIPI muda devagar. 54h = dois dias + folga.
