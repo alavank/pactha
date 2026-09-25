@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv=�Content-Type� content=�text/html; charset=utf-8">
+        
+        <meta name="viewport" content="width=device-width, initial scale=1">
+        <meta http-equiv="X-UA-Compatible" content="ie=edge">
+        
+        <title>Pagamento de Resoluções: Pagamentos Orçamentários</title>
+
+    	
+        <link rel="stylesheet" href="http://pagamentoderesolucoes.saude.mg.gov.br/assets/css/app.css">
+        
+        
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+        
+        
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.0.1/css/bootstrap.min.css" rel="stylesheet">
+        <link href="https://cdn.datatables.net/1.10.25/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+        <link href="https://cdn.datatables.net/1.10.25/css/jquery.dataTables.min.css" rel="stylesheet">
+        <link href="https://cdn.datatables.net/buttons/1.7.1/css/buttons.dataTables.min.css" rel="stylesheet">
+
+        
+        <link rel="stylesheet" href="http://pagamentoderesolucoes.saude.mg.gov.br/assets/css/acessibilidade.css">
+
+        
+        <link href="https://fonts.googleapis.com/css2?family=Roboto" rel="stylesheet">
+
+        
+        <script type="text/javascript" src="https://code.jquery.com/jquery-1.12.3.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jquery.mask/1.14.0/jquery.mask.js"></script>
+        <script type="text/javascript" src="http://pagamentoderesolucoes.saude.mg.gov.br/assets/js/javascript.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/1.10.25/js/jquery.dataTables.min.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/1.10.25/js/dataTables.bootstrap5.min.js"></script>
+
+        <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.7.1/js/dataTables.buttons.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.3/jszip.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/pdfmake.min.js"></script>
+        <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.53/vfs_fonts.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.7.1/js/buttons.html5.min.js"></script>
+        <script type="text/javascript" src="https://cdn.datatables.net/buttons/1.7.1/js/buttons.print.min.js"></script>
+
+
+
+	
+	<script type="text/javascript" src="https://cdn.datatables.net/buttons/2.0.0/js/buttons.colVis.min.js"></script>	
+
+
+        <script src="https://kit.fontawesome.com/cabf0d962e.js" crossorigin="anonymous"></script>
+
+           
+    </head>
+<body>
+<table id="table" class="table table-striped" style="width: 100%;">
+    <thead class="table-primary">
+        <tr>
+            <th scope="col">Município</th>
+            <th scope="col">Cód. Projeto/<br>Atividade</th>
+            <th scope="col">Projeto/<br>Atividade</th>
+            <th scope="col">Cód. Fonte</th>
+            <th scope="col">Cód. UPG</th>
+            <th scope="col">UPG</th>	    
+            <th scope="col">Nº de Empenho</th>
+            <th scope="col">Nº de Documento de Pagamento</th>
+            <th scope="col">Data de Pagamento</th>
+            <th scope="col">Valor Pago Financeiro</th>
+            <th scope="col">Cód. Banco Creditado</th>
+            <th scope="col">Cód. Agência Creditada</th>
+            <th scope="col">Conta Corrente Creditada</th>
+            <th scope="col">Situação da Ordem de Pagamento</th>
+            <th scope="col">CNPJ/CPF do Credor</th>
+            <th scope="col">Razão Social</th>
+            <th scope="col">N° da Resolução</th>
+            <th scope="col">Ações</th>
+        </tr>
+    </thead>
+    <tbody>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4125</td>
+                <td>FORTALECIMENTO DA ATENCAO PRIMARIA A SAUDE</td>
+                <td>10</td>
+                <td>560</td>
+                <td>REPASSES DE INCENTIVOS FINANCEIROS PARA FINANCIAMENTO ESTADUAL DA APS. </td> 
+                <td>250</td>
+                <td>2261</td>
+                                                                <td>25/03/2026</td>
+                <td>R$ 104.743,50</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>170518</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>10900/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36515946" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4126</td>
+                <td>PROMOCAO A SAUDE E POLITICAS DE EQUIDADE</td>
+                <td>10</td>
+                <td>558</td>
+                <td>REPASSES DE INCENTIVOS FINANCEIROS PARA AS AÇOES DE PROMOÇÃO DA SAUDE </td> 
+                <td>2344</td>
+                <td>1502</td>
+                                                                <td>25/03/2026</td>
+                <td>R$ 19.229,22</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>191221</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>10898/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36516827" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4149</td>
+                <td>POLITICAS DE ASSISTENCIA FARMACEUTICA</td>
+                <td>10</td>
+                <td>594</td>
+                <td>REPASSES A MUNICIPIOS - REDE FARMÁCIA DE MINAS. </td> 
+                <td>208</td>
+                <td>1679</td>
+                                                                <td>01/04/2026</td>
+                <td>R$ 3.841,79</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253197</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>10953/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36518915" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4149</td>
+                <td>POLITICAS DE ASSISTENCIA FARMACEUTICA</td>
+                <td>10</td>
+                <td>594</td>
+                <td>REPASSES A MUNICIPIOS - REDE FARMÁCIA DE MINAS. </td> 
+                <td>208</td>
+                <td>8429</td>
+                                                                <td>09/09/2026</td>
+                <td>R$ 5.801,10</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253197</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>10953/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36518916" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4148</td>
+                <td>ABASTECIMENTO DE MEDICAMENTOS</td>
+                <td>10</td>
+                <td>599</td>
+                <td>REPASSE AOS MUNICÍPIOS, REFERENTE AO CBAF. </td> 
+                <td>1004</td>
+                <td>2095</td>
+                                                                <td>14/04/2026</td>
+                <td>R$ 15.313,27</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253197</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>10986/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36523207" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4148</td>
+                <td>ABASTECIMENTO DE MEDICAMENTOS</td>
+                <td>10</td>
+                <td>599</td>
+                <td>REPASSE AOS MUNICÍPIOS, REFERENTE AO CBAF. </td> 
+                <td>1004</td>
+                <td>3483</td>
+                                                                <td>14/05/2026</td>
+                <td>R$ 12.528,58</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253197</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>10986/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36523208" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4148</td>
+                <td>ABASTECIMENTO DE MEDICAMENTOS</td>
+                <td>10</td>
+                <td>599</td>
+                <td>REPASSE AOS MUNICÍPIOS, REFERENTE AO CBAF. </td> 
+                <td>1004</td>
+                <td>6870</td>
+                                                                <td>06/08/2026</td>
+                <td>R$ 40.557,68</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253197</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>10986/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36523209" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4125</td>
+                <td>FORTALECIMENTO DA ATENCAO PRIMARIA A SAUDE</td>
+                <td>10</td>
+                <td>560</td>
+                <td>REPASSES DE INCENTIVOS FINANCEIROS PARA FINANCIAMENTO ESTADUAL DA APS. </td> 
+                <td>2775</td>
+                <td>7686</td>
+                                                                <td>30/06/2026</td>
+                <td>R$ 186.249,29</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253189</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11012/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36525904" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>2500</td>
+                <td>ASSESSORAMENTO E GERENCIAMENTO DE POLITICAS PUBLICAS</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>344</td>
+                <td>966</td>
+                                                                <td>11/06/2026</td>
+                <td>R$ 462.905,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>259934</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11028/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36526582" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4135</td>
+                <td>ACESSO ELETIVO</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>152</td>
+                <td>942</td>
+                                                                <td>15/06/2026</td>
+                <td>R$ 1.157.169,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>260142</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11032/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36527103" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>2500</td>
+                <td>ASSESSORAMENTO E GERENCIAMENTO DE POLITICAS PUBLICAS</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>1810</td>
+                <td>1524</td>
+                                                                <td>17/06/2026</td>
+                <td>R$ 160.000,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>260363</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11042/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36527411" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4149</td>
+                <td>POLITICAS DE ASSISTENCIA FARMACEUTICA</td>
+                <td>10</td>
+                <td>813</td>
+                <td>REPASSES A MUNICIPIOS - DCEAF. </td> 
+                <td>2147</td>
+                <td>4167</td>
+                                                                <td>14/05/2026</td>
+                <td>R$ 11.800,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253197</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11038/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36527739" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4125</td>
+                <td>FORTALECIMENTO DA ATENCAO PRIMARIA A SAUDE</td>
+                <td>10</td>
+                <td>675</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - CUSTEIO </td> 
+                <td>4615</td>
+                <td>5865</td>
+                                                                <td>16/06/2026</td>
+                <td>R$ 180.000,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>260991</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11049/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36528347" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4125</td>
+                <td>FORTALECIMENTO DA ATENCAO PRIMARIA A SAUDE</td>
+                <td>10</td>
+                <td>675</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - CUSTEIO </td> 
+                <td>4616</td>
+                <td>5866</td>
+                                                                <td>16/06/2026</td>
+                <td>R$ 180.000,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>260983</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11049/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36529385" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4125</td>
+                <td>FORTALECIMENTO DA ATENCAO PRIMARIA A SAUDE</td>
+                <td>10</td>
+                <td>675</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - CUSTEIO </td> 
+                <td>4617</td>
+                <td>5867</td>
+                                                                <td>16/06/2026</td>
+                <td>R$ 320.000,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>261009</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11049/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36529386" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4135</td>
+                <td>ACESSO ELETIVO</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>845</td>
+                <td>1132</td>
+                                                                <td>15/06/2026</td>
+                <td>R$ 355.500,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>261017</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11058/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36529603" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4135</td>
+                <td>ACESSO ELETIVO</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>846</td>
+                <td>1133</td>
+                                                                <td>15/06/2026</td>
+                <td>R$ 203.626,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>261025</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11058/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36529666" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4135</td>
+                <td>ACESSO ELETIVO</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>847</td>
+                <td>1134</td>
+                                                                <td>15/06/2026</td>
+                <td>R$ 36.895,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>261033</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11058/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36529667" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4135</td>
+                <td>ACESSO ELETIVO</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>848</td>
+                <td>1135</td>
+                                                                <td>15/06/2026</td>
+                <td>R$ 30.223,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>261041</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11058/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36529668" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4135</td>
+                <td>ACESSO ELETIVO</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>849</td>
+                <td>1136</td>
+                                                                <td>15/06/2026</td>
+                <td>R$ 1.856,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>26105X</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11058/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36529669" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4127</td>
+                <td>ESTRUTURACAO DA ATENCAO PRIMARIA</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>3967</td>
+                <td>5020</td>
+                                                                <td>03/06/2026</td>
+                <td>R$ 180.000,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>261769</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11074/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36530272" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4127</td>
+                <td>ESTRUTURACAO DA ATENCAO PRIMARIA</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>5540</td>
+                <td>6760</td>
+                                                                <td>16/06/2026</td>
+                <td>R$ 180.000,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>262366</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11099/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36531903" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4127</td>
+                <td>ESTRUTURACAO DA ATENCAO PRIMARIA</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>5732</td>
+                <td>6872</td>
+                                                                <td>18/06/2026</td>
+                <td>R$ 180.000,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>263214</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11237/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36534031" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4126</td>
+                <td>PROMOCAO A SAUDE E POLITICAS DE EQUIDADE</td>
+                <td>10</td>
+                <td>558</td>
+                <td>REPASSES DE INCENTIVOS FINANCEIROS PARA AS AÇOES DE PROMOÇÃO DA SAUDE </td> 
+                <td>6256</td>
+                <td>9002</td>
+                                                                <td>22/07/2026</td>
+                <td>R$ 17.279,19</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253189</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11194/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36534875" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4127</td>
+                <td>ESTRUTURACAO DA ATENCAO PRIMARIA</td>
+                <td>10</td>
+                <td>666</td>
+                <td>ATENDIMENTO A DEMANDAS DOS MUNICÍPIOS E ENTIDADES - INVESTIMENTO </td> 
+                <td>6681</td>
+                <td>7150</td>
+                                                                <td>25/06/2026</td>
+                <td>R$ 379.890,00</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>263893</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11364/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36535238" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+                    <tr>  
+                <td>MONTE SIAO</td>
+                <td>4149</td>
+                <td>POLITICAS DE ASSISTENCIA FARMACEUTICA</td>
+                <td>10</td>
+                <td>813</td>
+                <td>REPASSES A MUNICIPIOS - DCEAF. </td> 
+                <td>3769</td>
+                <td>7689</td>
+                                                                <td>01/09/2026</td>
+                <td>R$ 14.607,46</td> 
+                <td>1</td>
+                <td>2791X</td>
+                <td>253197</td>
+                <td></td>
+                <td>11875540000135 </td>
+                <td>FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO</td>
+                <td>11038/2026</td>
+                <td><a href="http://pagamentoderesolucoes.saude.mg.gov.br/pagamentos-orcamentarios/visualizar/36536543" class="btn btn-primary">Visualizar</a></td>
+            </tr>
+            </tbody>
+</table>
+</body>
+</html>

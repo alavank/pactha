@@ -243,6 +243,10 @@ FRESCOR_HORAS_POR_UF = {
         # que se vigia aqui é a RODADA; a idade dos DADOS (a planilha do site parou
         # em maio de 2026) vira `partial` com a data na nota, pelo próprio coletor.
         "emendas_mg": 30,
+        # Pagamentos da SES-MG por Resolução (fundo a fundo estadual), task
+        # `ses-mg-resolucoes` 1x/noite. A idade do PAINEL (atualiza às 07:00 BRT)
+        # vira `partial` pelo próprio coletor.
+        "ses_mg_resolucoes": 30,
     },
     "ES": {"gconv_es": 30},
     "GO": {"transfvol_go": 30, "cofin_ses_go": 30, "tcm_go": 30},

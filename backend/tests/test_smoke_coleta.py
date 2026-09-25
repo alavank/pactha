@@ -42,6 +42,7 @@ COLETORES = {
     "ingestion.convenios_pr": "ingest",
     "ingestion.convenios_to": "ingest",
     "ingestion.emendas_mg": "ingest",
+    "ingestion.ses_mg_resolucoes": "ingest",
     "ingestion.fns_saldo": "ingest",
     "ingestion.regularidade_pr": "ingest",
     "ingestion.emendas_estaduais": None,

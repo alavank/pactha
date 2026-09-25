@@ -543,6 +543,15 @@ O desenho atual (13/09/2026, "coleta noturna"):
   coletas PAUSADAS pelo botão de parada, que é o que a regra protege: "145/145 em dia"
   nas sete APIs, sem `falhou`. **Task criada nos sete em 24/09/2026 ~03:40 UTC** por
   `scripts/criar_task_emendas_mg.sh`.
+- **`ses-mg-resolucoes` (24/09/2026, AINDA NÃO CRIADA — depois do merge e do deploy):**
+  pagamentos da SES-MG por Resolução (fundo a fundo estadual da saúde,
+  `ingestion/ses_mg_resolucoes.py`), 2 POSTs por município por noite + 2 de histórico.
+  Escada de 30 min entre os três de MG, porque o painel é um host só: freitas 22:30,
+  trust 23:00, montesiao 23:30; santamaria 23:35, novapalma 23:40, bgk 23:45, juranda
+  23:50 UTC (sem MG: `success` 0 em segundos). Orçamento interno 1200 s
+  (`SES_MG_BUDGET_S`), kill 1500 s, timeout da task 1620 s — a freitas termina até 22:55,
+  longe do reinício das 00:00. Migration `add_ses_mg_resolucoes.sql` (DDL, tabelas
+  novas): deploy depois das 10:00 UTC. Criar com `scripts/criar_task_ses_mg_resolucoes.sh`.
 - **`convenios-to` (23/09/2026), escada de UMA HORA de 01:00 (freitas) a 07:00 UTC
   (juranda):** varre todos os ids do TRANSFERE.TO (~3.200 páginas, ~0,45 s cada da VPS,
   ~25 min) no worker que tem município do TO; nos outros sai em segundos (`success`, 0).

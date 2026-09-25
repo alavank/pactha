@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 31 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 32 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 31 sources has its own collector file with source-specific gotchas documented
+Each of the 32 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -288,6 +288,29 @@ and the pre-2009 SIAFI history. The traps (full list in the file header):
   enter; non-prefeitura rows stay, flagged `municipal = false`, out of totals.
 - **The OB list has no natural key** (850 repeated (convênio, OB) pairs): replaced whole.
 - Whole spreadsheet in memory would pass 1 GB: two passes over the zip instead.
+
+## SES-MG — payments by Resolução SES (`ingestion/ses_mg_resolucoes.py`, 24/09/2026)
+
+MG's ordinary health fundo a fundo, from the public panel
+`pagamentoderesolucoes.saude.mg.gov.br` (a Laravel form: GET for cookie + `_token`, POST
+with the payment YEAR and the município NAME; 419 = expired token, re-GET once). Full
+list in the file header; the ones that bite:
+- **A name the form does not know returns 200 with an EMPTY table** — identical to "paid
+  nothing". The name is checked against the form's own `<option>` list BEFORE the POST
+  (IBGE name without accents for 846 of 853; five spellings by IBGE in
+  `APELIDOS_FORMULARIO`).
+- **Search by name, truth by CNPJ.** The filter returns every creditor SEATED in the city
+  (Divinópolis: two consortia next to the Fundo). `ConfereCredor`: prefeitura CNPJ root →
+  `fns_saldo_conta` by IBGE → Receita (BrasilAPI, fallback minhareceita; cached in
+  `ses_mg_credores`) with the same IBGE and a municipal legal nature (1333, 1244...;
+  consortium 1210 is not). Unknown creditor (APIs down) = the slice is not written.
+- **Emenda vs ordinary by UPG CODE** (666/675 emenda, 650 federal emenda, 948 Acordo FES
+  recomposição): the dropdown and the result table give the same code different names.
+- **The page mixes encodings** (a Windows-1252 byte in the `<meta>`, UTF-8 data): decode
+  with `errors="replace"`. The restos page's title says "Pagamentos Orçamentários" too —
+  validate by the header columns.
+- Replaced per (município, tipo, ano) only with the whole answer read; a slice that had
+  rows and came back empty is not deleted.
 
 ## Authenticated sources
 

@@ -19,6 +19,7 @@ import { Bloco, BlocoHead, Campos, ItemLinha, Lista, Numero, Selo, Vazio } from 
 import { HeartPulse, TrendingDown, Lock, Loader2 } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { TituloTela } from "@/components/TituloTela";
+import { FundoAFundoMG } from "@/components/cofinanciamento/FundoAFundoMG";
 
 interface ItemAP {
   competencia: string | null;
@@ -57,14 +58,15 @@ export default function CofinanciamentoPage() {
   const [loading, setLoading] = useState(false);
 
   const carregar = useCallback(() => {
-    if (!municipioId) return;
+    // MG tem fonte e rota próprias (`FundoAFundoMG`); a de Goiás nem é chamada.
+    if (!municipioId || uf === "MG") return;
     const meu = String(municipioId);
     setLoading(true);
     api.get<Resp>("/cofinanciamento", { params: { municipio_id: municipioId } })
       .then((r) => { setData(r.data); setCarimbo(meu); })
       .catch(() => { setData(null); setCarimbo(meu); })
       .finally(() => setLoading(false));
-  }, [municipioId]);
+  }, [municipioId, uf]);
 
   /* Microtask: `carregar` começa com setState, e síncrono dentro de effect
      dispara render em cascata (o lint barra, com razão). */
@@ -75,6 +77,13 @@ export default function CofinanciamentoPage() {
   }, [carregar]);
 
   if (!municipioId) return <Vazio>Selecione um município.</Vazio>;
+
+  /* ⭐ MINAS (24/09/2026): o fundo a fundo estadual pelas ordens de pagamento
+     por Resolução SES — outra fonte e outro formato que o teto × pago de Goiás,
+     por isso outro componente. */
+  if (uf === "MG" && info) {
+    return <FundoAFundoMG municipioId={municipioId} titulo={info.titulo} fonte={info.fonte} />;
+  }
 
   if (uf && !info) {
     return (
