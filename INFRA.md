@@ -538,8 +538,9 @@ O desenho atual (13/09/2026, "coleta noturna"):
   meses) com 30 s entre eles, ~3,5 min por tenant; depois da carga inicial (~6 noites),
   2 arquivos. Orçamento 600 s, kill 900 s, timeout da task 1020 s. Migration
   `add_cgu_transferencias.sql` (DDL, tabela nova). Criação:
-  `scripts/criar_task_cgu_transferencias.sh`, **depois** do deploy do PR que trouxe o
-  coletor — até isso rodar, a task NÃO existe em nenhum worker.
+  `scripts/criar_task_cgu_transferencias.sh`. **Criada nos sete em 25/09/2026 ~02:30 UTC**,
+  depois do deploy do #571 (152/152); como caiu depois do horário do dia, a 1ª rodada é
+  na madrugada de 26/09.
 - **`fns-saldo` (24/09/2026), escada de 5 min de 06:00 (freitas) a 06:30 UTC
   (juranda):** um GET da página de downloads do Portal FNS; o arquivo anual (~16 MB) só é
   baixado quando sai o ano novo ou entra município novo. Kill 900 s, timeout da task
@@ -551,8 +552,8 @@ O desenho atual (13/09/2026, "coleta noturna"):
   (`saude.rs.gov.br/pagamentos-mes`, ~5 MB por mês, o ano corrente) nos tenants com
   município do RS; nos outros sai antes de baixar (`success`, 0). Mês com o mesmo hash
   não é relido. Kill 900 s, timeout da task 1020 s. Migration `add_fes_rs_pagamentos.sql`
-  (tabelas novas — DDL: deployar depois das 10:00 UTC). **Task ainda NÃO criada** — rodar
-  `scripts/criar_task_fes_rs.sh` depois do deploy e trocar esta frase pela data.
+  (tabelas novas — DDL). **Criada nos sete em 25/09/2026 ~02:45 UTC** por
+  `scripts/criar_task_fes_rs.sh`, depois do deploy do #573 (153/153).
 - **`emendas-mg` (24/09/2026), escada de 10 min de 07:40 (freitas) a 08:40 UTC
   (juranda):** o CSV de indicações da SEGOV no dados.mg.gov.br (~30 MB; as `.xlsx` do
   emendas.mg.gov.br dão 403 à VPS) nos
@@ -562,12 +563,14 @@ O desenho atual (13/09/2026, "coleta noturna"):
   coletas PAUSADAS pelo botão de parada, que é o que a regra protege: "145/145 em dia"
   nas sete APIs, sem `falhou`. **Task criada nos sete em 24/09/2026 ~03:40 UTC** por
   `scripts/criar_task_emendas_mg.sh`.
-- **`ses-mg-resolucoes` (24/09/2026, AINDA NÃO CRIADA — depois do merge e do deploy):**
+- **`ses-mg-resolucoes` (24/09/2026; criada nos sete em 25/09/2026 ~02:30 UTC):**
   pagamentos da SES-MG por Resolução (fundo a fundo estadual da saúde,
   `ingestion/ses_mg_resolucoes.py`), 2 POSTs por município por noite + 2 de histórico.
   Escada de 30 min entre os três de MG, porque o painel é um host só: freitas 22:30,
-  trust 23:00, montesiao 23:30; santamaria 23:35, novapalma 23:40, bgk 23:45, juranda
-  23:50 UTC (sem MG: `success` 0 em segundos). Orçamento interno 1200 s
+  trust 23:00, montesiao 23:30 UTC. Os quatro sem MG (`success` 0 em segundos) ANTES
+  deles: santamaria 22:00, novapalma 22:05, bgk 22:10, juranda 22:15 UTC — em 23:35-23:50
+  a janela nominal (kill 1500 s) atravessava 00:00 e `scripts/agenda_noturna.py`
+  reprovava (movidas em 25/09/2026). Orçamento interno 1200 s
   (`SES_MG_BUDGET_S`), kill 1500 s, timeout da task 1620 s — a freitas termina até 22:55,
   longe do reinício das 00:00. Migration `add_ses_mg_resolucoes.sql` (DDL, tabelas
   novas): deploy depois das 10:00 UTC. Criar com `scripts/criar_task_ses_mg_resolucoes.sh`.
@@ -577,8 +580,8 @@ O desenho atual (13/09/2026, "coleta noturna"):
   MG+RS+PR: 1ª rodada 169–244 s, 2ª 78–84 s (ano anterior completo não é perguntado de novo).
   Orçamento interno 1200 s (`SIOPS_SIOPE_BUDGET_S`), kill 1500 s, timeout da task 1620 s.
   Migration `add_siops_siope_rag.sql` (DDL: duas tabelas novas) — deploy depois das 10:00
-  UTC. **Task ainda NÃO criada**: rodar `scripts/criar_task_siops_siope.sh` depois do deploy
-  e conferir "Migration OK" nas sete APIs.
+  UTC. **Criada nos sete em 25/09/2026 ~02:30 UTC** por `scripts/criar_task_siops_siope.sh`,
+  depois do deploy do #571 (152/152).
 - **`convenios-to` (23/09/2026), escada de UMA HORA de 01:00 (freitas) a 07:00 UTC
   (juranda):** varre todos os ids do TRANSFERE.TO (~3.200 páginas, ~0,45 s cada da VPS,
   ~25 min) no worker que tem município do TO; nos outros sai em segundos (`success`, 0).
