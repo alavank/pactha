@@ -13,7 +13,7 @@
 # siops.datasus.gov.br, fnde.gov.br/olinda-ide e digisusgmp.saude.gov.br) não são
 # usados por nenhuma outra task; a escada é para dois tenants não pedirem a mesma
 # lista de UF no mesmo minuto. Medido num Postgres local com MG, RS e PR (24/09/2026):
-# 1ª rodada 244 s (SIOPS 68 s, SIOPE 90 s, DGMP 87 s), 2ª rodada 78 s — o ano
+# 1ª rodada 169-244 s (SIOPE é a mais lenta, ~90 s), 2ª rodada 78-84 s — o ano
 # anterior completo não é perguntado de novo. Orçamento interno de 1200 s
 # (`SIOPS_SIOPE_BUDGET_S`), kill em 1500 s, timeout da task 1620 s.
 #

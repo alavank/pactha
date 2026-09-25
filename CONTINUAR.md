@@ -58,11 +58,11 @@ itens 3.2.3 (Anexo 8 ao SIOPE), 3.2.4 (Anexo 12 ao SIOPS), 5.1 (mínimo em educa
 - **Tela**: aba "Saúde e educação" na Regularidade (logo depois do CAUC) + uma frase ao lado
   dos quatro itens na aba CAUC (`notas_cauc`, pronta do servidor). Rota
   `GET /api/saude-educacao` com `cauc.ver` + tela `cauc`, como o SICONFI.
-- **Medido num Postgres 16 zerado** (boot inteiro 2x, 148/148): Monte Sião SIOPS 2026
+- **Medido num Postgres 16 zerado** (boot inteiro 2x, 149/149 em dia): Monte Sião SIOPS 2026
   22,22/22,13/24,72% (1º-3º), 4º não homologado; SIOPE 18,75/24,90/27,36%; RDQAs 2023-2025
   nunca concluídos (11 instrumentos vencidos). Nova Palma: SIOPS 4º homologado 23/09
   (19,76%). Juranda: SIOPE 3º NÃO declarado (o "!" do 3.2.3), e SIOPS 2º e 3º homologados
-  só em 24/08 (com atraso). 1ª rodada 244 s para as três UFs, 2ª 78 s.
+  só em 24/08 (com atraso). 1ª rodada 169–244 s para as três UFs (duas medições), 2ª 78–84 s.
 
 ## 1.42. Emendas de saúde do FNS na aba Federais — pelo código (25/09/2026)
 
