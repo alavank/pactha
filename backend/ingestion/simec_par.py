@@ -1,12 +1,20 @@
 """Scraper SIMEC PAR (Plano de Acoes Articuladas) - consulta publica MEC.
 
 Fonte: https://simec.mec.gov.br/cte/relatoriopublico/impressao.php?estuf=MG&muncod={IBGE}
-Sem login, sem Cloudflare. Retorna HTML rico (~190KB) com:
+Sem login; Cloudflare na frente (daí o curl_cffi). Retorna HTML rico (~190KB) com:
   - Sintese por Dimensao (tabela 4): 4 dimensoes x contagem de indicadores
   - Liberacoes de Recursos (tabelas 19+): pagamentos federais por programa
     (PNAE, PNATE, QUOTA Salario-Educacao, etc.)
 
 Roda diariamente via cron no Coolify. Sem dependencia de browser/credenciais.
+
+⚠️ DESDE 24/09/2026 AS LIBERAÇÕES SÃO PLANO B. A fonte principal é a consulta do
+FNDE (`ingestion/fnde_liberacoes.py`, pls/simad): o relatório daqui só lê o CNPJ
+da PREFEITURA e só o ano corrente — Monte Sião recebe o salário-educação na
+SECRETARIA desde 03/2026 e aqui aparecia só jan+fev; o PDDE das caixas escolares
+não aparece nunca. As DIMENSÕES do PAR continuam sendo só daqui.
+As liberações lidas aqui ainda são gravadas (`grava_liberacoes_reserva`), mas
+NUNCA por cima do que o simad gravou: é a rede para a noite em que o simad cair.
 """
 import json
 import logging
@@ -40,8 +48,8 @@ def _municipios_pacta() -> list[dict]:
     url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     conn = psycopg2.connect(url)
     cur = conn.cursor()
-    cur.execute("SELECT id, nome, uf, ibge_code FROM municipios WHERE active = true ORDER BY nome")
-    out = [{"id": r[0], "nome": r[1], "uf": r[2], "ibge": r[3]} for r in cur.fetchall()]
+    cur.execute("SELECT id, nome, uf, ibge_code, cnpj FROM municipios WHERE active = true ORDER BY nome")
+    out = [{"id": r[0], "nome": r[1], "uf": r[2], "ibge": r[3], "cnpj": r[4]} for r in cur.fetchall()]
     cur.close(); conn.close()
     return out
 
@@ -180,13 +188,68 @@ def scrape_municipio(mun: dict) -> dict | None:
     return parse_relatorio(html)
 
 
-def upsert(mun_id: int, data: dict) -> tuple[int, int]:
-    """UPSERT dimensoes + liberacoes. Retorna (n_dimensoes, n_liberacoes)."""
+# PLANO B das liberações (ver o cabeçalho). O relatório só mostra a PREFEITURA,
+# então a linha nasce com o CNPJ dela (`municipios.cnpj`, '' se o tenant não
+# cadastrou) e `tipo_favorecido = 'prefeitura'`, `fonte = 'simec'`.
+#
+# ⚠️ NUNCA POR CIMA DO SIMAD, nas duas formas em que isso poderia acontecer:
+#   - mesma chave (CNPJ, programa, data, OB) já gravada pelo simad: o ON CONFLICT
+#     só atualiza linha que seja do próprio SIMEC (`WHERE ... fonte = 'simec'`);
+#   - a mesma liberação da prefeitura gravada sob OUTRO CNPJ (o cadastro do tenant
+#     diverge do FNDE, ou está vazio): o NOT EXISTS não deixa inserir a gêmea.
+# E nada é apagado: plano B só acrescenta.
+_SQL_LIB_RESERVA = """
+    INSERT INTO simec_par_liberacoes
+        (municipio_id, programa, programa_full, dt_pgto, ob, valor, parcela,
+         descricao, banco, agencia, conta, ano, raw, cnpj_favorecido,
+         tipo_favorecido, fonte, updated_at)
+    SELECT %(mid)s, %(programa)s, %(programa_full)s, %(dt_pgto)s, %(ob)s, %(valor)s,
+           %(parcela)s, %(descricao)s, %(banco)s, %(agencia)s, %(conta)s, %(ano)s,
+           %(raw)s::jsonb, %(cnpj)s, 'prefeitura', 'simec', NOW()
+    WHERE NOT EXISTS (
+        SELECT 1 FROM simec_par_liberacoes x
+        WHERE x.municipio_id = %(mid)s AND x.programa = %(programa)s
+          AND x.dt_pgto = %(dt_pgto)s AND x.ob = %(ob)s
+          AND x.tipo_favorecido = 'prefeitura' AND x.cnpj_favorecido <> %(cnpj)s)
+    ON CONFLICT (municipio_id, cnpj_favorecido, programa, dt_pgto, ob) DO UPDATE SET
+        programa_full=EXCLUDED.programa_full, valor=EXCLUDED.valor,
+        parcela=EXCLUDED.parcela, descricao=EXCLUDED.descricao,
+        banco=EXCLUDED.banco, agencia=EXCLUDED.agencia, conta=EXCLUDED.conta,
+        ano=EXCLUDED.ano, raw=EXCLUDED.raw, updated_at=NOW()
+    WHERE simec_par_liberacoes.fonte = 'simec'
+"""
+
+
+def grava_liberacoes_reserva(cur, mun_id: int, cnpj_prefeitura: str | None,
+                             liberacoes: list[dict]) -> int:
+    """Grava as liberações do relatório do SIMEC como PLANO B. Devolve quantas
+    linhas de fato entraram ou mudaram (`rowcount`): 0 quando o simad já tem
+    todas — o log não pode dizer "45 liberações" de uma rodada que não escreveu
+    nada."""
+    cnpj = re.sub(r"\D", "", cnpj_prefeitura or "")
+    cnpj = cnpj if len(cnpj) == 14 else ""
+    n = 0
+    for li in liberacoes:
+        if not (li.get("dt_pgto") and li.get("ob")):
+            continue  # chave UNIQUE precisa de dt_pgto + ob
+        cur.execute(_SQL_LIB_RESERVA, {
+            "mid": mun_id, "programa": li["programa"], "programa_full": li["programa_full"],
+            "dt_pgto": li["dt_pgto"], "ob": li["ob"], "valor": li["valor"],
+            "parcela": li["parcela"], "descricao": li["descricao"], "banco": li["banco"],
+            "agencia": li["agencia"], "conta": li["conta"], "ano": li["ano"],
+            "raw": json.dumps(li, default=str), "cnpj": cnpj,
+        })
+        n += max(cur.rowcount or 0, 0)
+    return n
+
+
+def upsert(mun_id: int, data: dict, cnpj_prefeitura: str | None = None) -> tuple[int, int]:
+    """UPSERT dimensoes + liberacoes (estas como plano B). Retorna (n_dimensoes, n_liberacoes)."""
     import psycopg2
     url = os.getenv("DATABASE_URL_SYNC", "")
     url = url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
     conn = psycopg2.connect(url); cur = conn.cursor()
-    nd = nl = 0
+    nd = 0
     for d in data.get("dimensoes", []):
         cur.execute("""
             INSERT INTO simec_par_dimensoes
@@ -198,23 +261,7 @@ def upsert(mun_id: int, data: dict) -> tuple[int, int]:
         """, (mun_id, d["dimensao"][:200], d["score_4"], d["score_3"],
               d["score_2"], d["score_1"], d["score_na"]))
         nd += 1
-    for li in data.get("liberacoes", []):
-        if not (li.get("dt_pgto") and li.get("ob")):
-            continue  # chave UNIQUE precisa de dt_pgto + ob
-        cur.execute("""
-            INSERT INTO simec_par_liberacoes
-                (municipio_id, programa, programa_full, dt_pgto, ob, valor, parcela,
-                 descricao, banco, agencia, conta, ano, raw, updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,NOW())
-            ON CONFLICT (municipio_id, programa, dt_pgto, ob) DO UPDATE SET
-                programa_full=EXCLUDED.programa_full, valor=EXCLUDED.valor,
-                parcela=EXCLUDED.parcela, descricao=EXCLUDED.descricao,
-                banco=EXCLUDED.banco, agencia=EXCLUDED.agencia, conta=EXCLUDED.conta,
-                ano=EXCLUDED.ano, raw=EXCLUDED.raw, updated_at=NOW()
-        """, (mun_id, li["programa"], li["programa_full"], li["dt_pgto"], li["ob"],
-              li["valor"], li["parcela"], li["descricao"], li["banco"],
-              li["agencia"], li["conta"], li["ano"], json.dumps(li, default=str)))
-        nl += 1
+    nl = grava_liberacoes_reserva(cur, mun_id, cnpj_prefeitura, data.get("liberacoes", []))
     conn.commit(); cur.close(); conn.close()
     return nd, nl
 
@@ -235,8 +282,9 @@ def run():
         if data is None:
             falhas += 1
             continue
-        nd, nl = upsert(mun["id"], data)
-        logger.info(f"  {mun['nome']}: {nd} dimensoes + {nl} liberacoes")
+        nd, nl = upsert(mun["id"], data, mun.get("cnpj"))
+        logger.info(f"  {mun['nome']}: {nd} dimensoes + {nl} liberacoes novas/atualizadas "
+                    f"(plano B: o que o simad ja tem nao e tocado)")
         total_d += nd; total_l += nl
     logger.info(f"=== Finalizado: {total_d} dimensoes + {total_l} liberacoes "
                 f"({falhas} municipio(s) sem resposta) ===")

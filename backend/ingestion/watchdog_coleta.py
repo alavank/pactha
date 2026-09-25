@@ -128,6 +128,11 @@ FRESCOR_HORAS_NACIONAL = {
     # e diaria e quase sempre so confere a pagina ("ja carregado") e grava
     # `success`: o que se vigia e a RODADA; a idade do arquivo esta na tela.
     "fns_saldo": 30,
+    # LIBERACOES DO FNDE por entidade (pls/simad, ingestion/fnde_liberacoes.py).
+    # Scheduled Task propria, 1x/dia -> 30h = um dia + folga. Nao confundir com
+    # `simec_par`: aquele segue dono das DIMENSOES do PAR e e o plano B das
+    # liberacoes; um parado nao diz nada do outro.
+    "fnde_liberacoes": 30,
     # RADAR DE CAPTACAO (siconv_programa.zip). Pendurado no
     # run_dadosabertos_cron.run_all(), que o cron do sigcon chama 4x/dia -> 6h
     # entre rodadas. 30h = quase cinco janelas perdidas, o mesmo criterio do

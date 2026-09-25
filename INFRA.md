@@ -554,6 +554,20 @@ O desenho atual (13/09/2026, "coleta noturna"):
   não é relido. Kill 900 s, timeout da task 1020 s. Migration `add_fes_rs_pagamentos.sql`
   (tabelas novas — DDL). **Criada nos sete em 25/09/2026 ~02:45 UTC** por
   `scripts/criar_task_fes_rs.sh`, depois do deploy do #573 (153/153).
+- **`fnde-liberacoes` (24/09/2026), escada de 10 min de 03:00 (freitas) a 04:00 UTC
+  (juranda):** as liberações do FNDE por ENTIDADE do município (prefeitura, secretaria,
+  caixas escolares) pela consulta legada `www.fnde.gov.br/pls/simad`
+  (`ingestion/fnde_liberacoes.py`) — a fonte principal de `simec_par_liberacoes` desde
+  então; o SIMEC-PAR virou plano B delas. Toda noite o ano corrente e o anterior de todo
+  município (1 página de lista + 1 por entidade, 0,15–0,6 s cada, pausa 0,3 s); o que
+  sobrar do orçamento vai para a carga inicial desde 2015, 3 anos por município por
+  rodada. Orçamento 2400 s (`FNDE_LIB_BUDGET_S`), kill 2700 s, timeout da task 2820 s.
+  Mesmo host: o SIOPE (`siops-siope`, poucas consultas por UF) a partir das 04:00 e o
+  PDDE Info em 05:00–06:00 UTC. Migration `add_fnde_liberacoes_favorecido.sql` (DDL em
+  tabela que o `simec_par` escreve — deploy depois das 10:00 UTC ou com as coletas
+  pausadas). Criar com `scripts/criar_task_fnde_liberacoes.sh` **depois do deploy**.
+  Nenhuma task existente muda: o `simec_par` segue no `run_all()` (dimensões do PAR +
+  liberações como plano B, que nunca escrevem por cima do simad).
 - **`emendas-mg` (24/09/2026), escada de 10 min de 07:40 (freitas) a 08:40 UTC
   (juranda):** o CSV de indicações da SEGOV no dados.mg.gov.br (~30 MB; as `.xlsx` do
   emendas.mg.gov.br dão 403 à VPS) nos
@@ -714,7 +728,8 @@ Task própria nos 5 workers** (escada de 30 min como a do `transferegov-te`: fre
 `/tmp/scraper.lock` existe para serializar **Chromium**, e esta fonte é `httpx` puro, sem
 login e sem navegador — não precisa disputar aquela fila. 1×/dia basta porque o que ela
 traz é o **instrumento** (processo, vigência, valor), que muda em MESES; quem se move é o
-pagamento, e isso vem 4×/dia por `simec_par_liberacoes` dentro do `run_all()`.
+pagamento (`simec_par_liberacoes`), que vem da task `fnde-liberacoes` desde 24/09/2026 — o
+SIMEC-PAR dentro do `run_all()` ficou com as dimensões e o plano B das liberações.
 
 > ⚠️ **NÃO pendurar esta fonte no `run_dadosabertos_cron.run_all()`.** O PR #259 fez isso
 > por premissa errada (documentou que "não tem task em nenhum worker" — tem, nos quatro) e

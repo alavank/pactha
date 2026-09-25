@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Loader2, ExternalLink, BarChart3, Wallet, CalendarDays, ChevronDown, ChevronRight,
-  FileText,
+  FileText, School,
 } from "lucide-react";
 import { useMunicipio } from "@/contexts/MunicipioContext";
 import api from "@/lib/api";
@@ -35,11 +35,35 @@ interface Liberacao {
   conta?: string;
   ano?: number;
   atualizado_em?: string;
+  /** Quem recebeu. Linha antiga (do SIMEC) vem sem nome: era sempre a prefeitura. */
+  cnpj_favorecido?: string | null;
+  favorecido?: string | null;
+  tipo_favorecido?: string;
+  tipo_favorecido_rotulo?: string;
+  /** Entra no total do município? Prefeitura, secretaria e fundo sim; caixa
+   *  escolar (escola que pode ser ESTADUAL) não — a regra mora no backend
+   *  (`services/liberacoes_fnde.py`), a tela só obedece. */
+  do_municipio: boolean;
+  fonte?: string;
+}
+interface Favorecido {
+  cnpj?: string | null;
+  nome?: string | null;
+  tipo: string;
+  tipo_rotulo: string;
+  do_municipio: boolean;
+  qtde: number;
+  total: number;
+  ultimo_pgto?: string | null;
 }
 interface Resumo {
   por_programa: Array<{ programa: string; qtde: number; total: number }>;
   por_ano: Array<{ ano: number; qtde: number; total: number }>;
   total_geral: number;
+  favorecidos?: Favorecido[];
+  escolas?: { total: number; qtde: number; favorecidos: Favorecido[] };
+  /** A data que o FNDE carimba na consulta ("fechamento do dia") — D-1. */
+  fnde?: { fechamento?: string | null; coletado_em?: string | null } | null;
 }
 /** O INSTRUMENTO, não o pagamento — o que a aba de Liberações não mostra.
  *  `vencido` e `dias_vigencia` vêm calculados do backend de propósito: aqui
@@ -84,6 +108,20 @@ function scoreTom(nota: 1 | 2 | 3 | 4, qtde: number): "normal" | "atencao" | "cr
  *  Invalid Date nesse formato — dai o corte nos 10 primeiros caracteres. */
 function dataDoCarimbo(iso?: string | null): string {
   return iso ? formatDate(iso.slice(0, 10)) : "";
+}
+
+/** "22646525000131" -> "22.646.525/0001-31". Só apresentação: o dado é dígito. */
+function mascaraCnpj(c?: string | null): string {
+  const d = (c || "").replace(/\D/g, "");
+  if (d.length !== 14) return c || "";
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
+/** Quem recebeu, numa linha: "Secretaria municipal · SECRETARIA MUNICIPAL DE
+ *  EDUCACAO". A linha antiga do SIMEC não tem nome — era sempre a prefeitura. */
+function rotuloFavorecido(l: Liberacao): string {
+  const tipo = l.tipo_favorecido_rotulo || "Prefeitura";
+  return l.favorecido ? `${tipo} · ${l.favorecido}` : tipo;
 }
 
 /** O ANO de uma liberacao.
@@ -197,19 +235,51 @@ export default function SimecPage() {
     if (progsSel.length) arr = arr.filter((l) => progsSel.includes(l.programa));
     if (search.trim()) {
       const q = search.trim().toLowerCase();
+      const qd = q.replace(/\D/g, ""); // busca por CNPJ, com ou sem máscara
       arr = arr.filter((l) =>
         (l.descricao || "").toLowerCase().includes(q) ||
         (l.ob || "").toLowerCase().includes(q) ||
-        (l.programa_full || "").toLowerCase().includes(q)
+        (l.programa_full || "").toLowerCase().includes(q) ||
+        (l.favorecido || "").toLowerCase().includes(q) ||
+        (qd.length >= 4 && (l.cnpj_favorecido || "").includes(qd))
       );
     }
     return arr;
   }, [liberacoes, anosSel, progsSel, search]);
 
+  /** O que é do MUNICÍPIO (prefeitura, secretaria, fundo) e o que só está nele
+   *  (caixa escolar, APM, CPM — a escola pode ser ESTADUAL). Os mesmos filtros
+   *  valem para os dois; só o primeiro soma no total. */
+  const displayMun = useMemo(() => displayLib.filter((l) => l.do_municipio), [displayLib]);
+  const displayEsc = useMemo(() => displayLib.filter((l) => !l.do_municipio), [displayLib]);
+
   const displayTotal = useMemo(
-    () => displayLib.reduce((s, l) => s + (l.valor || 0), 0),
-    [displayLib]
+    () => displayMun.reduce((s, l) => s + (l.valor || 0), 0),
+    [displayMun]
   );
+
+  /** As escolas, uma por favorecido (CNPJ), da que mais recebeu para a que menos. */
+  const porEscola = useMemo(() => {
+    const m = new Map<string, { nome: string; tipo: string; itens: Liberacao[]; total: number }>();
+    for (const l of displayEsc) {
+      const k = l.cnpj_favorecido || l.favorecido || "?";
+      const g = m.get(k) ?? { nome: l.favorecido || mascaraCnpj(k), tipo: l.tipo_favorecido_rotulo || "", itens: [], total: 0 };
+      g.itens.push(l);
+      g.total += l.valor || 0;
+      m.set(k, g);
+    }
+    return Array.from(m.entries()).sort((a, b) => b[1].total - a[1].total);
+  }, [displayEsc]);
+  const totalEscolas = useMemo(() => porEscola.reduce((s, [, g]) => s + g.total, 0), [porEscola]);
+  /* Escola ABERTA à mão (e não fechada): são dezenas de caixas, e o bloco nasce
+     recolhido para não empurrar a lista do município para baixo. */
+  const [escolasAbertas, setEscolasAbertas] = useState<Set<string>>(new Set());
+  const alternarEscola = (k: string) =>
+    setEscolasAbertas((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      return n;
+    });
 
   /** Agrupado por ano, do mais recente para o mais antigo.
    *
@@ -222,13 +292,13 @@ export default function SimecPage() {
    *  que mostra-lo separado. */
   const porAno = useMemo(() => {
     const m = new Map<string, Liberacao[]>();
-    for (const l of displayLib) {
+    for (const l of displayMun) {
       const a = anoDa(l) || "Sem ano";
       (m.get(a) ?? m.set(a, []).get(a)!).push(l);
     }
     return Array.from(m.entries()).sort((x, y) =>
       x[0] === "Sem ano" ? 1 : y[0] === "Sem ano" ? -1 : y[0].localeCompare(x[0]));
-  }, [displayLib]);
+  }, [displayMun]);
 
   /** Termos por situação, na ordem fixa de GRUPOS_TERMO (vencidos primeiro).
    *  Grupo sem nenhum termo não vira cartão vazio. */
@@ -254,6 +324,57 @@ export default function SimecPage() {
       return n;
     });
 
+  /** Uma liberação. A mesma peça no bloco do município e no das escolas. */
+  const itemLiberacao = (l: Liberacao, i: number, className?: string) => (
+    <ItemLinha
+      key={`${l.cnpj_favorecido || ""}-${l.ob || ""}-${l.dt_pgto || ""}-${i}`}
+      className={className}
+      titulo={l.descricao || l.programa_full || l.programa || "Liberação sem descrição"}
+      valor={formatCurrency(l.valor || 0)}
+      meta={
+        <>
+          <Selo title={l.programa_full || l.programa}>{l.programa}</Selo>
+          {/* Parcela so aparece quando existe: no SIMEC ela vem vazia
+              na maioria das liberacoes, e uma coluna de travessoes
+              seria ruido em toda a lista. */}
+          {l.parcela && <Selo title="Parcela da liberação">parcela {l.parcela}</Selo>}
+          {l.ano != null && <span>{l.ano}</span>}
+          {/* O nome completo do programa so entra quando acrescenta
+              algo — quando a descricao ja e ele, repetir polui. */}
+          {l.programa_full && l.programa_full !== l.descricao && l.descricao && (
+            <span className="truncate">· {l.programa_full}</span>
+          )}
+        </>
+      }
+    >
+      <Campos
+        campos={[
+          {
+            rotulo: "Favorecido",
+            valor: rotuloFavorecido(l),
+            title: l.cnpj_favorecido
+              ? `${rotuloFavorecido(l)} — CNPJ ${mascaraCnpj(l.cnpj_favorecido)}`
+              : rotuloFavorecido(l),
+          },
+          {
+            rotulo: "Data do pagamento",
+            valor: l.dt_pgto ? formatDate(l.dt_pgto) : "—",
+            title: l.atualizado_em
+              ? `Coletado ${l.fonte === "fnde_simad" ? "da consulta do FNDE" : "do SIMEC"} em ${dataDoCarimbo(l.atualizado_em)}`
+              : undefined,
+          },
+          { rotulo: "OB", valor: l.ob || "—", title: l.ob ? `Ordem bancária ${l.ob}` : undefined },
+          {
+            rotulo: "Banco / agência",
+            valor: [l.banco, l.agencia].filter(Boolean).join(" / ") || "—",
+            title: [l.banco, l.agencia].filter(Boolean).join(" / ") || undefined,
+          },
+          { rotulo: "Conta", valor: l.conta || "—" },
+        ]}
+      />
+    </ItemLinha>
+  );
+
   if (!municipioId) {
     return <div className="flex h-64 items-center justify-center text-muted-foreground">Selecione um município.</div>;
   }
@@ -276,13 +397,24 @@ export default function SimecPage() {
 
       {/* Resumo no topo */}
       {resumo && !loading && (
-        <div className="grid gap-3 sm:grid-cols-3">
+        <>
+        <div className={`grid gap-3 ${resumo.escolas?.qtde ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
           <Numero
             icon={Wallet}
-            rotulo="Total liberado"
+            rotulo="Total liberado ao município"
             valor={formatCurrency(resumo.total_geral)}
-            sub={`${liberacoes.length} pagamentos`}
+            sub={`${liberacoes.filter((l) => l.do_municipio).length} pagamentos · prefeitura, secretaria e fundos`}
           />
+          {!!resumo.escolas?.qtde && (
+            /* FORA do total, sempre à vista: o PDDE vai direto à caixa escolar, e a
+               escola pode ser estadual — não é dinheiro da prefeitura. */
+            <Numero
+              icon={School}
+              rotulo="Escolas (fora do total)"
+              valor={formatCurrency(resumo.escolas.total)}
+              sub={`${resumo.escolas.qtde} pagamentos a ${resumo.escolas.favorecidos.length} caixa(s) escolar(es)/APM`}
+            />
+          )}
           <Numero
             icon={BarChart3}
             rotulo="Programas"
@@ -298,6 +430,16 @@ export default function SimecPage() {
               : "-"}
           />
         </div>
+        {/* A data do FNDE, e não a da coleta: a consulta de liberações fecha D-1
+            ("dados referentes ao fechamento do dia"). Sem ela, o gestor não sabe
+            se a OB de ontem ainda pode aparecer. */}
+        <p className="px-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
+          {resumo.fnde?.fechamento
+            ? <>Liberações: consulta do FNDE, dados do fechamento de <strong style={{ color: "var(--bi-text)" }}>{formatDate(resumo.fnde.fechamento)}</strong>
+                {resumo.fnde.coletado_em ? <> · coletado em {dataDoCarimbo(resumo.fnde.coletado_em)}</> : null}.</>
+            : <>Liberações: relatório público do SIMEC (só a prefeitura, ano corrente) — a consulta do FNDE ainda não rodou para este município.</>}
+        </p>
+        </>
       )}
 
       {/* Abas */}
@@ -316,7 +458,7 @@ export default function SimecPage() {
           style={estiloAba(tab === "lib")}
         >
           <Wallet className="mr-1 inline size-4" />
-          Liberações de recursos ({liberacoes.length})
+          Liberações de recursos ({liberacoes.filter((l) => l.do_municipio).length})
         </button>
         <button
           onClick={() => setTab("termos")}
@@ -414,12 +556,13 @@ export default function SimecPage() {
 
           <div className="flex items-center justify-between px-1 text-[11px]" style={{ color: "var(--bi-muted)" }}>
             <span>
-              <strong style={{ color: "var(--bi-text)" }}>{displayLib.length}</strong> liberações
+              <strong style={{ color: "var(--bi-text)" }}>{displayMun.length}</strong> liberações ao município
+              {displayEsc.length > 0 && <> · {displayEsc.length} às escolas, à parte</>}
             </span>
             <span className="bi-num" style={{ color: "var(--bi-text)" }}>{formatCurrency(displayTotal)}</span>
           </div>
 
-          {displayLib.length === 0 ? (
+          {displayMun.length === 0 ? (
             <Vazio>Nenhuma liberação encontrada.</Vazio>
           ) : (
             /* LIBERAÇÕES — eram 7 colunas de 11px com a descricao espremida em
@@ -452,51 +595,51 @@ export default function SimecPage() {
                   </button>
                   {!fechado && (
                   <Lista>
-              {doAno.map((l, i) => (
-                <ItemLinha
-                  key={i}
-                  titulo={l.descricao || l.programa_full || l.programa || "Liberação sem descrição"}
-                  valor={formatCurrency(l.valor || 0)}
-                  meta={
-                    <>
-                      <Selo title={l.programa_full || l.programa}>{l.programa}</Selo>
-                      {/* Parcela so aparece quando existe: no SIMEC ela vem vazia
-                          na maioria das liberacoes, e uma coluna de travessoes
-                          seria ruido em toda a lista. */}
-                      {l.parcela && <Selo title="Parcela da liberação">parcela {l.parcela}</Selo>}
-                      {l.ano != null && <span>{l.ano}</span>}
-                      {/* O nome completo do programa so entra quando acrescenta
-                          algo — quando a descricao ja e ele, repetir polui. */}
-                      {l.programa_full && l.programa_full !== l.descricao && l.descricao && (
-                        <span className="truncate">· {l.programa_full}</span>
-                      )}
-                    </>
-                  }
-                >
-                  <Campos
-                    campos={[
-                      {
-                        rotulo: "Data do pagamento",
-                        valor: l.dt_pgto ? formatDate(l.dt_pgto) : "—",
-                        title: l.atualizado_em ? `Coletado do SIMEC em ${dataDoCarimbo(l.atualizado_em)}` : undefined,
-                      },
-                      { rotulo: "OB", valor: l.ob || "—", title: l.ob ? `Ordem bancária ${l.ob}` : undefined },
-                      {
-                        rotulo: "Banco / agência",
-                        valor: [l.banco, l.agencia].filter(Boolean).join(" / ") || "—",
-                        title: [l.banco, l.agencia].filter(Boolean).join(" / ") || undefined,
-                      },
-                      { rotulo: "Conta", valor: l.conta || "—" },
-                    ]}
-                  />
-                </ItemLinha>
-              ))}
+              {doAno.map((l, i) => itemLiberacao(l, i))}
                   </Lista>
                   )}
                 </Bloco>
                 );
               })}
             </div>
+          )}
+
+          {/* ESCOLAS — FORA DO TOTAL, sempre à vista. O PDDE vai direto à caixa
+              escolar / APM / CPM, e a escola pode ser ESTADUAL (Nova Palma: "CPM
+              da EE ..."): não é dinheiro da prefeitura, mas o gestor quer saber
+              que chegou. Um cartão por escola, recolhido — são dezenas. */}
+          {porEscola.length > 0 && (
+            <Bloco className="p-3">
+              <BlocoHead
+                icon={School}
+                titulo="Escolas — caixas escolares, APM e CPM (fora do total do município)"
+                sub={`${displayEsc.length} liberação(ões) a ${porEscola.length} favorecido(s) · o PDDE vai direto à escola, que pode ser estadual`}
+                right={<span className="bi-num text-[13px]">{formatCurrency(totalEscolas)}</span>}
+              />
+              <Lista>
+                {porEscola.map(([k, g]) => {
+                  const aberta = escolasAbertas.has(k);
+                  return (
+                    <React.Fragment key={k}>
+                      <ItemLinha
+                        onClick={() => alternarEscola(k)}
+                        expandido={aberta}
+                        titulo={<>{aberta ? <ChevronDown className="mr-1 inline size-3" /> : <ChevronRight className="mr-1 inline size-3" />}{g.nome}</>}
+                        valor={formatCurrency(g.total)}
+                        meta={
+                          <>
+                            {g.tipo && <Selo>{g.tipo}</Selo>}
+                            <span>CNPJ {mascaraCnpj(k)}</span>
+                            <span>{g.itens.length} liberação(ões)</span>
+                          </>
+                        }
+                      />
+                      {aberta && g.itens.map((l, i) => itemLiberacao(l, i, "ml-6"))}
+                    </React.Fragment>
+                  );
+                })}
+              </Lista>
+            </Bloco>
           )}
         </div>
       ) : (

@@ -361,6 +361,34 @@ in the file header; the ones that bite:
 - **Pasta and favorecido group are computed on READ** (`services/transferencias_pasta.py`),
   never stored. Escolas (caixa escolar/APM — may be state schools) and entidades are out of
   the município total but always shown.
+## FNDE liberações by entity — the legacy `pls/simad` query (`ingestion/fnde_liberacoes.py`, 24/09/2026)
+
+The main source of `simec_par_liberacoes` (PNAE, PNATE, QUOTA, PDDE, PAR...). The SIMEC
+report (`simec_par.py`) only shows the PREFEITURA's CNPJ and the current year: it hid the
+salário-educação paid to the Secretaria's CNPJ (Monte Sião, R$ 1,17 mi Mar–Sep/2026) and
+every school's PDDE. SIMEC keeps the PAR dimensions and is plan B for liberações. Full trap
+list in the file header; the ones that bite:
+- **POST by 6-digit IBGE → entity list; GET by `p_cgc` → that entity's tables**, identical
+  to SIMEC's and parsed by the same `simec_par.parse_relatorio`. A 7-digit IBGE answers
+  "Não foram encontrados dados", the same page as "nothing received". Each list row carries
+  the município in its `onclick`: another one = filter ignored = list refused.
+- ⚠️ **One OB pays several caixas escolares** (OB 007948 of 30/04/2026 paid 6 in Monte
+  Sião): the UNIQUE key is (município, CNPJ, programa, data, OB). The old key without CNPJ
+  would collapse them into one row.
+- **Who counts** (`services/liberacoes_fnde.py`, same classifier as the CGU transfers):
+  prefeitura + secretaria + fundo + órgão municipal. Caixa escolar/APM/CPM (may be a STATE
+  school) stays out of totals, always shown. Every reader filters `SQL_DO_MUNICIPIO`;
+  `tests/test_fnde_liberacoes.py` fails on a new query without it.
+- **Each table's "Total:" row must match the parsed rows**, or the entity is a failure.
+  An entity the list names but whose page is empty is a failure, never absence.
+- **SIMEC as plan B never overwrites simad rows** (`ON CONFLICT ... WHERE fonte='simec'` +
+  NOT EXISTS of the prefeitura twin). Simad down for a município → SIMEC for the current
+  year, run `partial`. Nothing is deleted except a SIMEC row the simad confirmed (same date
+  and OB of the prefeitura) under another key.
+- Current + previous year every night; history from `FNDE_LIB_ANO_INICIAL` (2015),
+  `FNDE_LIB_ANOS_CARGA` (3) years per município per run, tracked in `fnde_liberacoes_carga`
+  (which also stores the FNDE "fechamento do dia", D-1, shown on the screen).
+
 ## SIOPS, SIOPE and DigiSUS — the CAUC's health/education items (`ingestion/siops_siope.py`, 24/09/2026)
 
 The detail behind CAUC 3.2.3/3.2.4/5.1/5.2: which bimestre is missing, when it was

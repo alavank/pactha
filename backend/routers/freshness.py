@@ -142,9 +142,20 @@ _SOURCES = [
     ("CAUC — Regularidade federal",
      "SELECT max(data_pesquisa)::timestamptz, count(*) FROM cauc_situacao",
      "cauc"),
-    ("SIMEC-PAR (MEC)",
-     "SELECT max(updated_at), count(*) FROM simec_par_liberacoes",
+    # ⚠️ DESDE 24/09/2026 O SIMEC-PAR E DONO SO DAS DIMENSOES: as liberacoes vem
+    # do simad (linha de baixo) e o SIMEC grava as dele como plano B, sem nunca
+    # tocar numa linha do simad — o max(updated_at) das liberacoes pararia de
+    # andar com o SIMEC saudavel. As dimensoes andam toda rodada dele.
+    ("SIMEC-PAR (MEC) — dimensões do PAR",
+     "SELECT max(updated_at), count(*) FROM simec_par_dimensoes",
      "simec_par"),
+    # As LIBERACOES do FNDE por entidade (prefeitura, secretaria, caixas
+    # escolares), ingestion/fnde_liberacoes.py. Entra no MESMO commit do coletor.
+    # A data e a da RODADA por (municipio, ano) — o "fechamento" do FNDE (D-1)
+    # esta na tela.
+    ("FNDE — Liberações por entidade (simad)",
+     "SELECT max(atualizado_em), count(*) FROM fnde_liberacoes_carga",
+     "fnde_liberacoes"),
     # O INSTRUMENTO, nao o pagamento: `simec_par_liberacoes` sao as OBs e
     # `simec_termos` e o Termo de Compromisso (processo, vigencia, valor). Fica
     # na lista FIXA, e nao em _SOURCES_POR_UF, porque o coletor varre todo
