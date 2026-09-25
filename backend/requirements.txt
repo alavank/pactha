@@ -26,6 +26,9 @@ reportlab>=4.2.0
 pypdf>=5.1.0
 python-docx>=1.1.0  # Geracao de Documentos (export DOCX)
 openpyxl>=3.1.0  # leitura de .xlsx no acordofes_ingest (estava faltando)
+# .xls BIFF (Excel 97, exportado do Access) das planilhas de pagamento do FES da
+# SES-RS (ingestion/fes_rs.py). O openpyxl só lê .xlsx; o pandas delega ao xlrd.
+xlrd>=2.0.1
 pywebpush>=1.14.0  # Push web (VAPID) do Painel Executivo do prefeito
 # Servidor MCP de leitura (mcp_app.py). ⚠️ 2.x renomeou FastMCP -> MCPServer e
 # mudou o Context injetavel (mcp.server.mcpserver.context); travado em <3 para o

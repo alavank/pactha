@@ -689,6 +689,10 @@ MIGRATION_FILES = [
     # (Plano, PAS, RDQA, RAG) — o detalhe dos itens 3.2.3/3.2.4/5.1/5.2 do CAUC
     # (24/09/2026). Tabelas novas, só com FK para `municipios`.
     "add_siops_siope_rag.sql",
+    # Repasses do Fundo Estadual de Saúde do RS (SES-RS, planilha mensal de
+    # pagamentos) aos fundos municipais e hospitais (24/09/2026). Tabelas novas,
+    # só com FK para `municipios`.
+    "add_fes_rs_pagamentos.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

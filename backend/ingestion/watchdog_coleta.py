@@ -289,6 +289,10 @@ FRESCOR_HORAS_POR_UF = {
         # rodada e continua de onde parou — cada uma dessas rodadas grava
         # `success`, entao o frescor fica em dia desde a primeira.
         "tce_rs_portal": 30,
+        # Pagamentos do Fundo Estadual de Saúde (SES-RS, 24/09/2026), 1x/dia. A
+        # rodada que acha todos os meses iguais (hash) grava `success` e carimba;
+        # a SES parada há mais de 10 dias vira `partial` pelo próprio coletor.
+        "fes_rs": 30,
     },
     "PR": {
         # TCE-PR pelo PIT (22/09/2026). Rodada diária; quase toda ela é um HEAD

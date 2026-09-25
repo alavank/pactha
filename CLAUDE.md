@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **34 official data sources** (federal +
+emendas) for Brazilian municipalities, tracking **35 official data sources** (federal +
 MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is SES-MG's **pagamento de
 resoluções** (`ses_mg_resolucoes.py`): every payment order from the State health fund
 to the Fundo Municipal, per Resolução SES — MG's ordinary health fundo a fundo, which
@@ -27,7 +27,14 @@ educação" of Regularidade. ⚠️ The SIOPS API answers 404 `msg03` ("não hom
 miss, even a wrong IBGE: "not delivered" is proven by the legacy homologation list, never
 by `msg03`. It also kills a false alarm: `bi_abas.prazos_dos_itens(entregues=)` stops
 warning "vence em N dias" on 3.2.3/3.2.4 when the bimestre that validity covers was already
-delivered. Before them, the **FNS account balance**
+delivered. And the **RS State Health Fund
+payments** (`fes_rs.py`): SES-RS's monthly `.xls` at saude.rs.gov.br/pagamentos-mes
+(whole State, republished daily) -> `fes_rs_pagamentos`, shown on the Cofinanciamento
+screen in RS mode. ⚠️ Its "Cód. Município" is the STATE code, not IBGE (Nova Palma 083):
+matched through the versioned `services/municipios_rs_codigo_estadual.py` (497/497, built
+by a CNPJ chain in `scripts/gerar_depara_municipios_rs.py`); the Fundo Municipal is split
+from the hospitals that receive ASSISTIR/MAC directly (out of the prefeitura's total), and
+fund retentions (CONASEMS, auditoria) are highlighted. Before them, the **FNS account balance**
 (`fns_saldo.py`): the Portal FNS's yearly `REPASSE-FAF-COM-POPULACAO-<ANO>` file is the
 ONLY public source of how much sits in each Fundo Municipal de Saúde bank account
 (ConsultaFNS's API has no balance — its statement endpoint is 404) -> `fns_saldo_conta`,

@@ -387,6 +387,7 @@ _COBERTURA_TABELAS = [
     ("repasses_estaduais",   "Repasses estaduais",           "Estadual"),
     ("cofinanciamento_saude", "Cofinanciamento saúde",       "Estadual"),
     ("ses_mg_pagamentos",    "Fundo a fundo SES-MG (Resoluções)", "Estadual"),
+    ("fes_rs_pagamentos",    "Repasses FES saúde (RS)",      "Estadual"),
     ("consulta_popular_rs",  "Consulta Popular (RS)",        "Estadual"),
     ("cauc_situacao",        "CAUC (regularidade federal)",  "Regularidade"),
     ("contas_irregulares",   "Contas irregulares",           "Regularidade"),
