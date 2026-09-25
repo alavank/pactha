@@ -1,51 +1,60 @@
 """
-Emendas estaduais de MG pela planilha OFICIAL da SEGOV (emendas.mg.gov.br) — a
-EXECUÇÃO que o SIGCON não mostra, sem senha de ninguém.
+Emendas estaduais de MG pelos DADOS ABERTOS do Estado (dados.mg.gov.br, pacote
+`portal_emendas_estaduais`) — a EXECUÇÃO que o SIGCON não mostra, sem senha de
+ninguém. É a mesma base do portal emendas.mg.gov.br (SEGOV).
 
-    https://www.emendas.mg.gov.br/transparencia/
-    .../wp-content/dados-emendas/2026_Marcel/DADOS_EMENDAS_2019_2020_2021_2022.xlsx
-    .../wp-content/dados-emendas/2026_Marcel/DADOS_EMENDAS_2023_2024_2025_2026.xlsx
+    https://dados.mg.gov.br/api/3/action/package_show?id=portal_emendas_estaduais
+    recurso vw_sg_v2_ep_indic_recursos_tw.csv (indicação × beneficiário × valores)
 
-Uma linha por INDICAÇÃO (67 mil nos dois arquivos em 24/09/2026): autor, tipo
+Uma linha por INDICAÇÃO (37 mil em 24/09/2026, 2023-2026): autor, tipo
 (Transferência Especial, Resolução SES, Convênio, Execução Direta...), situação,
 beneficiário com CNPJ e — o que o SIGCON não tem — valor EMPENHADO, LIQUIDADO e
 PAGO. O número da indicação é o MESMO do SIGCON ("INDICACAO: 78139"), e é por ele
 que as duas fontes se completam em `emendas_estaduais`.
 
-O QUE ESTA FONTE ACRESCENTA (medido em Monte Sião: 103 indicações 2019-2026):
-- a execução de cada indicação — TE-MG 2025: R$ 2,06 mi pagos;
+O QUE ESTA FONTE ACRESCENTA (medido em Monte Sião: 57 indicações 2023-2026):
+- a execução de cada indicação;
 - a RESOLUÇÃO SES (fundo a fundo da saúde por emenda), ~3 mil/ano no Estado, que
   o "Pesquisar Emendas por Convenente" do SIGCON não lista à prefeitura;
 - o município sem senha do SIGCON no Cofre (20 de 42 na Freitas em 29/08).
 
 AS ARMADILHAS, medidas em 24/09/2026:
 
-1. ⚠️ **A PLANILHA NÃO É "BIMESTRAL".** O cartão do relatório diz bimestral; os
-   dois arquivos são de 13/05/2026 (Last-Modified) e a aba se chama "12-05". Por
-   isso a data da planilha vai em `execucao_em` e a tela a mostra: "pago R$ 0" de
-   2026 numa planilha de maio não é "não foi pago". Planilha com mais de
-   `IDADE_MAX_DIAS` faz a rodada `partial` — a fonte parou, e o vigia diz.
+1. ⚠️ **O emendas.mg.gov.br BARRA IP DE DATACENTER.** A 1ª versão lia as duas
+   planilhas .xlsx do site: 200 do IP residencial, 403 da VPS (até a página
+   inicial) e 403 do runner do GitHub. Nunca gravou nada nos três tenants de MG.
+   O pacote do dados.mg.gov.br responde à VPS (`segov_pagamentos` e
+   `sigcon_ckan_backfill` leem dele com `success` toda noite) e é MAIS NOVO:
+   atualizado em 23/09/2026, contra a planilha do site
+   parada em 12/05/2026. UA de navegador, como nos outros coletores do dados.mg.
 
-2. ⚠️ **DOIS LAYOUTS.** 2019-2022 tem 26 colunas e NÃO tem código IBGE (só o
-   nome do município); 2023-2026 tem 49, com IBGE. Colunas lidas por NOME; faltando
-   uma, o arquivo é recusado (a rodada vira `partial` e nada daquele arquivo é
-   apagado).
+2. ⚠️ **SÓ 2023 EM DIANTE.** O CSV aberto começa em 2023 (a planilha do site ia a
+   2019, sem IBGE). Indicação anterior continua só com o que o SIGCON raspou.
 
-3. ⚠️ **O MUNICÍPIO DA LINHA É O DO BENEFICIÁRIO, E NEM TODO BENEFICIÁRIO É A
+3. ⚠️ **NÚMERO EXPORTADO COMO FLOAT.** IBGE "3143401,0", CNPJ "41774639000101,0"
+   — e CNPJ que perdeu o zero à esquerda (13 dígitos). Tirar a casa decimal ANTES
+   de pegar os dígitos, senão o IBGE vira 8 dígitos e nada casa.
+
+4. **A DATA É A DO RECURSO NO CKAN** (`last_modified`), e vai em `execucao_em`:
+   "pago R$ 0" só vale até essa data. Com mais de `IDADE_MAX_DIAS` a rodada sai
+   `partial` — a fonte parou, e o vigia diz. Colunas lidas por NOME; faltando
+   uma, o arquivo é recusado (`partial`, e nada é apagado).
+
+5. ⚠️ **O MUNICÍPIO DA LINHA É O DO BENEFICIÁRIO, E NEM TODO BENEFICIÁRIO É A
    PREFEITURA.** Entra em `emendas_estaduais` (as contas) só o ente municipal —
    tipo MUNICÍPIO / FUNDO MUNICIPAL, ou o CNPJ de `municipios.cnpj`. OSC, caixa
    escolar (escola ESTADUAL), órgão estadual e consórcio vão para
-   `emendas_estaduais_outros`, fora das somas. No layout antigo, sem o tipo, vale
-   o CNPJ ou o nome começando por PREFEITURA/MUNICÍPIO/FUNDO MUNICIPAL.
+   `emendas_estaduais_outros`, fora das somas. Sem o tipo, vale o CNPJ ou o nome
+   começando por PREFEITURA/MUNICÍPIO/FUNDO MUNICIPAL.
 
-4. ⚠️ **O SIGCON GANHA NOS CAMPOS DELE.** Ele é raspado todo dia; a planilha tem
-   meses. Numa indicação que o SIGCON já gravou, a planilha só PREENCHE o que está
-   vazio e grava as colunas de execução — `raw_data` e situação continuam do SIGCON.
-   Numa indicação que só a planilha tem, a planilha é dona da linha.
+6. ⚠️ **O SIGCON GANHA NOS CAMPOS DELE.** Ele é raspado todo dia. Numa indicação
+   que o SIGCON já gravou, esta fonte só PREENCHE o que está vazio e grava as
+   colunas de execução — `raw_data` e situação continuam do SIGCON. Numa
+   indicação que só ela tem, ela é dona da linha.
 
-5. Nome do município (layout antigo) casa por IGUALDADE do nome normalizado entre
-   os municípios de MG do tenant — nunca por "contém" (a lição da Santa Maria do
-   Herval). Em MG o nome é único dentro do estado.
+7. Linha sem IBGE (caixa escolar: ~3.600) casa pelo NOME normalizado, por
+   IGUALDADE, entre os municípios de MG do tenant — nunca por "contém" (a lição
+   da Santa Maria do Herval). Em MG o nome é único dentro do estado.
 
 Rodável por Scheduled Task (worker de tenant com município de MG) ou à mão:
     python -u ingestion/emendas_mg.py            # coleta de verdade
@@ -53,6 +62,7 @@ Rodável por Scheduled Task (worker de tenant com município de MG) ou à mão:
 """
 from __future__ import annotations
 
+import csv
 import io
 import json
 import logging
@@ -60,9 +70,8 @@ import os
 import re
 import sys
 import unicodedata
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from email.utils import parsedate_to_datetime
 
 import httpx
 
@@ -70,41 +79,34 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 log = logging.getLogger("emendas_mg")
 
-BASE = "https://www.emendas.mg.gov.br/wp-content/dados-emendas/2026_Marcel"
-ARQUIVOS = ("DADOS_EMENDAS_2019_2020_2021_2022.xlsx",
-            "DADOS_EMENDAS_2023_2024_2025_2026.xlsx")
-UA = {"User-Agent": "Mozilla/5.0 (PACTHA/1.0; dados abertos emendas MG)"}
+PACOTE = "https://dados.mg.gov.br/api/3/action/package_show?id=portal_emendas_estaduais"
+RECURSO = "vw_sg_v2_ep_indic_recursos_tw.csv"
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131 Safari/537.36"}
 UF = "MG"
 SOURCE = "emendas_mg"
-FONTE_RAW = "emendas_mg_planilha"   # raw_data->>'_source' das linhas que a planilha criou
+# raw_data->>'_source' das linhas que esta fonte criou. O nome é da 1ª versão (a
+# planilha do site) e fica: é ele que diz ao upsert quem é dono da linha.
+FONTE_RAW = "emendas_mg_planilha"
 TIMEOUT = 300
-MIN_LINHAS = 10000                  # cada arquivo tinha 30-37 mil; menos = cortado
+MIN_LINHAS = 10000                  # 37 mil em 24/09/2026; menos = cortado
 IDADE_MAX_DIAS = int(os.getenv("EMENDAS_MG_IDADE_MAX_DIAS") or "90")
 
-# Nome no NOSSO registro -> nome da coluna em cada layout (armadilha 2).
-LAYOUT_NOVO = {
-    "ano": "Ano da Indicação", "nr": "Número da Indicação",
-    "tipo": "Tipo de Indicação", "status": "Status da Indicação", "autor": "Autor",
-    "tipo_atendimento": "Tipo de Aplicação", "uo_codigo": "Unidade Orçamentária Código",
-    "uo_sigla": "Unidade Orçamentária Sigla", "grupo": "Grupo de Despesa Descrição",
-    "ibge": "Código IBGE do Município", "municipio": "Município",
-    "tipo_beneficiario": "Descrição do Tipo de Beneficiário",
-    "beneficiario": "Nome Beneficiário", "cnpj": "Número do CNPJ do Beneficiário",
-    "valor_indicacao": "Valor Indicado", "valor_empenhado": "Valor Empenhado no Ano",
-    "valor_liquidado": "Valor Liquidado Atualizado", "valor_pago": "Valor Pago Atualizado",
-    "valor_resto_saldo": "Saldo Restos a Pagar", "instrumento": "Número do Instrumento",
+# Nome no NOSSO registro -> coluna do CSV (armadilha 4: faltando uma, recusa).
+COLUNAS = {
+    "ano": "ano_exercicio", "nr": "numero_indicacao",
+    "tipo": "tipo_indicacao", "status": "status_indicacao", "autor": "responsavel",
+    "tipo_atendimento": "tipo_aplicacao_descricao", "uo_codigo": "uo",
+    "uo_sigla": "uo_sigla", "grupo": "grupo_despesa_nome",
+    "ibge": "municipio_ibge", "municipio": "municipio",
+    "tipo_beneficiario": "beneficiario_tipo",
+    "beneficiario": "beneficiario_nome", "cnpj": "beneficiario_cnpj",
+    "valor_indicacao": "valor_indicacao", "valor_empenhado": "valor_empenhado",
+    "valor_liquidado": "valor_liquidado", "valor_pago": "valor_pago",
+    "instrumento": "instrumento_numero",
 }
-LAYOUT_ANTIGO = {
-    "ano": "Ano Exercicio Inciso", "nr": "Nº Indicação - SIGCON",
-    "tipo": "Tipo de Indicação", "status": "Status da Indicação",
-    "autor": "Nome do Responsável",
-    "tipo_atendimento": "Tipo de Atendimento / Tipo de aplicação",
-    "uo_sigla": "Órgão - Sigla", "grupo": "Grupo de Despesa", "municipio": "Município",
-    "beneficiario": "Beneficiário - Nome", "cnpj": "Beneficiário - CNPJ",
-    "valor_indicacao": "Valor Indicação", "valor_empenhado": "Valor Empenhado no Ano da Emenda",
-    "valor_liquidado": "Valor Liquidado no Ano da Emenda", "valor_pago": "Valor Pago Atual",
-    "instrumento": "Nº Instrumento",
-}
+# Vão só para o raw_data: o caminho da indicação até o dinheiro.
+EXTRAS = ("proposta_numero", "status_instrumento", "numero_siafi", "data_publicacao",
+          "data_validade", "descricao_indicacao")
 
 
 def _norm(s) -> str:
@@ -113,7 +115,7 @@ def _norm(s) -> str:
     return " ".join(re.sub(r"[^A-Z0-9]+", " ", t).split())
 
 
-# A planilha escreve o tipo em CAIXA ALTA; o SIGCON, "Transferência Especial". Sem
+# A fonte escreve o tipo em CAIXA ALTA; o SIGCON, "Transferência Especial". Sem
 # isto, o PDF, o BI e o filtro por tipo agrupariam a mesma coisa em duas linhas
 # (medido no Postgres de teste: "Transferência Especial" 1 + "TRANSFERÊNCIA
 # ESPECIAL" 22 no mesmo município).
@@ -141,6 +143,11 @@ def _texto(v) -> str | None:
     return None if s in ("", "-") else s
 
 
+def _sem_decimal(v) -> str:
+    """ "3143401,0" -> "3143401" (armadilha 3)."""
+    return re.sub(r"[.,]0+$", "", str(v or "").strip())
+
+
 def _dec(v) -> Decimal | None:
     if v is None or (isinstance(v, str) and v.strip() in ("", "-")):
         return None
@@ -151,8 +158,8 @@ def _dec(v) -> Decimal | None:
 
 
 def _cnpj(v) -> str | None:
-    d = "".join(c for c in str(v or "") if c.isdigit())
-    # Número do Excel perde o zero à esquerda (12-13 dígitos); texto já vem com 14.
+    d = "".join(c for c in _sem_decimal(v) if c.isdigit())
+    # Exportado como número, perde o zero à esquerda (12-13 dígitos).
     if 12 <= len(d) <= 13:
         d = d.zfill(14)
     return d if len(d) == 14 else None
@@ -167,58 +174,45 @@ def _nr(v) -> str | None:
     return s[:50]
 
 
-def data_da_aba(titulo: str, ultima_modificacao: datetime | None) -> date | None:
-    """A aba se chama "12-05" (dia-mês); o ano vem do Last-Modified do arquivo."""
-    m = re.fullmatch(r"\s*(\d{1,2})[-_/.](\d{1,2})\s*", titulo or "")
-    ref = (ultima_modificacao or datetime.now(timezone.utc)).date()
-    if not m:
-        return ultima_modificacao.date() if ultima_modificacao else None
-    try:
-        d = date(ref.year, int(m.group(2)), int(m.group(1)))
-    except ValueError:
-        return ultima_modificacao.date() if ultima_modificacao else None
-    # Aba "28-12" num arquivo modificado em janeiro é do ano anterior.
-    return d if d <= ref else date(ref.year - 1, d.month, d.day)
+def recurso(pacote: dict) -> tuple[str, date | None]:
+    """(url do CSV, data da última atualização) a partir do `package_show`. O id
+    do recurso muda quando o Estado o recria; o nome do arquivo, não."""
+    for r in (pacote.get("result") or {}).get("resources") or []:
+        if str(r.get("url") or "").rsplit("/", 1)[-1] == RECURSO:
+            quando = r.get("last_modified") or r.get("metadata_modified") or r.get("created")
+            try:
+                em = datetime.fromisoformat(str(quando)[:19]).date() if quando else None
+            except ValueError:
+                em = None
+            return r["url"], em
+    raise ValueError(f"{RECURSO} sumiu do pacote portal_emendas_estaduais")
 
 
-def ler_xlsx(conteudo: bytes, ultima_modificacao: datetime | None = None
-             ) -> tuple[list[dict], date | None]:
-    """(linhas normalizadas, data da planilha). ValueError se o layout não for um
-    dos dois medidos."""
-    import openpyxl
-    wb = openpyxl.load_workbook(io.BytesIO(conteudo), read_only=True, data_only=True)
-    ws = wb.worksheets[0]
-    it = ws.iter_rows(values_only=True)
-    cab = [str(c).strip() if c is not None else "" for c in next(it)]
-    for layout in (LAYOUT_NOVO, LAYOUT_ANTIGO):
-        if all(col in cab for col in layout.values()):
-            break
-    else:
-        falta_novo = [c for c in LAYOUT_NOVO.values() if c not in cab]
-        falta_antigo = [c for c in LAYOUT_ANTIGO.values() if c not in cab]
-        raise ValueError("planilha fora dos dois layouts medidos — faltam "
-                         f"{(falta_novo if len(falta_novo) <= len(falta_antigo) else falta_antigo)[:5]}")
-    ix = {k: cab.index(col) for k, col in layout.items()}
+def ler_csv(conteudo: bytes) -> list[dict]:
+    """Linhas normalizadas. ValueError se faltar coluna (armadilha 4)."""
+    leitor = csv.DictReader(io.StringIO(conteudo.decode("utf-8-sig")), delimiter=";")
+    cab = [c.strip() for c in leitor.fieldnames or []]
+    falta = [c for c in COLUNAS.values() if c not in cab]
+    if falta:
+        raise ValueError(f"CSV fora do layout medido — faltam {falta[:5]}")
     linhas = []
-    for r in it:
-        if not r or all(v is None for v in r):
-            continue
-        g = lambda k: r[ix[k]] if k in ix and ix[k] < len(r) else None  # noqa: E731
+    for r in leitor:
+        g = lambda k: r.get(COLUNAS[k])  # noqa: E731
         nr = _nr(g("nr"))
         if not nr:
             continue
         try:
-            ano = int(str(g("ano")).strip())
+            ano = int(_sem_decimal(g("ano")))
         except (TypeError, ValueError):
             ano = None
-        ibge = "".join(c for c in str(g("ibge") or "") if c.isdigit()) or None
+        ibge = "".join(c for c in _sem_decimal(g("ibge")) if c.isdigit()) or None
         linhas.append({
             "nr": nr, "ano": ano,
             "tipo": tipo_como_sigcon(g("tipo")),
             "status": (_texto(g("status")) or "")[:50] or None,
             "autor": (_texto(g("autor")) or "")[:300] or None,
             "tipo_atendimento": (_texto(g("tipo_atendimento")) or "")[:300] or None,
-            "uo_codigo": (_texto(g("uo_codigo")) or "")[:20] or None,
+            "uo_codigo": (_texto(_sem_decimal(g("uo_codigo"))) or "")[:20] or None,
             "uo_sigla": (_texto(g("uo_sigla")) or "")[:50] or None,
             "grupo": (_texto(g("grupo")) or "")[:200] or None,
             "ibge": ibge if ibge and len(ibge) == 7 else None,
@@ -230,10 +224,12 @@ def ler_xlsx(conteudo: bytes, ultima_modificacao: datetime | None = None
             "valor_empenhado": _dec(g("valor_empenhado")),
             "valor_liquidado": _dec(g("valor_liquidado")),
             "valor_pago": _dec(g("valor_pago")),
-            "valor_resto_saldo": _dec(g("valor_resto_saldo")),
+            "valor_resto_saldo": None,       # o CSV aberto não tem a coluna
             "instrumento": _texto(g("instrumento")),
+            "extras": {k: _texto(_sem_decimal(r.get(k)) if k == "numero_siafi" else r.get(k))
+                       for k in EXTRAS if _texto(r.get(k))},
         })
-    return linhas, data_da_aba(ws.title, ultima_modificacao)
+    return linhas
 
 
 _TIPOS_MUNICIPAIS = ("MUNICIPIO", "FUNDO MUNICIPAL")
@@ -246,7 +242,7 @@ def e_municipal(linha: dict, cnpj_prefeitura: str | None) -> bool:
     tb = _norm(linha.get("tipo_beneficiario"))
     if tb:
         return tb.startswith(_TIPOS_MUNICIPAIS)
-    # Layout antigo: sem o tipo, pelo nome (armadilha 3).
+    # Sem o tipo, pelo nome (armadilha 5).
     nome = _norm(linha.get("beneficiario"))
     return nome.startswith(("PREFEITURA", "MUNICIPIO", "FUNDO MUNICIPAL"))
 
@@ -260,7 +256,7 @@ def casa_municipio(linha: dict, por_ibge: dict, por_nome: dict) -> dict | None:
 # ── gravação ─────────────────────────────────────────────────────────────────
 
 def _campo_sigcon(col: str) -> str:
-    """A planilha só preenche o vazio numa linha do SIGCON (armadilha 4); numa
+    """Esta fonte só preenche o vazio numa linha do SIGCON (armadilha 6); numa
     linha que ela mesma criou, ela é a dona e atualiza."""
     return (f"{col} = CASE WHEN emendas_estaduais.raw_data->>'_source' = '{FONTE_RAW}' "
             f"THEN EXCLUDED.{col} ELSE COALESCE(NULLIF(emendas_estaduais.{col}::text, ''), "
@@ -324,7 +320,8 @@ def registro(linha: dict, municipio_id: int, execucao_em: date | None) -> dict:
     raw = {"_source": FONTE_RAW, "municipio": linha.get("municipio"),
            "ibge": linha.get("ibge"), "tipo_beneficiario": linha.get("tipo_beneficiario"),
            "instrumento": linha.get("instrumento"),
-           "execucao_em": execucao_em.isoformat() if execucao_em else None}
+           "execucao_em": execucao_em.isoformat() if execucao_em else None,
+           **(linha.get("extras") or {})}
     return {**linha, "mid": municipio_id, "execucao_em": execucao_em,
             "raw": json.dumps(raw, ensure_ascii=False)}
 
@@ -353,39 +350,34 @@ def _log_ingest(cur, conn, status: str, n: int, nota: str | None = None) -> None
 def coletar(client: httpx.Client, alvos: list[dict]
             ) -> tuple[dict, dict, list[str], date | None]:
     """({(mid, nr): registro municipal}, {(mid, nr): registro de outros}, falhas,
-    data mais recente das planilhas)."""
+    data do recurso no CKAN)."""
     por_ibge = {a["ibge"]: a for a in alvos if a["ibge"]}
     por_nome = {_norm(a["nome"]): a for a in alvos}
     municipais: dict = {}
     outros: dict = {}
-    falhas: list[str] = []
-    datas: list[date] = []
-    for arq in ARQUIVOS:
-        try:
-            r = client.get(f"{BASE}/{arq}", headers=UA, timeout=TIMEOUT)
-            r.raise_for_status()
-            lm = r.headers.get("last-modified")
-            modificado = parsedate_to_datetime(lm) if lm else None
-            linhas, em = ler_xlsx(r.content, modificado)
-            if len(linhas) < MIN_LINHAS:
-                raise ValueError(f"só {len(linhas)} linha(s) (< {MIN_LINHAS}) — cortada?")
-        except Exception as e:
-            falhas.append(f"{arq}: {type(e).__name__}: {str(e)[:120]}")
-            log.warning("  %s: %s: %s", arq, type(e).__name__, str(e)[:200])
+    try:
+        p = client.get(PACOTE, headers=UA, timeout=60)
+        p.raise_for_status()
+        url, em = recurso(p.json())
+        r = client.get(url, headers=UA, timeout=TIMEOUT)
+        r.raise_for_status()
+        linhas = ler_csv(r.content)
+        if len(linhas) < MIN_LINHAS:
+            raise ValueError(f"só {len(linhas)} linha(s) (< {MIN_LINHAS}) — cortado?")
+    except Exception as e:
+        log.warning("  %s: %s: %s", RECURSO, type(e).__name__, str(e)[:200])
+        return {}, {}, [f"{RECURSO}: {type(e).__name__}: {str(e)[:120]}"], None
+    n = 0
+    for ln in linhas:
+        alvo = casa_municipio(ln, por_ibge, por_nome)
+        if not alvo:
             continue
-        if em:
-            datas.append(em)
-        n = 0
-        for ln in linhas:
-            alvo = casa_municipio(ln, por_ibge, por_nome)
-            if not alvo:
-                continue
-            reg = registro(ln, alvo["id"], em)
-            (municipais if e_municipal(ln, alvo["cnpj"]) else outros)[(alvo["id"], ln["nr"])] = reg
-            n += 1
-        log.info("  %s: %d linha(s), planilha de %s, %d do(s) município(s)",
-                 arq, len(linhas), em, n)
-    return municipais, outros, falhas, (max(datas) if datas else None)
+        reg = registro(ln, alvo["id"], em)
+        (municipais if e_municipal(ln, alvo["cnpj"]) else outros)[(alvo["id"], ln["nr"])] = reg
+        n += 1
+    log.info("  %s: %d linha(s), atualizado em %s, %d do(s) município(s)",
+             RECURSO, len(linhas), em, n)
+    return municipais, outros, [], em
 
 
 def grava(cur, municipais: dict, outros: dict, alvos: list[dict], completa: bool) -> None:
@@ -393,8 +385,8 @@ def grava(cur, municipais: dict, outros: dict, alvos: list[dict], completa: bool
     psycopg2.extras.execute_batch(cur, _SQL, list(municipais.values()), page_size=200)
     psycopg2.extras.execute_batch(cur, _SQL_OUTROS, list(outros.values()), page_size=200)
     if completa:
-        # A entidade que a planilha deixou de publicar sai — só com os dois
-        # arquivos lidos: um que falhou esconderia linhas que continuam lá.
+        # A entidade que a fonte deixou de publicar sai — só com o arquivo
+        # lido inteiro: um que falhou esconderia linhas que continuam lá.
         for a in alvos:
             nrs = [nr for (mid, nr) in outros if mid == a["id"]]
             cur.execute("DELETE FROM emendas_estaduais_outros "
@@ -410,7 +402,7 @@ def ingest(dry: bool = False) -> int:
         try:
             alvos = _alvos(cur)
             if not alvos:
-                log.info("nenhum município de MG — planilha de emendas de MG não se aplica")
+                log.info("nenhum município de MG — emendas estaduais de MG não se aplicam")
                 if not dry:
                     _log_ingest(cur, conn, "success", 0)
                 return 0
@@ -428,11 +420,11 @@ def ingest(dry: bool = False) -> int:
             conn.commit()
             notas = list(falhas)
             if em and (date.today() - em).days > IDADE_MAX_DIAS:
-                notas.append(f"a SEGOV não regera a planilha desde {em:%d/%m/%Y} "
+                notas.append(f"o dados.mg não atualiza as emendas desde {em:%d/%m/%Y} "
                              f"({(date.today() - em).days} dias) — execução defasada")
             status = "partial" if notas else "success"
-            log.info("=== Emendas MG (planilha): %d ao município, %d a entidade, "
-                     "planilha de %s, status=%s ===", len(municipais), len(outros), em, status)
+            log.info("=== Emendas MG (dados.mg): %d ao município, %d a entidade, "
+                     "dados de %s, status=%s ===", len(municipais), len(outros), em, status)
             _log_ingest(cur, conn, status, len(municipais), " | ".join(notas)[:400] or None)
             return len(municipais)
         except Exception as e:

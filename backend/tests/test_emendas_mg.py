@@ -1,74 +1,71 @@
-"""Emendas estaduais de MG pela planilha oficial da SEGOV — armadilhas de 24/09/2026.
+"""Emendas estaduais de MG pelos dados abertos do Estado — armadilhas de 24/09/2026.
 
-As planilhas sintéticas repetem os dois layouts medidos em emendas.mg.gov.br
-(26 colunas em 2019-2022, sem IBGE; 49 em 2023-2026, com IBGE), com a aba
-nomeada "12-05" como a fonte faz.
+Os CSVs sintéticos repetem o formato medido em dados.mg.gov.br
+(`vw_sg_v2_ep_indic_recursos_tw.csv`): `;`, UTF-8 com BOM, decimal com vírgula
+e IBGE/CNPJ exportados como float ("3143401,0").
 """
 import inspect
-import io
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal
 
 import httpx
-import openpyxl
 import pytest
 
 from ingestion import emendas_mg as em
 
-MODIFICADO = datetime(2026, 5, 13, 18, 15, tzinfo=timezone.utc)
+MONTE_SIAO_CNPJ = "22646525000131"          # conferido no BrasilAPI em 24/09/2026
+# Todas as colunas medidas, na ordem do arquivo; o teste só preenche as nossas.
+CABECALHO = (
+    "numero_indicacao;tipo_inciso;numero_inciso;ano_exercicio;indicador_impositividade;uo;"
+    "uo_sigla;uo_descricao;responsavel;id_tipo_indicacao;tipo_indicacao;numero_prioridade;"
+    "id_status_indicacao;status_indicacao;municipio;municipio_ibge;codigo_escola;"
+    "beneficiario_nome;beneficiario_cnpj;beneficiario_tipo;acao_numero;acao_nome;"
+    "grupo_despesa_codigo;grupo_despesa_nome;funcao_codigo;funcao_descricao;minimo;"
+    "genero_descricao;categoria_descricao;especificacao_descricao;tipo_aplicacao_grupo;"
+    "tipo_aplicacao_descricao;descricao_indicacao;funcional_programatica;"
+    "status_transparencia_id;valor_indicacao;valor_utilizado;valor_empenhado;"
+    "valor_liquidado;valor_executado;valor_pago;proposta_numero;proposta_ano;"
+    "proposta_titulo;plano_numero;plano_ano;plano_titulo;instrumento_numero;"
+    "instrumento_titulo;instrumento_situacao;status_instrumento;numero_siafi;"
+    "data_publicacao;data_validade;status_transparencia_descricao").split(";")
 
 
-def _xlsx(layout: dict, linhas: list[dict], aba="12-05", extra_cab=()) -> bytes:
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = aba
-    cab = list(layout.values()) + list(extra_cab)
-    ws.append(cab)
-    for ln in linhas:
-        ws.append([ln.get(k) for k in layout] + [None] * len(extra_cab))
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+def _linha(nr, ibge="3143401,0", municipio="MONTE SIÃO", tipo="TRANSFERÊNCIA ESPECIAL",
+           tipo_benef="MUNICÍPIO", benef="MUNICIPIO DE MONTE SIAO",
+           cnpj=MONTE_SIAO_CNPJ + ",0", pago="140000,0", **extra):
+    v = {"numero_indicacao": str(nr), "ano_exercicio": "2025", "uo": "1491",
+         "uo_sigla": "SEGOV", "responsavel": "FULANO", "tipo_indicacao": tipo,
+         "status_indicacao": "APROVADO", "municipio": municipio, "municipio_ibge": ibge,
+         "beneficiario_nome": benef, "beneficiario_cnpj": cnpj,
+         "beneficiario_tipo": tipo_benef, "grupo_despesa_nome": "INVESTIMENTOS",
+         "tipo_aplicacao_descricao": "", "valor_indicacao": "140000,0",
+         "valor_empenhado": "140000,0", "valor_liquidado": "140000,0", "valor_pago": pago,
+         "instrumento_numero": "", "numero_siafi": "1512345,0",
+         "status_instrumento": "REGISTRADO NO SIAFI", **extra}
+    return ";".join(v.get(c, "") for c in CABECALHO)
 
 
-def _novo(nr, ibge="3143401", municipio="MONTE SIAO", tipo="TRANSFERÊNCIA ESPECIAL",
-          tipo_benef="MUNICÍPIO", benef="PREFEITURA MUNICIPAL DE MONTE SIAO",
-          cnpj="18675983000121", pago=140000):
-    return {"ano": 2025, "nr": nr, "tipo": tipo, "status": "APROVADO", "autor": "FULANO",
-            "tipo_atendimento": "-", "uo_codigo": 1491, "uo_sigla": "SEGOV",
-            "grupo": "INVESTIMENTOS", "ibge": ibge, "municipio": municipio,
-            "tipo_beneficiario": tipo_benef, "beneficiario": benef, "cnpj": cnpj,
-            "valor_indicacao": 140000, "valor_empenhado": 140000,
-            "valor_liquidado": 140000, "valor_pago": pago, "valor_resto_saldo": 0,
-            "instrumento": "-"}
+def _csv(linhas: list[str], cabecalho=CABECALHO) -> bytes:
+    return ("﻿" + ";".join(cabecalho) + "\n" + "\n".join(linhas) + "\n").encode("utf-8")
 
 
-def _antigo(nr, municipio="MONTE SIAO", benef="FUNDO MUNICIPAL DE SAÚDE DE MONTE SIÃO",
-            cnpj="11222333000144"):
-    return {"ano": 2021, "nr": nr, "tipo": "RESOLUÇÃO SES", "status": "APROVADO",
-            "autor": "BELTRANO", "tipo_atendimento": "Custeio (SES)", "uo_sigla": "FES",
-            "grupo": "Custeio", "municipio": municipio, "beneficiario": benef,
-            "cnpj": cnpj, "valor_indicacao": 100000, "valor_empenhado": 100000,
-            "valor_liquidado": 100000, "valor_pago": 90000, "instrumento": "-"}
-
-
-def test_layout_novo_le_ibge_valores_e_zero_como_zero():
-    linhas, data = em.ler_xlsx(_xlsx(em.LAYOUT_NOVO, [_novo(112572, pago=0)]), MODIFICADO)
-    assert data == date(2026, 5, 12)
-    x = linhas[0]
+def test_le_ibge_e_cnpj_exportados_como_float_e_zero_como_zero():
+    x, = em.ler_csv(_csv([_linha(112572, pago="0,0")]))
     assert x["nr"] == "112572" and x["ibge"] == "3143401" and x["ano"] == 2025
+    assert x["cnpj"] == MONTE_SIAO_CNPJ
     assert x["valor_pago"] == Decimal("0")                 # zero AFIRMADO, não vazio
     assert x["valor_indicacao"] == Decimal("140000")
-    assert x["tipo_atendimento"] is None and x["instrumento"] is None   # "-" = vazio
+    assert x["tipo_atendimento"] is None and x["instrumento"] is None   # "" = vazio
+    assert x["valor_resto_saldo"] is None                  # coluna que o CSV não tem
+    assert x["extras"] == {"numero_siafi": "1512345",
+                           "status_instrumento": "REGISTRADO NO SIAFI"}
 
 
-def test_layout_antigo_sem_ibge_e_cnpj_que_perdeu_o_zero():
-    linhas, _ = em.ler_xlsx(_xlsx(em.LAYOUT_ANTIGO, [_antigo(23899, cnpj=1834744000174)]),
-                            MODIFICADO)
-    x = linhas[0]
-    assert x["ibge"] is None and x["municipio"] == "MONTE SIAO"
-    assert x["cnpj"] == "01834744000174"                  # número do Excel perde o zero
-    assert x["valor_resto_saldo"] is None                 # coluna que o layout não tem
+def test_caixa_escolar_sem_ibge_e_cnpj_que_perdeu_o_zero():
+    x, = em.ler_csv(_csv([_linha(23899, ibge="", cnpj="1834744000174,0",
+                                 tipo_benef="CAIXA ESCOLAR", benef="CX ESC FULANO")]))
+    assert x["ibge"] is None and x["municipio"] == "MONTE SIÃO"
+    assert x["cnpj"] == "01834744000174"                   # float perde o zero
 
 
 @pytest.mark.parametrize("bruto,esperado", [
@@ -84,20 +81,25 @@ def test_tipo_na_grafia_do_sigcon(bruto, esperado):
     assert em.tipo_como_sigcon(bruto) == esperado
 
 
-def test_layout_desconhecido_e_recusado():
-    ruim = dict(em.LAYOUT_NOVO)
-    ruim["valor_pago"] = "Valor Pago Total"
-    with pytest.raises(ValueError, match="layouts medidos"):
-        em.ler_xlsx(_xlsx(ruim, [_novo(1)]), MODIFICADO)
+def test_coluna_renomeada_e_recusada():
+    ruim = [("valor_pago_total" if c == "valor_pago" else c) for c in CABECALHO]
+    with pytest.raises(ValueError, match="layout medido"):
+        em.ler_csv(_csv([_linha(1)], cabecalho=ruim))
 
 
-@pytest.mark.parametrize("aba,esperado", [
-    ("12-05", date(2026, 5, 12)),
-    ("28-12", date(2025, 12, 28)),     # aba de dezembro num arquivo de maio = ano anterior
-    ("Planilha1", date(2026, 5, 13)),  # sem data na aba: o Last-Modified
-])
-def test_data_da_aba(aba, esperado):
-    assert em.data_da_aba(aba, MODIFICADO) == esperado
+def _pacote(url_final=em.RECURSO, last_modified="2026-09-23T17:40:31.639475"):
+    base = "https://dados.mg.gov.br/dataset/x/resource"
+    return {"result": {"resources": [
+        {"url": f"{base}/a/download/execucao2026.csv", "last_modified": "2026-09-23T17:40:00"},
+        {"url": f"{base}/b/download/{url_final}", "last_modified": last_modified}]}}
+
+
+def test_recurso_pelo_nome_do_arquivo_e_data_do_ckan():
+    url, em_ = em.recurso(_pacote())
+    assert url.endswith("/b/download/" + em.RECURSO)
+    assert em_ == date(2026, 9, 23)
+    with pytest.raises(ValueError, match="sumiu"):
+        em.recurso(_pacote(url_final="outro.csv"))
 
 
 @pytest.mark.parametrize("linha,cnpj_pref,esperado", [
@@ -107,11 +109,11 @@ def test_data_da_aba(aba, esperado):
     ({"tipo_beneficiario": "ORGANIZAÇÃO DA SOCIEDADE CIVIL"}, None, False),
     ({"tipo_beneficiario": "Caixa Escolar"}, None, False),
     ({"tipo_beneficiario": "ÓRGÃOS OU ENTIDADES PÚBLICAS"}, None, False),
-    # Layout antigo, sem o tipo: pelo nome...
+    # Sem o tipo: pelo nome...
     ({"beneficiario": "FUNDO MUNICIPAL DE SAÚDE DE UBÁ"}, None, True),
     ({"beneficiario": "APAE DE UBA"}, None, False),
     # ...ou pelo CNPJ da prefeitura, que vale sempre.
-    ({"beneficiario": "PMMS", "cnpj": "18675983000121"}, "18675983000121", True),
+    ({"beneficiario": "PMMS", "cnpj": MONTE_SIAO_CNPJ}, MONTE_SIAO_CNPJ, True),
 ])
 def test_e_municipal(linha, cnpj_pref, esperado):
     assert em.e_municipal(linha, cnpj_pref) is esperado
@@ -144,42 +146,49 @@ def test_upsert_nao_sobrescreve_o_que_o_sigcon_raspou():
     assert "execucao_em = EXCLUDED.execucao_em" in sql
 
 
-def _cliente(arquivos: dict[str, bytes | int]):
+def _cliente(csv_: bytes | int, pacote: dict | int | None = None):
     def responde(req):
-        nome = str(req.url).rsplit("/", 1)[1]
-        v = arquivos.get(nome, 404)
-        if isinstance(v, int):
-            return httpx.Response(v)
-        return httpx.Response(200, content=v,
-                              headers={"last-modified": "Wed, 13 May 2026 18:15:32 GMT"})
+        if "package_show" in str(req.url):
+            v = _pacote() if pacote is None else pacote
+            return httpx.Response(v) if isinstance(v, int) else httpx.Response(200, json=v)
+        assert req.headers["user-agent"].startswith("Mozilla/5.0 (Windows")
+        return httpx.Response(csv_) if isinstance(csv_, int) else httpx.Response(200, content=csv_)
     return httpx.Client(transport=httpx.MockTransport(responde))
 
 
-ALVOS = [{"id": 7, "nome": "Monte Sião", "ibge": "3143401", "cnpj": "18675983000121"}]
+ALVOS = [{"id": 7, "nome": "Monte Sião", "ibge": "3143401", "cnpj": MONTE_SIAO_CNPJ}]
 
 
 def test_coletar_separa_municipal_de_entidade(monkeypatch):
     monkeypatch.setattr(em, "MIN_LINHAS", 1)
-    novo = _xlsx(em.LAYOUT_NOVO, [
-        _novo(1), _novo(2, tipo="RESOLUÇÃO SES", tipo_benef="ORGANIZAÇÃO DA SOCIEDADE CIVIL",
-                        benef="APAE DE MONTE SIAO", cnpj="99999999000199"),
-        _novo(3, ibge="3106200", municipio="BELO HORIZONTE")])
-    antigo = _xlsx(em.LAYOUT_ANTIGO, [_antigo(23899)])
-    with _cliente({em.ARQUIVOS[0]: antigo, em.ARQUIVOS[1]: novo}) as cl:
+    arq = _csv([
+        _linha(1),
+        _linha(2, tipo="RESOLUÇÃO SES", tipo_benef="ORGANIZAÇÃO DA SOCIEDADE CIVIL",
+               benef="APAE DE MONTE SIAO", cnpj="99999999000199,0"),
+        _linha(3, ibge="3106200,0", municipio="BELO HORIZONTE"),
+        _linha(4, tipo="RESOLUÇÃO SES", tipo_benef="FUNDO MUNICIPAL DE SAÚDE",
+               benef="FUNDO MUNICIPAL DE SAUDE DE MONTE SIAO", cnpj="11222333000144,0"),
+        _linha(5, ibge="", tipo_benef="CAIXA ESCOLAR", benef="CX ESC FULANO", cnpj="")])
+    with _cliente(arq) as cl:
         municipais, outros, falhas, data = em.coletar(cl, ALVOS)
-    assert falhas == [] and data == date(2026, 5, 12)
-    assert sorted(municipais) == [(7, "1"), (7, "23899")]
-    assert list(outros) == [(7, "2")]
-    assert municipais[(7, "1")]["execucao_em"] == date(2026, 5, 12)
+    assert falhas == [] and data == date(2026, 9, 23)
+    assert sorted(municipais) == [(7, "1"), (7, "4")]
+    assert sorted(outros) == [(7, "2"), (7, "5")]       # caixa escolar casa pelo nome
+    assert municipais[(7, "1")]["execucao_em"] == date(2026, 9, 23)
+    assert '"numero_siafi": "1512345"' in municipais[(7, "1")]["raw"]
 
 
-def test_arquivo_cortado_ou_fora_do_ar_vira_falha(monkeypatch):
+@pytest.mark.parametrize("csv_,pacote,motivo", [
+    (b"", 403, "HTTPStatusError"),           # o CKAN barrou
+    (500, None, "HTTPStatusError"),          # o arquivo não veio
+    (None, None, "cortado"),                 # veio curto
+])
+def test_fonte_fora_do_ar_ou_cortada_vira_falha(monkeypatch, csv_, pacote, motivo):
     monkeypatch.setattr(em, "MIN_LINHAS", 5)
-    with _cliente({em.ARQUIVOS[0]: 500,
-                   em.ARQUIVOS[1]: _xlsx(em.LAYOUT_NOVO, [_novo(1)])}) as cl:
-        municipais, _, falhas, _ = em.coletar(cl, ALVOS)
-    assert municipais == {} and len(falhas) == 2
-    assert "cortada" in falhas[1]
+    with _cliente(_csv([_linha(1)]) if csv_ is None else csv_, pacote) as cl:
+        municipais, outros, falhas, data = em.coletar(cl, ALVOS)
+    assert municipais == {} and outros == {} and data is None
+    assert len(falhas) == 1 and motivo in falhas[0]
 
 
 class _Cur:
@@ -190,7 +199,7 @@ class _Cur:
         self.sql.append((" ".join(sql.split()), params))
 
 
-def test_so_apaga_entidade_com_os_dois_arquivos_lidos(monkeypatch):
+def test_so_apaga_entidade_com_o_arquivo_lido(monkeypatch):
     import psycopg2.extras
     monkeypatch.setattr(psycopg2.extras, "execute_batch",
                         lambda cur, sql, seq, page_size=100: [cur.execute(sql, p) for p in seq])

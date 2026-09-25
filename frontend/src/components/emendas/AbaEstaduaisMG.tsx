@@ -30,7 +30,7 @@ const TIPOS_INDICACAO = [
   "Transferência Especial",
   "Aplicação Direta",
   "Convênio",
-  // Só a planilha da SEGOV traz (24/09/2026): o fundo a fundo da saúde por emenda.
+  // Só os dados da SEGOV trazem (24/09/2026): o fundo a fundo da saúde por emenda.
   "Resolução SES",
 ];
 
@@ -53,8 +53,8 @@ interface Emenda {
    *  scraper (#2) popular a indicação no convênio. */
   conv_nr?: string | null;
   conv_objeto?: string | null;
-  /** Execução pela planilha oficial da SEGOV (emendas.mg.gov.br). `null` = a
-   *  planilha não trouxe esta indicação; 0 = a SEGOV afirmou zero. */
+  /** Execução pelos dados abertos da SEGOV (dados.mg.gov.br). `null` = a
+   *  fonte não trouxe esta indicação; 0 = a SEGOV afirmou zero. */
   valor_empenhado?: number | null;
   valor_pago?: number | null;
   execucao_em?: string | null;
@@ -72,7 +72,7 @@ function diaBR(iso?: string | null): string {
   return `${d}/${m}/${a}`;
 }
 
-/** A planilha da SEGOV ficou de 12/05 a 24/09/2026 sem ser regerada: passou de
+/** A planilha do site da SEGOV ficou de 12/05 a 24/09/2026 sem ser regerada: passou de
  *  90 dias, o "pago" dela está defasado e a tela precisa dizer. */
 function planilhaVelha(iso?: string | null): boolean {
   if (!iso) return false;
@@ -258,15 +258,15 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
               Atualizado em {formatDataHora(coleta.em)}
             </p>
           ) : null)}
-          {/* ⚠️ A DATA DA PLANILHA, e não a da coleta: a SEGOV pode ficar meses
-              sem regerar o arquivo, e "pago R$ 0" de uma planilha de maio não é
+          {/* ⚠️ A DATA DOS DADOS, e não a da coleta: a SEGOV pode ficar meses
+              sem atualizar o arquivo, e "pago R$ 0" de um arquivo de maio não é
               "não foi pago". */}
           {stats?.execucao_em && (
             <p className="text-[11px]"
                style={{ color: planilhaVelha(stats.execucao_em) ? "var(--bi-warn-ink)" : "var(--bi-muted)" }}>
-              Empenhado e pago: planilha oficial da SEGOV (emendas.mg.gov.br) com dados
+              Empenhado e pago: dados abertos da SEGOV (dados.mg.gov.br) atualizados
               de {diaBR(stats.execucao_em)}
-              {planilhaVelha(stats.execucao_em) ? " — o Estado não a atualiza desde então" : ""}
+              {planilhaVelha(stats.execucao_em) ? " — o Estado não os atualiza desde então" : ""}
             </p>
           )}
         </div>
@@ -406,7 +406,7 @@ export default function EmendasEstaduaisPage({ onAbrir }: { onAbrir?: (id: numbe
                               title: [em.uo_codigo, em.uo_sigla].filter(Boolean).join(" · ") },
                             { rotulo: "Grupo de despesa", valor: em.grupo_despesa || "—" },
                             { rotulo: "Ano", valor: em.ano ?? "—" },
-                            // «—» = a planilha da SEGOV não trouxe esta indicação
+                            // «—» = os dados da SEGOV não trouxeram esta indicação
                             // (não é R$ 0).
                             { rotulo: em.execucao_em ? `Pago até ${diaBR(em.execucao_em)}` : "Pago",
                               valor: em.valor_pago == null ? "—" : formatCurrency(em.valor_pago),

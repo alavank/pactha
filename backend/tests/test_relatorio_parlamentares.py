@@ -429,11 +429,11 @@ def test_ministerio_de_origem_da_voluntaria_sem_o_codigo(orgao, ministerio):
 
 
 @pytest.mark.parametrize("pago,empenhado,fim,e_pago", [
-    (500000.0, 500000.0, "Pago: R$ 500.000,00 (planilha da SEGOV de 12/05/2026).", True),
+    (500000.0, 500000.0, "Pago: R$ 500.000,00 (dados da SEGOV de 12/05/2026).", True),
     (100000.0, 500000.0,
-     "Pago em parte: R$ 100.000,00 de R$ 500.000,00 (planilha da SEGOV de 12/05/2026).", False),
-    (0.0, 500000.0, "Empenhado, sem pagamento na planilha da SEGOV de 12/05/2026.", False),
-    (0.0, 0.0, "Sem pagamento na planilha da SEGOV de 12/05/2026.", False),
+     "Pago em parte: R$ 100.000,00 de R$ 500.000,00 (dados da SEGOV de 12/05/2026).", False),
+    (0.0, 500000.0, "Empenhado, sem pagamento nos dados da SEGOV de 12/05/2026.", False),
+    (0.0, 0.0, "Sem pagamento nos dados da SEGOV de 12/05/2026.", False),
     (None, None, "", False),        # a planilha não trouxe: nada se afirma
 ])
 def test_situacao_da_indicacao_estadual(pago, empenhado, fim, e_pago):

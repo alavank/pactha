@@ -862,7 +862,7 @@ _NOTA_COMO_LER = (
     "<b>Como ler.</b> Cada parlamentar começa numa folha. A <b>situação atual</b> diz "
     "o que foi medido: «Pagamento realizado» é ordem bancária emitida (transferência "
     "especial), repasse do FNS sem saldo a pagar, desembolso integral do convênio ou "
-    "pagamento na planilha da SEGOV (emenda estadual); o que não foi consultado é dito "
+    "pagamento nos dados da SEGOV (emenda estadual); o que não foi consultado é dito "
     "por extenso e nunca vira R$ 0. O título só diz <b>RECURSOS PAGOS</b> quando todas "
     "as linhas do total foram pagas e não há nada fora dele. <b>Áreas</b>: pela função "
     "orçamentária do plano (transferência especial) ou pelo ministério/secretaria de "

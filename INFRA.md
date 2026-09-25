@@ -535,7 +535,8 @@ O desenho atual (13/09/2026, "coleta noturna"):
   ~03:57 UTC: "146/146 em dia" nas sete APIs. **Task criada nos sete em 24/09/2026 ~04:05
   UTC** por `scripts/criar_task_fns_saldo.sh`; primeira rodada no mesmo dia, 06:00 UTC.
 - **`emendas-mg` (24/09/2026), escada de 10 min de 07:40 (freitas) a 08:40 UTC
-  (juranda):** os dois `DADOS_EMENDAS_*.xlsx` da SEGOV (~14 MB, ~1 min de leitura) nos
+  (juranda):** o CSV de indicações da SEGOV no dados.mg.gov.br (~30 MB; as `.xlsx` do
+  emendas.mg.gov.br dão 403 à VPS) nos
   tenants com município de MG; nos outros sai antes de baixar (`success`, 0). Kill 900 s,
   timeout da task 1020 s. Migration `add_emendas_estaduais_execucao.sql` (DDL) entrou no
   deploy do #550 às 03:33 UTC de 24/09/2026 — fora da regra "depois das 10:00", mas com as

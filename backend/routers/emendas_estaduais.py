@@ -104,7 +104,7 @@ SQL_EMENDAS_COM_CONVENIO = """
         SELECT id, municipio_id, nr_indicacao, nome_responsavel, tipo_indicacao,
                uo_codigo, uo_sigla, cnpj_beneficiario, beneficiario,
                grupo_despesa, tipo_atendimento, valor_indicacao, status_indicacao, ano,
-               -- Execução pela planilha oficial da SEGOV (emendas_mg.py, 24/09/2026).
+               -- Execução pelos dados abertos da SEGOV (emendas_mg.py, 24/09/2026).
                -- NULO = a planilha não trouxe esta indicação; ZERO = afirmou zero.
                valor_empenhado, valor_liquidado, valor_pago, valor_resto_saldo,
                execucao_em,
@@ -228,7 +228,7 @@ async def outros_beneficiarios(
 ):
     """Indicações estaduais a quem está no município e NÃO é o município (OSC,
     caixa escolar, órgão estadual, consórcio) — `emendas_estaduais_outros`,
-    preenchida pela planilha da SEGOV desde 24/09/2026.
+    preenchida pelos dados abertos da SEGOV desde 24/09/2026.
 
     ⚠️ Rota PRÓPRIA, fora da listagem e dos totais: é a regra do dono ("nada é
     descartado, nada entra na conta como se fosse da prefeitura"). A tela mostra

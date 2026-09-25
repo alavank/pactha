@@ -62,7 +62,7 @@ Quem desenha é `routers/export_pdf.py::export_parlamentares_pdf`.
 
 ⭐ "PAGOS" NO TÍTULO SÓ COM TUDO PAGO: toda linha do total com pagamento MEDIDO
 (TE com OB de 100%, FNS com repasse e nada a pagar, voluntária desembolsada por
-inteiro, indicação estadual paga na planilha da SEGOV) e nenhuma linha fora do
+inteiro, indicação estadual paga nos dados da SEGOV) e nenhuma linha fora do
 total. Qualquer outra coisa é "RECURSOS PARA <CIDADE>" — não se afirma "pagos"
 do que não foi pago, nem do que não foi consultado. SIGCON e PAC não têm medição
 de pagamento aqui: nunca contam como pagos.
@@ -593,18 +593,18 @@ def linha_estadual(x: dict) -> dict:
     pago = False
     vp = _num(x.get("valor_pago"))
     if vp is not None:
-        # A planilha da SEGOV (24/09/2026). NULO = não trouxe; zero = afirmou zero.
+        # Dados abertos da SEGOV (24/09/2026). NULO = não trouxe; zero = afirmou zero.
         quando = _data_br(x.get("execucao_em"))
-        fonte = f"planilha da SEGOV de {quando}" if quando else "planilha da SEGOV"
+        fonte = f"dados da SEGOV de {quando}" if quando else "dados da SEGOV"
         if vp > 0 and vp >= valor - 0.01:
             pago = True
             sit += f" Pago: {_fmt_brl(vp)} ({fonte})."
         elif vp > 0:
             sit += f" Pago em parte: {_fmt_brl(vp)} de {_fmt_brl(valor)} ({fonte})."
         elif (_num(x.get("valor_empenhado")) or 0) > 0:
-            sit += f" Empenhado, sem pagamento na {fonte}."
+            sit += f" Empenhado, sem pagamento nos {fonte}."
         else:
-            sit += f" Sem pagamento na {fonte}."
+            sit += f" Sem pagamento nos {fonte}."
     uo = str(x.get("uo_sigla") or "").strip()
     # ÁREA PELA UO; o TIPO só quando a UO não dá área. Juntar os dois num texto
     # só fazia "SES" + "Obras" casar SAÚDE e INFRAESTRUTURA -> OUTROS: a obra da
