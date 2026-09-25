@@ -185,14 +185,28 @@ def test_upsert_nao_sobrescreve_o_que_o_sigcon_raspou():
     assert "execucao_em = EXCLUDED.execucao_em" in sql
 
 
-def _cliente(csv_: bytes | int, pacote: dict | int | None = None):
+def _cliente(csv_: bytes | int, pacote: dict | int | list | None = None, urls=None):
+    """`pacote` pode ser uma LISTA de respostas, uma por tentativa (502, 502, 200...)."""
+    fila = list(pacote) if isinstance(pacote, list) else None
+
     def responde(req):
+        if urls is not None:
+            urls.append(str(req.url))
         if "package_show" in str(req.url):
-            v = _pacote() if pacote is None else pacote
+            v = (fila.pop(0) if fila else _pacote()) if fila is not None else (
+                _pacote() if pacote is None else pacote)
             return httpx.Response(v) if isinstance(v, int) else httpx.Response(200, json=v)
         assert req.headers["user-agent"].startswith("Mozilla/5.0 (Windows")
-        return httpx.Response(csv_) if isinstance(csv_, int) else httpx.Response(200, content=csv_)
+        if isinstance(csv_, int):
+            return httpx.Response(csv_)
+        return httpx.Response(200, content=csv_,
+                              headers={"last-modified": "Wed, 23 Sep 2026 17:40:13 GMT"})
     return httpx.Client(transport=httpx.MockTransport(responde))
+
+
+@pytest.fixture(autouse=True)
+def _sem_espera(monkeypatch):
+    monkeypatch.setattr(em, "ESPERA_S", (0, 0))
 
 
 ALVOS = [{"id": 7, "nome": "Monte Sião", "ibge": "3143401", "cnpj": MONTE_SIAO_CNPJ}]
@@ -218,8 +232,8 @@ def test_coletar_separa_municipal_de_entidade(monkeypatch):
 
 
 @pytest.mark.parametrize("csv_,pacote,motivo", [
-    (b"", 403, "HTTPStatusError"),           # o CKAN barrou
-    (500, None, "HTTPStatusError"),          # o arquivo não veio
+    (b"", 403, "layout"),                    # CKAN barrou -> plano B -> arquivo vazio
+    (500, None, "HTTPStatusError"),          # o arquivo não veio (nem nas tentativas)
     (None, None, "cortado"),                 # veio curto
 ])
 def test_fonte_fora_do_ar_ou_cortada_vira_falha(monkeypatch, csv_, pacote, motivo):
@@ -228,6 +242,45 @@ def test_fonte_fora_do_ar_ou_cortada_vira_falha(monkeypatch, csv_, pacote, motiv
         municipais, outros, falhas, data = em.coletar(cl, ALVOS)
     assert municipais == {} and outros == {} and data is None
     assert len(falhas) == 1 and motivo in falhas[0]
+
+
+def test_catalogo_fora_do_ar_baixa_pelo_endereco_conhecido(monkeypatch):
+    """Armadilha 9: 502 no package_show em TODAS as tentativas — o arquivo vem pelo
+    endereço conhecido e a data sai do Last-Modified dele."""
+    monkeypatch.setattr(em, "MIN_LINHAS", 1)
+    urls: list = []
+    with _cliente(_csv([_linha(1)]), [502, 502, 504], urls) as cl:
+        municipais, _, falhas, data = em.coletar(cl, ALVOS)
+    assert falhas == [] and data == date(2026, 9, 23)
+    assert list(municipais) == [(7, "1")]
+    assert sum("package_show" in u for u in urls) == em.TENTATIVAS
+    assert urls[-1] == em.RECURSO_URL_CONHECIDA
+
+
+def test_catalogo_soluca_uma_vez_e_responde():
+    urls: list = []
+    with _cliente(_csv([_linha(1)] * 2), [502], urls) as cl:
+        em.MIN_LINHAS, antes = 1, em.MIN_LINHAS
+        try:
+            _, _, falhas, data = em.coletar(cl, ALVOS)
+        finally:
+            em.MIN_LINHAS = antes
+    assert falhas == [] and data == date(2026, 9, 23)
+    assert sum("package_show" in u for u in urls) == 2        # 502 e depois 200
+    assert "/b/download/" in urls[-1]                          # o do catálogo, não o conhecido
+
+
+def test_4xx_nao_se_repete():
+    urls: list = []
+    with _cliente(404, None, urls) as cl:
+        em.coletar(cl, ALVOS)
+    assert sum("download" in u for u in urls) == 1
+
+
+@pytest.mark.parametrize("cab,esperado", [
+    ("Wed, 23 Sep 2026 17:40:13 GMT", date(2026, 9, 23)), ("", None), ("lixo", None), (None, None)])
+def test_data_do_arquivo(cab, esperado):
+    assert em.data_do_arquivo(cab) == esperado
 
 
 class _Cur:

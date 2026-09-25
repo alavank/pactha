@@ -34,7 +34,8 @@ AS ARMADILHAS (medidas em 24/09/2026):
    em Monte Sião a OB 007948 de 30/04/2026 paga 6 caixas e a 008849 de
    08/05/2026 paga 7 — daí a chave única com o CNPJ
    (`add_fnde_liberacoes_favorecido.sql`). (CNPJ, data, OB) não repetiu em nada.
-2. **`p_municipio` é o IBGE de 6 DÍGITOS.** Com 7 ("3143401") a resposta é
+2. **`p_municipio` é o código de 6 dígitos DO FNDE** — igual ao IBGE em ~86% dos
+   municípios, NÃO nos outros (armadilha 9). Com 7 ("3143401") a resposta é
    "Não foram encontrados dados" — idêntica a município sem nada. O filtro foi
    provado com valor impossível (999999 -> "Não foram encontrados"), e cada linha
    da lista carrega o município no `onclick`: se vier outro, o filtro foi
@@ -56,6 +57,19 @@ AS ARMADILHAS (medidas em 24/09/2026):
    escreve por cima do simad), e a rodada é `partial` com o motivo. Nada é
    apagado: aqui só se faz upsert — a única remoção é da linha do SIMEC que o
    simad acabou de confirmar com a mesma data e OB (`_SQL_SUPERA_SIMEC`).
+9. ⚠️ **O CÓDIGO DO FNDE NÃO É O IBGE EM ~14% DOS MUNICÍPIOS** (25/09/2026) — e o
+   IBGE de um pode ser o FNDE de OUTRO: Xangri-lá/RS (IBGE 432380) pediria a lista
+   de BARRA DO GUARITA, e a conferência do `onclick` (armadilha 2) aceitaria, porque
+   o código "bate". `ingest` resolve o código pela lista oficial do FNDE
+   (`services/codigo_fnde.py`: 2.210 de 2.212 municípios de MG/RS/PR/TO/GO/ES; os
+   dois restantes por apelido de IBGE). Sem a lista, NÃO se chuta o IBGE: o ano
+   corrente cai no plano B e nada é gravado sob código de outro.
+10. **A LISTA CITA UMA ENTIDADE CUJA PÁGINA VEM VAZIA** (só o cabeçalho, 1,5 KB):
+   medido na madrugada de 25/09/2026 com a Secretaria de Educação de Giruá/RS, que
+   de manhã já não estava mais na lista — inconsistência do FNDE no fechamento
+   noturno, não layout novo. Repete uma vez depois de `ESPERA_CASCA_S`; persistindo,
+   vira falha da entidade com esse motivo (o ano fica incompleto e a próxima rodada
+   relê). Erro do Oracle (`ORA-`) não é casca: continua página inválida.
 
 A AGENDA: toda noite o ano corrente e o anterior de TODO município (regra do
 dono). O histórico (de `FNDE_LIB_ANO_INICIAL`, padrão 2015) entra em carga
@@ -82,6 +96,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bs4 import BeautifulSoup  # noqa: E402
 
+from services.codigo_fnde import CodigosFNDE  # noqa: E402
 from ingestion import simec_par  # noqa: E402
 from services.liberacoes_fnde import tipo_favorecido  # noqa: E402
 
@@ -91,6 +106,7 @@ URL = "https://www.fnde.gov.br/pls/simad/internet_fnde.liberacoes_result_pc"
 UA = {"User-Agent": "Mozilla/5.0 (PACTHA/1.0; liberacoes FNDE)"}
 SOURCE = "fnde_liberacoes"
 FONTE = "fnde_simad"
+ESPERA_CASCA_S = 10
 TIMEOUT = 40
 # Santa Maria/RS (~280 mil hab.) tem ~56 entidades num ano. Uma lista acima disto
 # é filtro ignorado (a base nacional), nunca um município.
@@ -211,8 +227,15 @@ def parse_entidade(html: str) -> dict:
     fech = fechamento(html)
     if _RX_SEM_DADOS.search(html):
         return {"estado": "vazio", "liberacoes": [], "fechamento": fech, "divergencias": []}
-    texto = BeautifulSoup(html, "lxml").get_text("\n")
+    soup = BeautifulSoup(html, "lxml")
+    texto = soup.get_text("\n")
     me = _RX_ENTIDADE.search(texto)
+    if (not me and not soup.find("table") and "CONSULTAS GERAIS" in texto.upper()
+            and not re.search(r"ORA-\d+", html)):
+        # Armadilha 10: só o cabeçalho "LIBERAÇÕES - CONSULTAS GERAIS" (1,5 KB).
+        return {"estado": "casca", "liberacoes": [], "fechamento": fech, "divergencias": [],
+                "motivo": "o FNDE listou a entidade mas a página dela veio vazia "
+                          "(inconsistência do próprio FNDE; a próxima rodada relê)"}
     if not me:
         return {"estado": "invalido", "liberacoes": [], "fechamento": fech, "divergencias": [],
                 "motivo": "página sem 'Entidade..:' — layout mudou?"}
@@ -284,8 +307,12 @@ class Simad:
 def coleta_ano(simad: Simad, mun: dict, ano: int) -> dict:
     """Tudo o que o simad tem do município no ano. Levanta FalhaSimad se a LISTA
     falhar; falha de UMA entidade deixa o ano `completo = False` com o motivo."""
-    ibge6 = _so_digitos(mun["ibge"])[:6]
-    lista = parse_lista(simad.lista(ano, mun.get("uf") or "", ibge6), ibge6)
+    # O código do município NO FNDE (armadilha 9): `ingest` resolve pela lista oficial
+    # antes do laço. Chave presente e vazia = não resolvido — não se chuta o IBGE.
+    codigo = mun["codigo_fnde"] if "codigo_fnde" in mun else _so_digitos(mun["ibge"])[:6]
+    if not codigo:
+        raise FalhaSimad(mun.get("motivo_codigo") or "sem código FNDE para o município")
+    lista = parse_lista(simad.lista(ano, mun.get("uf") or "", codigo), codigo)
     if lista["estado"] == "invalido":
         simad.falhas_seguidas += 1
         raise FalhaSimad(lista["motivo"])
@@ -300,6 +327,11 @@ def coleta_ano(simad: Simad, mun: dict, ano: int) -> dict:
     for ent in ents:
         try:
             pag = parse_entidade(simad.entidade(ano, ent["cnpj"]))
+            if pag["estado"] == "casca":
+                # Armadilha 10: a lista cita a entidade e a página dela vem só com o
+                # cabeçalho — repete uma vez depois de uma pausa.
+                time.sleep(ESPERA_CASCA_S)
+                pag = parse_entidade(simad.entidade(ano, ent["cnpj"]))
         except FalhaSimad as e:
             out["erros"].append(f"{ent['cnpj']}: {e}")
             continue
@@ -476,6 +508,22 @@ def run() -> int:
         sem_ano_corrente = 0     # nem simad nem plano B
         with httpx.Client(headers=UA, timeout=TIMEOUT, follow_redirects=True) as client:
             simad = Simad(client, pausa)
+            codigos = CodigosFNDE(client)
+            for mun in muns:
+                try:
+                    cod, como = codigos.codigo(mun.get("uf") or "", mun["ibge"], mun["nome"])
+                except Exception as e:
+                    # Sem a lista oficial não há como saber se o IBGE é o código
+                    # certo (Xangri-lá × Barra do Guarita): o ano corrente cai no
+                    # plano B (SIMEC), e nada é gravado sob o código errado.
+                    cod, como = None, (f"lista de municípios do FNDE indisponível "
+                                       f"({type(e).__name__}) — código não conferido")
+                mun["codigo_fnde"] = cod
+                if cod is None:
+                    mun["motivo_codigo"] = como
+                elif como == "nome":
+                    log.info("  %s: código FNDE %s (o IBGE é %s)", mun["nome"], cod,
+                             _so_digitos(mun["ibge"])[:6])
 
             def um_ano(mun: dict, ano: int) -> bool:
                 """Lê e grava UM (município, ano). True se veio do simad (mesmo

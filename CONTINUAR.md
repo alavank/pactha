@@ -29,6 +29,24 @@
 
 ---
 
+## 1.49. Pendências da 1ª rodada das fontes novas (25/09/2026)
+
+Conferência da madrugada de 25/09 (primeira noite de SIOPS/SES-RS/PDDE/FNDE):
+- **Emendas MG:** Monte Sião gravou as 48 indicações pela fonte nova; Freitas e Trust
+  deram 502/504 no `package_show` do dados.mg (o catálogo cai em rajadas; o arquivo não).
+  `emendas_mg._get` repete 5xx/timeout e, sem catálogo, baixa pelo endereço conhecido com
+  a data do `Last-Modified` (armadilha 9 do cabeçalho).
+- **Código do município no FNDE ≠ IBGE em ~14%** (Tocos do Moji dava "município não
+  pertence à UF" no PDDE; Xangri-lá pediria a lista de Barra do Guarita no simad).
+  `services/codigo_fnde.py` resolve pela lista oficial do FNDE — 2.210/2.212 nas seis UFs.
+- **simad, página vazia de entidade listada** (Giruá): inconsistência do FNDE; repete uma
+  vez e diz o que é (armadilha 10 de `fnde_liberacoes.py`).
+- **ORA-01722 no Excel da prestação de 2025** (Trust/BGK, PDDE): erro do servidor do FNDE;
+  o coletor já reporta `partial` e relê. Nada a corrigir do nosso lado.
+- ⚠️ **Pausa longa custa rodada:** tarefa diária cujo horário cai na pausa NÃO é
+  recuperada ao religar (medido: `portal-transparencia` de Freitas/BGK sem rodar desde 23/09,
+  `convenios-to` da Trust nunca rodou). Pausar o mínimo, e de preferência fora de 00:00-01:00.
+
 ## 1.48. PDDE — dinheiro nas escolas: saldo parado e escolas suspensas (25/09/2026)
 
 O PDDE (FNDE) cai na conta de cada ESCOLA — da caixa escolar/APM (UEx) ou, sem ela, da

@@ -64,6 +64,13 @@ AS ARMADILHAS, medidas em 24/09/2026:
    3.834 TE: 3.327 vigentes, 22 em ADEQUAÇÃO — a prefeitura precisa corrigir o
    plano. O SIGCON não tem nenhum dos dois, então aqui a fonte manda sempre.
 
+9. ⚠️ **O CATÁLOGO DO dados.mg CAI SOZINHO; O ARQUIVO, NÃO** (25/09/2026). O
+   `package_show` deu 502 à 01h de 25/09 e 502/504 na rodada das 04:40-04:50 da
+   Freitas e da Trust — a Monte Sião, dez minutos depois, gravou as 48 indicações.
+   Cada GET tem TENTATIVAS com espera (`_get`), e se o catálogo não responder o
+   arquivo é baixado pelo endereço conhecido (`RECURSO_URL_CONHECIDA`), com a data
+   tirada do `Last-Modified` dele (`data_do_arquivo`).
+
 Rodável por Scheduled Task (worker de tenant com município de MG) ou à mão:
     python -u ingestion/emendas_mg.py            # coleta de verdade
     python -u ingestion/emendas_mg.py --dry      # baixa, lê, casa e mostra
@@ -77,8 +84,10 @@ import logging
 import os
 import re
 import sys
+import time
 import unicodedata
 from datetime import date, datetime
+from email.utils import parsedate_to_datetime
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -89,6 +98,13 @@ log = logging.getLogger("emendas_mg")
 
 PACOTE = "https://dados.mg.gov.br/api/3/action/package_show?id=portal_emendas_estaduais"
 RECURSO = "vw_sg_v2_ep_indic_recursos_tw.csv"
+# Plano B da armadilha 9: o endereço do arquivo que o `package_show` devolveu em
+# 24-25/09/2026. Só é usado quando o catálogo não responde; se o Estado recriar o
+# recurso, o 404 aqui vira falha honesta e o catálogo, quando voltar, dá o novo.
+RECURSO_URL_CONHECIDA = ("https://dados.mg.gov.br/dataset/715a1617-078b-4c07-8657-fe16894b62c2"
+                         "/resource/d85d9a92-dd8e-473d-bcb4-a4f3d13309b1/download/" + RECURSO)
+TENTATIVAS = 3
+ESPERA_S = (15, 45)                 # entre as tentativas (a 1ª falha costuma ser 502 de 1 min)
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131 Safari/537.36"}
 UF = "MG"
 SOURCE = "emendas_mg"
@@ -369,6 +385,33 @@ def _log_ingest(cur, conn, status: str, n: int, nota: str | None = None) -> None
         log.warning("ingestion_log falhou: %s", str(e)[:120])
 
 
+def _get(client: httpx.Client, url: str, timeout: float) -> httpx.Response:
+    """GET com TENTATIVAS para 5xx e timeout — o dados.mg devolve 502/504 em rajadas
+    de minutos (armadilha 9). 4xx não se repete: é resposta, não soluço."""
+    for n in range(TENTATIVAS):
+        try:
+            r = client.get(url, headers=UA, timeout=timeout)
+            if r.status_code < 500:
+                r.raise_for_status()
+                return r
+            erro: Exception = httpx.HTTPStatusError(
+                f"HTTP {r.status_code}", request=r.request, response=r)
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            erro = e
+        if n + 1 < TENTATIVAS:
+            time.sleep(ESPERA_S[min(n, len(ESPERA_S) - 1)])
+    raise erro
+
+
+def data_do_arquivo(last_modified: str | None) -> date | None:
+    """A data do CSV pelo Last-Modified do download — a mesma que o CKAN dá em
+    `last_modified` (medido em 25/09/2026: as duas dizem 23/09 17:40)."""
+    try:
+        return parsedate_to_datetime(last_modified).date() if last_modified else None
+    except (TypeError, ValueError):
+        return None
+
+
 def coletar(client: httpx.Client, alvos: list[dict]
             ) -> tuple[dict, dict, list[str], date | None]:
     """({(mid, nr): registro municipal}, {(mid, nr): registro de outros}, falhas,
@@ -378,11 +421,17 @@ def coletar(client: httpx.Client, alvos: list[dict]
     municipais: dict = {}
     outros: dict = {}
     try:
-        p = client.get(PACOTE, headers=UA, timeout=60)
-        p.raise_for_status()
-        url, em = recurso(p.json())
-        r = client.get(url, headers=UA, timeout=TIMEOUT)
-        r.raise_for_status()
+        try:
+            p = _get(client, PACOTE, 60)
+            url, em = recurso(p.json())
+        except Exception as e:
+            # Armadilha 9: o catálogo cai sozinho (502/504) — o arquivo, não.
+            log.warning("  package_show falhou (%s: %s); baixando pelo endereço conhecido",
+                        type(e).__name__, str(e)[:120])
+            url, em = RECURSO_URL_CONHECIDA, None
+        r = _get(client, url, TIMEOUT)
+        if em is None:
+            em = data_do_arquivo(r.headers.get("last-modified"))
         linhas = ler_csv(r.content)
         if len(linhas) < MIN_LINHAS:
             raise ValueError(f"só {len(linhas)} linha(s) (< {MIN_LINHAS}) — cortado?")
