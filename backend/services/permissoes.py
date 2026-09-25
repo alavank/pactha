@@ -336,9 +336,11 @@ _RECURSOS: tuple = (
     _Recurso("repasses", SEC_CONVENIOS, "Repasses Estaduais",
              "os repasses estaduais recebidos pelo município", "",
              ("ver",), ufs=("GO",), tela="repasses"),
+    # MG entrou em 24/09/2026: os pagamentos por Resolução SES (fundo a fundo
+    # estadual), pela mesma tela e pela mesma chave (`GET /api/cofinanciamento/mg`).
     _Recurso("cofinanciamento", SEC_CONVENIOS, "Cofinanciamento da Saúde",
              "os repasses do fundo estadual ao fundo municipal de saúde", "",
-             ("ver",), ufs=("GO",), tela="cofinanciamento"),
+             ("ver",), ufs=("GO", "MG"), tela="cofinanciamento"),
     _Recurso("monitoramento", SEC_CONVENIOS, "Monitoramento de Convênios",
              "os registros mensais de execução dos convênios", "",
              ("ver",), ufs=("RS",), tela="monitoramento"),

@@ -59,6 +59,43 @@ def _xlsx_url() -> str:
     raise RuntimeError("link do Valores-acordo.xlsx nao encontrado na pagina do Acordo FES")
 
 
+C_ANO_EMP, C_EMPENHO, C_RESOLUCAO = 1, 2, 9
+
+
+def _empenho(r) -> tuple | None:
+    """(ano, nº do empenho, resolução, dívida inicial, pago, dívida atual, retirado,
+    pago fora) de uma linha da planilha — a chave que o `ses_mg_resolucoes` usa para
+    dizer qual resto a pagar pago pela SES é de empenho que está no Acordo."""
+    try:
+        ano = int(str(r[C_ANO_EMP]).strip())
+        emp = str(int(float(str(r[C_EMPENHO]).strip())))
+    except (TypeError, ValueError):
+        return None
+    res = str(r[C_RESOLUCAO] or "").strip()[:20] or None
+    return (ano, emp, res, _f(r[C_DIV_INI]), _f(r[C_PAGO]), _f(r[C_DIV_ATUAL]),
+            _f(r[C_RETIRADO]), _f(r[C_PAGO_FORA]))
+
+
+def _grava_empenhos(cur, casados: list, por_empenho: dict) -> None:
+    """`acordofes_empenho`, só dos credores casados a um município do tenant.
+
+    ⚠️ Num SAVEPOINT: a tabela é de `add_ses_mg_resolucoes.sql`, e um banco onde ela
+    falhou não pode perder o agregado `acordofes_credor`, que é a tela do Acordo."""
+    linhas = [(mid, cnpj[:14], *e) for cnpj, mid in casados for e in por_empenho.get(cnpj[:14], [])]
+    cur.execute("SAVEPOINT acordofes_empenho")
+    try:
+        cur.execute("TRUNCATE acordofes_empenho RESTART IDENTITY")
+        if linhas:
+            execute_values(cur, """INSERT INTO acordofes_empenho
+                (municipio_id, cnpj, ano_empenho, num_empenho, resolucao, divida_inicial,
+                 total_pago, divida_atual, valor_retirado, pago_fora) VALUES %s""", linhas)
+        cur.execute("RELEASE SAVEPOINT acordofes_empenho")
+        log.info(f"Acordo FES: {len(linhas)} empenho(s) dos credores casados.")
+    except Exception as e:
+        cur.execute("ROLLBACK TO SAVEPOINT acordofes_empenho")
+        log.warning(f"acordofes_empenho nao gravado ({type(e).__name__}); o agregado segue")
+
+
 try:
     from ingestion import status_coleta as _st
 except ImportError:
@@ -88,6 +125,7 @@ def ingest() -> int:
 
     # agrega por CNPJ
     agg = {}  # cnpj -> [div_ini, pago, div_atual, retirado, pago_fora, n, razao]
+    por_empenho = defaultdict(list)  # cnpj -> [(ano, empenho, resolucao, valores...)]
     rows = ws.iter_rows(values_only=True)
     next(rows, None)  # cabecalho
     for r in rows:
@@ -96,6 +134,9 @@ def ingest() -> int:
         cnpj = re.sub(r"\D", "", str(r[C_CNPJ] or ""))
         if not cnpj:
             continue
+        emp = _empenho(r)
+        if emp:
+            por_empenho[cnpj[:14]].append(emp)
         a = agg.get(cnpj)
         if a is None:
             a = agg[cnpj] = [0.0, 0.0, 0.0, 0.0, 0.0, 0, str(r[C_RAZAO] or "").strip()]
@@ -118,6 +159,7 @@ def ingest() -> int:
     execute_values(cur, """INSERT INTO acordofes_credor
         (cnpj, razao_social, municipio_id, divida_inicial, total_pago,
          divida_atual, valor_retirado, pago_fora, n_empenhos) VALUES %s""", batch)
+    _grava_empenhos(cur, [(b[0], b[2]) for b in batch if b[2]], por_empenho)
     conn.commit()
     # ⚠️ A-1 (auditoria 11/09): status HONESTO. `batch`=0 => a planilha veio vazia /
     # o parse (indices de coluna fixos) quebrou => error (implausivel 0 credores).

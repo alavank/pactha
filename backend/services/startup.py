@@ -672,6 +672,11 @@ MIGRATION_FILES = [
     # não vira convênio, então era a única coisa sem dizer para que é o dinheiro.
     # Só ADD COLUMN IF NOT EXISTS nas duas tabelas de add_emendas_estaduais_execucao.
     "add_emendas_estaduais_objeto.sql",
+    # SES-MG: pagamentos por Resolução SES aos Fundos Municipais (fundo a fundo
+    # estadual), a cobertura por (município, tipo, ano), o cadastro da Receita dos
+    # credores e o Acordo FES por empenho (24/09/2026). Tabelas novas, FK só para
+    # `municipios`.
+    "add_ses_mg_resolucoes.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

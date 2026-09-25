@@ -87,7 +87,7 @@ export const TELAS: TelaDef[] = [
   // REPASSES_POR_UF: Goiás publica a EXECUÇÃO (pagamento) em vez do instrumento.
   { key: "repasses", label: "Repasses Estaduais", ufs: ["GO"] },
   // COFINANCIAMENTO_POR_UF: o repasse do fundo estadual ao municipal de saúde.
-  { key: "cofinanciamento", label: "Cofinanciamento da Saúde", ufs: ["GO"] },
+  { key: "cofinanciamento", label: "Cofinanciamento da Saúde", ufs: ["GO", "MG"] },
   // MONITORAMENTO_POR_UF: onde a norma estadual cria o registro mensal (RS).
   { key: "monitoramento", label: "Monitoramento de Convênios", ufs: ["RS"] },
   // CONSULTA_POPULAR_POR_UF: o orçamento participativo dos COREDEs.

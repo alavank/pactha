@@ -56,6 +56,7 @@ ONDE_OLHAR = {
     "sigcon_emendas": "portal SIGCON-MG > Emendas",
     "fns_saldo": "portalfns.saude.gov.br/downloads (REPASSE-FAF-COM-POPULACAO-<ANO>, anual)",
     "emendas_mg": "dados.mg.gov.br portal_emendas_estaduais (CSV de indicacoes da SEGOV)",
+    "ses_mg_resolucoes": "pagamentoderesolucoes.saude.mg.gov.br (formulario por municipio e ano)",
     "cagec": "cagec.mg.gov.br/convenente-web (consulta publica por CNPJ)",
     "cauc": "CAUC/Tesouro (consulta por CNPJ)",
     "acordofes": "Acordo FES-MG",

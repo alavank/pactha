@@ -239,6 +239,14 @@ _SOURCES_POR_UF: dict[str, list[tuple[str, str, str | None]]] = {
          "SELECT max(execucao_em)::timestamptz, count(*) FILTER (WHERE execucao_em IS NOT NULL) "
          "FROM emendas_estaduais",
          "emendas_mg"),
+        # Fundo a fundo estadual da saúde (SES-MG, pagamento por Resolução,
+        # 24/09/2026). A data é a da última fatia LIDA INTEIRA (`ses_mg_cobertura`):
+        # um município sem pagamento no ano não tem linha em `ses_mg_pagamentos`,
+        # e ainda assim foi conferido.
+        ("SES-MG — Pagamento de Resoluções (fundo a fundo)",
+         "SELECT (SELECT max(coletado_em) FROM ses_mg_cobertura), "
+         "(SELECT count(*) FROM ses_mg_pagamentos)",
+         "ses_mg_resolucoes"),
         # ⚠️ FILTRA POR FONTE. Desde que `cagec_situacao` passou a guardar o
         # cadastro estadual de outros estados (CHE-RS), contar a tabela inteira
         # aqui creditaria a Minas linha coletada no Rio Grande do Sul — o mesmo
