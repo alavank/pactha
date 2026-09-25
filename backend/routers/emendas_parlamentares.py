@@ -49,7 +49,7 @@ from services.auth import ensure_municipio_access, ensure_tela, get_current_user
 from services.bi import anos_list
 from services.cadastro_parlamentar import cadastros_por_nome
 from services.conteudo_rs import AVISO_EMENDAS, EMENDAS
-from services.emendas_unificadas import filtrar, totais, unificar_federais
+from services.emendas_unificadas import emendas_fns, filtrar, totais, unificar_federais
 from services.execucao_te import execucao_te, situacao_e_execucao
 from services.natureza import e_municipal
 from services.nome_parlamentar import e_pessoa
@@ -74,7 +74,7 @@ MOTIVO_OUTRA_UF = ("As emendas parlamentares estaduais deste estado ainda não s
                    "coletadas pelo PACTHA.")
 
 # As origens que abrem pela aba Federais.
-ORIGENS_FEDERAIS = ("federal", "te", "parcerias", "indicacao", "voluntaria")
+ORIGENS_FEDERAIS = ("federal", "te", "parcerias", "indicacao", "voluntaria", "fns")
 
 
 def _f(v) -> Optional[float]:
@@ -158,6 +158,17 @@ async def _fontes_federais(db: AsyncSession, municipio_id: int) -> dict:
          WHERE municipio_id = :m
            AND (parlamentar IS NOT NULL OR coalesce(valor_emenda, 0) > 0)
     """, m)
+    # FNS: as propostas de saúde fundo a fundo com o código da emenda aninhado
+    # (`services/emendas_unificadas.emendas_fns`, 25/09/2026). O mesmo recorte do
+    # bloco 6 da aba Parlamentares — `jsonb_typeof = 'array'` tira a linha antiga
+    # sem `linhaPropostas`.
+    fns = emendas_fns(await _consulta(db, """
+        SELECT tipo_programa AS objeto, raw_data->>'dsTipoRecurso' AS recurso,
+               raw_data->'linhaPropostas' AS props
+          FROM convenios_estadual
+         WHERE municipio_id = :m AND fonte ILIKE '%FNS%'
+           AND jsonb_typeof(raw_data->'linhaPropostas') = 'array'
+    """, m))
     for r in te:
         ex = execucao_te(r.pop("pagamentos", None), r.pop("empenhos", None),
                          bool(r.pop("detalhe_coletado", False)))
@@ -175,7 +186,7 @@ async def _fontes_federais(db: AsyncSession, municipio_id: int) -> dict:
     for r in voluntarias:
         r["municipal"] = r.get("municipal") is not False
     return {"carteira": carteira, "te": te, "parcerias": parcerias,
-            "indicadas": indicadas, "voluntarias": voluntarias}
+            "indicadas": indicadas, "voluntarias": voluntarias, "fns": fns}
 
 
 @router.get("/federais", dependencies=[exige("emendas_federais.ver")])
@@ -185,7 +196,7 @@ async def federais(
     anos: Optional[list[int]] = Query(None),
     autor: Optional[str] = Query(None, description="parte do nome do parlamentar"),
     tipo: Optional[str] = Query(None, description="INDIVIDUAL | BANCADA | COMISSAO | RELATOR GERAL"),
-    origem: Optional[str] = Query(None, description="federal | te | parcerias | indicacao | voluntaria"),
+    origem: Optional[str] = Query(None, description="federal | te | parcerias | indicacao | voluntaria | fns"),
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
@@ -197,7 +208,7 @@ async def federais(
     f = await _fontes_federais(db, municipio_id)
     carteira = f["carteira"]
     todas = unificar_federais(carteira.get("items") or [], f["te"], f["parcerias"],
-                              f["indicadas"], f["voluntarias"])
+                              f["indicadas"], f["voluntarias"], f["fns"])
     linhas = filtrar(todas, anos=anos_list((anos or []) + ([ano] if ano else [])),
                      autor=autor, tipo=tipo, origem=origem)
     cadastros = await cadastros_por_nome(
@@ -440,6 +451,14 @@ async def detalhe(
                 l[c] = _f(l.get(c))
         resposta.update(dados={"indicacoes": linhas}, codigo_emenda=ident,
                         autores=sorted({l["parlamentar"] for l in linhas if l["parlamentar"]}))
+    elif origem == "fns":
+        # A emenda de saúde que só o FNS viu: as propostas dela neste município.
+        propostas = [p for p in (await _fontes_federais(db, municipio_id))["fns"]
+                     if p["codigo"] == ident]
+        if not propostas:
+            raise HTTPException(404, "Emenda de saúde não encontrada neste município")
+        resposta.update(dados={"propostas": propostas}, codigo_emenda=ident,
+                        autores=sorted({p["autor"] for p in propostas if p.get("autor")}))
     elif origem == "federal":
         resposta.update(await _detalhe_federal(db, municipio_id, ident))
     elif origem == "sigcon":
@@ -480,7 +499,7 @@ async def _detalhe_federal(db: AsyncSession, municipio_id: int, codigo: str) -> 
         raise HTTPException(404, "Emenda não encontrada neste município")
     f = await _fontes_federais(db, municipio_id)
     unificadas = unificar_federais(linhas, f["te"], f["parcerias"], f["indicadas"],
-                                   f["voluntarias"])
+                                   f["voluntarias"], f["fns"])
     instrumentos = [i for u in unificadas if u["origem"] == "federal"
                     for i in u["instrumentos"]]
     base = linhas[0]

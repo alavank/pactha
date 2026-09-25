@@ -63,8 +63,11 @@ async def recursos_por_municipio(db: AsyncSession, ids: list[int],
         mid = m["municipio_id"]
         k = await bi_kpis(db, [mid], anos)
         f = await _fontes_federais(db, mid)
+        # O MESMO conjunto da aba Federais, FNS incluído — senão o Consolidado e a
+        # aba diriam números diferentes para o mesmo município.
         todas = unificar_federais((f["carteira"] or {}).get("items") or [], f["te"],
-                                  f["parcerias"], f["indicadas"], f["voluntarias"])
+                                  f["parcerias"], f["indicadas"], f["voluntarias"],
+                                  f["fns"])
         filtradas = filtrar(todas, anos=anos)
         t = totais(filtradas)
         linhas.append({

@@ -31,7 +31,7 @@ import { DetalheProposta, type DetalheResp } from "@/components/ParceriasTela";
 import { DetalheVoluntariaModal, type Detalhe as DetalheVoluntaria } from "@/components/TransfereGovPropostas";
 import { SeloCadastro, type Cadastro } from "@/components/emendas/AbaParlamentares";
 
-export type Origem = "federal" | "te" | "parcerias" | "indicacao" | "voluntaria" | "sigcon" | "go";
+export type Origem = "federal" | "te" | "parcerias" | "indicacao" | "voluntaria" | "fns" | "sigcon" | "go";
 
 export interface Autor { nome: string; pessoa: boolean; cadastro: Cadastro | null }
 
@@ -251,7 +251,8 @@ function DetalheFederal({ r, onFechar, onAbrir }: {
                   </span>}
                   valor={<span className="bi-num">{brl(i.valor)}</span>}
                   meta={[i.id, i.situacao].filter(Boolean).join(" · ")}
-                  onClick={i.origem === "indicacao" ? undefined : () => onAbrir(i.origem, i.id)} />
+                  onClick={i.origem === "indicacao" || i.origem === "fns" ? undefined
+                           : () => onAbrir(i.origem, i.id)} />
               ))}
             </Lista>
             )}
@@ -277,6 +278,34 @@ function DetalheSimples({ r, onFechar }: { r: Resp; onFechar: () => void }) {
                 <ItemLinha key={k} titulo={txt(i.nome_beneficiario)}
                   valor={<span className="bi-num">{brl(i.valor_total)}</span>}
                   meta={`custeio ${brl(i.valor_gnd3)} · investimento ${brl(i.valor_gnd4)} · ${txt(i.natureza_juridica)}`} />
+              ))}
+            </Lista>
+          ) },
+          { valor: "parlamentar", label: "Parlamentar", corpo: <Parlamentares autores={r.parlamentares} /> },
+        ]} />
+    );
+  }
+  if (r.origem === "fns") {
+    /* A emenda de saúde que só o FNS viu (25/09/2026): as propostas fundo a fundo
+       que ela financia neste município. O "pago" é o do FNS, dividido pela parte
+       da emenda quando a proposta tem mais de uma — a CGU registra esse
+       pagamento para o Banco do Brasil, não para o fundo. */
+    const ps = (d.propostas || []) as Reg[];
+    return (
+      <ModalProprio titulo={`Emenda de saúde ${txt(r.codigo_emenda)}`}
+        sub="Fundo a fundo · Fundo Nacional de Saúde" onFechar={onFechar}
+        abas={[
+          { valor: "resumo", label: `Propostas (${ps.length})`, corpo: (
+            <Lista>
+              {ps.map((p, k) => (
+                <ItemLinha key={k} titulo={txt(p.objeto)}
+                  valor={<span className="bi-num">{brl(p.valor)}</span>}
+                  meta={[`proposta ${txt(p.numero)}`, p.situacao ? String(p.situacao) : null,
+                         p.pago != null ? `pago ${brl(p.pago)}` : null,
+                         p.data_pagamento ? `último pagamento ${txt(p.data_pagamento)}` : null,
+                         Number(p.valor_proposta) > Number(p.valor)
+                           ? `proposta inteira ${brl(p.valor_proposta)}` : null,
+                        ].filter(Boolean).join(" · ")} />
               ))}
             </Lista>
           ) },

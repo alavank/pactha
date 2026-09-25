@@ -102,7 +102,7 @@ const TOM_GRUPO: Record<string, "neutro" | "ok" | "atencao" | "critico"> = {
    chama; o nome completo vai no `title`. */
 const SELO_ORIGEM: Record<string, string> = {
   federal: "Carteira", te: "Pix", parcerias: "Saúde", indicacao: "Saúde · indicada",
-  voluntaria: "Voluntária",
+  voluntaria: "Voluntária", fns: "Saúde · FNS",
 };
 
 function LinhaEmenda({ e, onAbrir }: { e: Linha; onAbrir: () => void }) {
