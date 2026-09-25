@@ -75,6 +75,22 @@ AS ARMADILHAS, todas medidas contra a fonte em 22/09/2026:
    `evidencia = 'cidade'`, e a tela e o Radar a deixam de fora por padrão. Em
    Nova Palma, cidade pequena, quase tudo é `municipio`.
 
+10. ⚠️ **NOME QUE É SOBRENOME ESTOURA A BUSCA** (medido 24/09/2026). A frase entre
+   aspas não impede o radical: "Araújos" (MG) casa com todo "Araújo" do DOU — 46
+   páginas em 30 dias, a rodada falhava nele TODA noite e a cobertura dele nunca
+   andava. A primeira página já diz o total: acima de MAX_PAGINAS a busca desiste
+   ali (`JanelaLarga`) e o nome é trocado pelas frases que só a prefeitura usa
+   (`frases`): "Município de Araújos", "Prefeitura Municipal de Araújos" e
+   "Araújos/MG" — 1 página cada. A busca ignora a pontuação: "Araújos - MG" e
+   "Araújos (MG)" devolvem os mesmos 4 atos que "Araújos/MG".
+
+11. ⚠️ **O ORÇAMENTO VALE DENTRO DO MUNICÍPIO.** Conferido só entre municípios,
+   um que começou aos 7 min e tinha dezenas de atos novos passou do `timeout` da
+   task: a Freitas foi morta em 24/09/2026 sem gravar a rodada. Agora o prazo é
+   visto a cada ato; o que já foi lido fica gravado, a cobertura do município não
+   anda e a rodada sai `partial` — a próxima continua de onde parou, porque ato
+   avaliado não é relido.
+
 A janela de cada município sai de `dou_cobertura.conferido_ate`: revê os últimos
 DOU_DIAS_REVISAO dias (edição extra publicada depois da rodada), e município que
 nunca foi conferido começa DOU_DIAS_INICIAL dias atrás. Uma noite perdida se
@@ -137,6 +153,10 @@ ESTADOS = {
 
 class BuscaFalhou(Exception):
     """A busca não devolveu o bloco de resultados (armadilha 5)."""
+
+
+class JanelaLarga(BuscaFalhou):
+    """O termo casa com mais de MAX_PAGINAS páginas na janela (armadilha 10)."""
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +396,9 @@ def buscar(client: httpx.Client, termo: str, ini: date, fim: date) -> list[dict]
         r = client.get(BUSCA, params=params, headers=UA, timeout=TIMEOUT)
         r.raise_for_status()
         itens, total = ler_resultados(r.text)
+        if total > MAX_PAGINAS:
+            # A 1ª página já diz o total: não gastar 30 pedidos para desistir.
+            raise JanelaLarga(f'"{termo}": {total} páginas — janela larga demais')
         todos.extend(itens)
         if pagina >= total or not itens:
             return todos
@@ -384,7 +407,7 @@ def buscar(client: httpx.Client, termo: str, ini: date, fim: date) -> list[dict]
                       score=u.get("score", 0), id=u.get("classPK", ""),
                       displayDate=u.get("displayDateSortable", ""))
         time.sleep(PAUSA_S)
-    raise BuscaFalhou(f'"{termo}": mais de {MAX_PAGINAS} páginas — janela larga demais')
+    raise JanelaLarga(f'"{termo}": mais de {MAX_PAGINAS} páginas — janela larga demais')
 
 
 def ler_ato(pagina_html: str) -> dict:
@@ -575,11 +598,30 @@ def termos(a: dict) -> list[str]:
     return t
 
 
+def frases(a: dict) -> list[str]:
+    """Troca do nome quando ele estoura a busca (armadilha 10): só o que a
+    prefeitura escreve. "X/UF" também pega "X - UF" e "X (UF)" — a busca ignora
+    a pontuação."""
+    n = a["nome"].strip()
+    return [f"Município de {n}", f"Prefeitura Municipal de {n}", f"{n}/{a['uf']}"]
+
+
 def candidatos(client: httpx.Client, a: dict, ini: date, fim: date) -> dict[str, dict]:
     """urlTitle -> item da busca, somando os termos do município."""
     achados: dict[str, dict] = {}
+    nome = a["nome"].strip()
     for termo in termos(a):
-        for hit in buscar(client, termo, ini, fim):
+        try:
+            hits = buscar(client, termo, ini, fim)
+        except JanelaLarga as e:
+            if termo != nome:
+                raise
+            log.info("  %s: %s; buscando pelas frases da prefeitura", nome, e)
+            hits = []
+            for f in frases(a):
+                hits += buscar(client, f, ini, fim)
+                time.sleep(PAUSA_S)
+        for hit in hits:
             if hit.get("urlTitle"):
                 achados.setdefault(hit["urlTitle"], hit)
         time.sleep(PAUSA_S)
@@ -621,10 +663,13 @@ def ingest(dry: bool = False) -> int:
                     novo = a["conferido_ate"] is None
                     conhecidos = set() if (REAVALIAR or novo) else _ja_avaliados(
                         cur, list(achados))
-                    falhas, citados = 0, 0
+                    falhas, citados, estourou = 0, 0, False
                     for url, hit in achados.items():
                         if url in conhecidos:
                             continue
+                        if time.monotonic() - inicio > ORCAMENTO_S:
+                            estourou = True   # armadilha 11
+                            break
                         try:
                             lido = baixar_ato(client, url)
                         except Exception as e:
@@ -647,11 +692,15 @@ def ingest(dry: bool = False) -> int:
                             gravados += len(cit)
                             conhecidos.add(url)
                         time.sleep(PAUSA_S)
-                    if falhas:
+                    if falhas or estourou:
                         # Ato que não foi lido pode ser justamente o do município:
                         # a cobertura não anda e a próxima rodada revê a janela.
                         parcial = True
-                        notas.append(f"{a['nome']}: {falhas} ato(s) sem leitura")
+                        if falhas:
+                            notas.append(f"{a['nome']}: {falhas} ato(s) sem leitura")
+                        if estourou:
+                            notas.append(f"{a['nome']}: orçamento acabou no meio dos "
+                                         "atos, continua na próxima rodada")
                     elif not dry:
                         _marca_cobertura(cur, a["id"], hoje)
                     if not dry:

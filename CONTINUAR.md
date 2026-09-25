@@ -349,7 +349,10 @@ uma a uma): "DOU — INLABS e busca oficial", prioridade 2. Coletor
   `transferegov_radar.ver`.
 - **Task:** `dou-federal` em escada de 10 min nos sete workers (08:00–09:00 UTC),
   orçamento de 8 min — criada em 23/09/2026 por `scripts/criar_task_dou_federal.sh`, depois
-  do deploy (#536). Primeira rodada na manhã de 23/09: conferir `ingestion_log` `dou_federal`.
+  do deploy (#536). Primeiras rodadas (23-24/09) ok nos sete, menos a Freitas (42
+  municípios na carga inicial): "Araújos" estourava a busca toda noite e em 24/09 a task
+  foi morta pelo `timeout` no meio de um município, sem gravar a rodada — armadilhas 10
+  e 11 do cabeçalho, corrigidas em 24/09/2026.
 - **Conferido contra Postgres de verdade** (lista inteira de migrations num banco zerado:
   141/141): 1ª rodada com 4 municípios de 3 estados em 158 s, 2ª em 11 s sem rebaixar nada.
   Pegou um defeito que teste de unidade não pega — `date - :dias` sem tipo vira

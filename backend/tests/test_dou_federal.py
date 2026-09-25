@@ -262,6 +262,90 @@ def test_busca_segue_o_cursor():
     assert pedidos[1]["displayDate"] == "1790046000000"
 
 
+ARAUJOS = {"id": 3, "nome": "Araújos", "uf": "MG", "ibge": "3103900",
+           "cnpj": None}
+
+
+def _busca_por_termo(paginas_por_q: dict[str, int], pedidos: list):
+    def responde(req: httpx.Request):
+        q = req.url.params.get("q")
+        pedidos.append(q)
+        item = {"urlTitle": f"ato-{len(pedidos)}", "classPK": "1", "score": 0,
+                "displayDateSortable": "1790046000000"}
+        return httpx.Response(200, text=_pagina([item], paginas_por_q.get(q, 1)))
+    return responde
+
+
+def test_nome_que_e_sobrenome_cai_para_as_frases(monkeypatch):
+    """Armadilha 10: "Araújos" casa com todo "Araújo" (46 páginas em 30 dias)."""
+    from datetime import date
+    monkeypatch.setattr(d, "PAUSA_S", 0)
+    pedidos: list = []
+    transporte = httpx.MockTransport(_busca_por_termo({'"Araújos"': 46}, pedidos))
+    with httpx.Client(transport=transporte) as c:
+        achados = d.candidatos(c, ARAUJOS, date(2026, 8, 25), date(2026, 9, 24))
+    # desiste na 1ª página, sem seguir 30 cursores
+    assert pedidos.count('"Araújos"') == 1
+    assert pedidos[1:4] == ['"Município de Araújos"', '"Prefeitura Municipal de Araújos"',
+                            '"Araújos/MG"']
+    assert pedidos[4:] == ['"3103900"', '"310390"']
+    assert len(achados) == 5
+
+
+def test_ibge_que_estoura_continua_falha(monkeypatch):
+    from datetime import date
+    monkeypatch.setattr(d, "PAUSA_S", 0)
+    transporte = httpx.MockTransport(_busca_por_termo({'"310390"': 31}, []))
+    with httpx.Client(transport=transporte) as c:
+        with pytest.raises(d.JanelaLarga):
+            d.candidatos(c, ARAUJOS, date(2026, 8, 25), date(2026, 9, 24))
+
+
+def test_orcamento_para_no_meio_dos_atos(monkeypatch):
+    """Armadilha 11: o município que começa perto do fim do orçamento não pode
+    passar do timeout da task — para entre atos, grava o que leu e a rodada."""
+    import contextlib
+    import ingestion._resilience as res
+
+    relogio = iter(range(0, 10_000, 100))       # cada consulta avança 100 s
+    monkeypatch.setattr(d.time, "monotonic", lambda: next(relogio))
+    monkeypatch.setattr(d.time, "sleep", lambda s: None)
+    monkeypatch.setattr(d, "ORCAMENTO_S", 350)
+
+    class Cur:
+        def close(self):
+            pass
+
+    class Conn:
+        def cursor(self):
+            return Cur()
+        commit = rollback = lambda self: None
+
+    monkeypatch.setattr(res, "get_sync_db_url", lambda: "")
+    monkeypatch.setattr(res, "neon_connect", lambda url: contextlib.nullcontext(Conn()))
+    monkeypatch.setattr(d, "catalogo_ibge", lambda c: None)
+    alvos = [dict(NOVA_PALMA, conferido_ate=None), dict(SANTA_MARIA, conferido_ate=None)]
+    monkeypatch.setattr(d, "_alvos", lambda cur: alvos)
+    monkeypatch.setattr(d, "_ja_avaliados", lambda cur, urls: set())
+    monkeypatch.setattr(d, "candidatos",
+                        lambda c, a, i, f: {f"{a['id']}-{k}": {} for k in range(10)})
+    lidos, cobertos, log_ = [], [], []
+    monkeypatch.setattr(d, "baixar_ato", lambda c, url: lidos.append(url) or {})
+    monkeypatch.setattr(d, "linha_ato", lambda hit, lido: {"data_publicacao": None})
+    monkeypatch.setattr(d, "_marca_cobertura", lambda cur, mid, ate: cobertos.append(mid))
+    monkeypatch.setattr(d, "_log_ingest",
+                        lambda cur, conn, st, n, nota=None: log_.append((st, nota)))
+
+    d.ingest()
+    # 0 = início; 100 = checagem do município; 200 e 300 = dois atos; 400 estoura
+    assert lidos == ["1-0", "1-1"]
+    assert cobertos == []                        # a cobertura não anda
+    (status, nota), = log_                       # e a rodada É gravada
+    assert status == "partial"
+    assert "Nova Palma: orçamento acabou no meio dos atos" in nota
+    assert "1 município(s) ficam para a próxima rodada" in nota
+
+
 def test_user_agent_nao_e_o_do_httpx():
     """Armadilha 4: o UA padrão do httpx é derrubado sem resposta."""
     assert d.UA["User-Agent"].startswith("Mozilla/5.0")

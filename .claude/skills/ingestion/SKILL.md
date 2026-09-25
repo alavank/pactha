@@ -265,6 +265,12 @@ acts with strong evidence. Full list of traps in the file header; the ones that 
   (`dou_cobertura`) does not advance and the run is `partial`.
 - Acts already evaluated live in `dou_atos` (even those citing nobody) so the 2-day review
   window does not refetch them: second run measured at 11 s against 158 s for the first.
+- **A name that is a surname blows up the search** — quotes do not stop stemming:
+  "Araújos"/MG matches every "Araújo" (46 pages in 30 days). Page 1 already gives the
+  total; above `MAX_PAGINAS` the name is swapped for `frases()` ("Município de X",
+  "Prefeitura Municipal de X", "X/UF" — punctuation is ignored).
+- **The time budget is checked between ACTS**, not only between municípios: on 24/09/2026
+  Freitas was killed by the task `timeout` mid-município and wrote no `ingestion_log` row.
 
 ## CGU convênios — the spreadsheet, not the API (`ingestion/cgu_convenios.py`, 23/09/2026)
 
