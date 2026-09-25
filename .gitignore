@@ -8,6 +8,9 @@ node_modules/
 .next/
 out/
 *.csv
+# Recorte REAL (algumas linhas) de arquivo de fonte, usado como fixture de teste:
+# versionado de propósito — o teste precisa dos bytes que a fonte publica.
+!backend/tests/fixtures/**/*.csv
 *.zip
 *.gz
 /data/

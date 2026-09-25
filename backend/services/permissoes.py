@@ -473,6 +473,12 @@ _RECURSOS: tuple = (
     _Recurso("cgu_convenios", SEC_CONVENIOS, "Defesa Civil e outros repasses (CGU)",
              "os repasses federais publicados pela CGU que o TransfereGov não tem", "",
              ("ver",), fonte="no Portal da Transparência", tela="cgu_convenios"),
+    # Recursos recebidos por pasta (24/09/2026): todo repasse da União ao
+    # município e aos fundos dele, mês a mês (FPM, FUNDEB, fundo a fundo, FNDE,
+    # FNAS...), pelo arquivo de transferências da CGU. Só `ver`.
+    _Recurso("cgu_transferencias", SEC_CONVENIOS, "Recursos recebidos por pasta",
+             "os repasses federais recebidos pelo município, por pasta", "",
+             ("ver",), fonte="no Portal da Transparência", tela="cgu_transferencias"),
     _Recurso("acordofes", SEC_CONVENIOS, "Acordo FES (dívida da saúde MG)",
              "os créditos e parcelas do Acordo FES", "",
              ("ver", "exportar", "atualizar"), fonte="na SES-MG",

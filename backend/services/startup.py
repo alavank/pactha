@@ -539,6 +539,10 @@ MIGRATION_FILES = [
     # CGU/Defesa Civil (23/09/2026): tela e acao a quem tem `usuarios.conceder`,
     # pelo mesmo desenho. Nao toca as tabelas de `add_cgu_convenios.sql`.
     "add_tela_cgu_convenios.sql",
+    # Recursos recebidos por pasta (24/09/2026): tela e acao a quem tem
+    # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
+    # `add_cgu_transferencias.sql`.
+    "add_tela_cgu_transferencias.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.
@@ -677,6 +681,10 @@ MIGRATION_FILES = [
     # credores e o Acordo FES por empenho (24/09/2026). Tabelas novas, FK só para
     # `municipios`.
     "add_ses_mg_resolucoes.sql",
+    # Recursos recebidos por pasta: as transferencias da CGU mes a mes e o que ja
+    # entrou por (municipio, mes) (24/09/2026). Tabelas novas, FK so para
+    # `municipios`.
+    "add_cgu_transferencias.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

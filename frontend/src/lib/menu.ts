@@ -181,6 +181,14 @@ export const NAV_ITEMS: NavEntry[] = [
          repasse fundo a fundo, e os 4 planos de Nova Palma são do Ministério
          da Cultura (Lei Aldir Blanc), não do SUS. */
       { href: "/dashboard/faf-planos", label: "Planos de Ação (Fundo a Fundo)" },
+      /* ⭐ RECURSOS RECEBIDOS POR PASTA (24/09/2026): TODO o dinheiro que a União
+         transferiu ao município e aos fundos dele, mês a mês — FPM, FUNDEB, o
+         fundo a fundo da saúde, FNDE, FNAS, PNAB, Defesa Civil, royalties —,
+         pelo arquivo de transferências da CGU. As telas vizinhas contam
+         INSTRUMENTO (plano, convênio); esta conta o DINHEIRO que entrou, até o
+         que não tem instrumento nenhum. Fica logo depois dos Planos de Ação
+         porque responde a pergunta que eles deixam: "e quanto chegou?". */
+      { href: "/dashboard/cgu-transferencias", label: "Recursos recebidos por pasta" },
       /* ⭐ CGU (23/09/2026): o dinheiro federal que NÃO passa pelo Transferegov —
          as transferências legais da Defesa Civil (Nova Palma: R$ 22,9 mi
          vigentes, um repasse de R$ 14,4 mi ainda sem liberação) e o histórico

@@ -85,6 +85,7 @@ ONDE_OLHAR = {
     "tce_pr": "pit.tce.pr.gov.br (zip anual do SIM-AM, lido por HTTP Range)",
     "dou_federal": "in.gov.br (busca publica do DOU + pagina de cada ato)",
     "cgu_convenios": "Portal da Transparencia/CGU (planilha de convenios, download-de-dados)",
+    "cgu_transferencias": "Portal da Transparencia/CGU (transferencias/AAAAMM, mes corrente + anterior)",
     "convenios_pr": "transparencia.download.pr.gov.br (CONVENIOS-{ANO}.zip, o SIT aberto)",
     "convenios_to": "convenio.to.gov.br/PesquisaExterna (TRANSFERE.TO, VisualizarConvenio por id)",
     "regularidade_pr": "certidões públicas da SEFA-PR (www4.pr.gov.br) e do TCE-PR (Liberatória)",

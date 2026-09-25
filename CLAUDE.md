@@ -13,7 +13,12 @@ PACTHA did not have (Monte Sião 2026: R$ 431 mil ordinary + R$ 4,0 mi of emenda
 form searches by NAME, so the creditor's CNPJ is checked (prefeitura, FNS by IBGE, or
 Receita with the município's IBGE and a municipal legal nature); emenda payments stay
 apart (they already count in Emendas › Estaduais). Screen: ESTADUAIS › Cofinanciamento
-Saúde, which now opens in MG too. Before it, the **FNS account balance**
+Saúde, which now opens in MG too. Also new that day: **"Recursos recebidos por pasta"**
+(`cgu_transferencias.py`): the CGU's monthly `transferencias/AAAAMM` file — every federal
+transfer to the município and its funds (FPM, FUNDEB, fundo a fundo, FNDE, FNAS...), by
+ação and favorecido. ⚠️ Município by SIAFI code, never by name; the current month is
+partial and FPM/FUNDEB only appear after it closes; the download host has an AWS WAF that
+answers 405 + CAPTCHA to bursts (measured) — the collector pauses and stops on it. Before them, the **FNS account balance**
 (`fns_saldo.py`): the Portal FNS's yearly `REPASSE-FAF-COM-POPULACAO-<ANO>` file is the
 ONLY public source of how much sits in each Fundo Municipal de Saúde bank account
 (ConsultaFNS's API has no balance — its statement endpoint is 404) -> `fns_saldo_conta`,
@@ -193,7 +198,7 @@ that area. Read the relevant one before making changes there:
 
 | Skill | Area |
 |---|---|
-| `ingestion` | scrapers/collectors, the 32 data sources, scheduling |
+| `ingestion` | scrapers/collectors, the data sources (count at the top), scheduling |
 | `migrations` | schema changes, `backend/migrations/`, `MIGRATION_FILES` |
 | `authz` | permissions, route registration, `AUTHZ_MODO`, row-level scope |
 | — | **Permissão: Módulo › Tela › Ação** — a regra inteira em `docs/PERMISSOES_POR_TELA.md` |

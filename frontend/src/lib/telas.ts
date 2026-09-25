@@ -122,6 +122,8 @@ export const TELAS: TelaDef[] = [
   { key: "faf_planos", label: "Planos de Ação (Fundo a Fundo)" },
   // CGU (23/09/2026): os repasses federais que o TransfereGov não tem.
   { key: "cgu_convenios", label: "Defesa Civil e outros repasses (CGU)" },
+  // Recursos recebidos por pasta (24/09/2026): as transferências da CGU mês a mês.
+  { key: "cgu_transferencias", label: "Recursos recebidos por pasta" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },
