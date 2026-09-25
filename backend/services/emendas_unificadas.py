@@ -7,6 +7,7 @@ A mesma emenda aparece em até quatro tabelas do PACTHA, cada uma com um pedaço
     parcerias_propostas ........ a proposta de saúde do módulo Parcerias.
     parcerias_emendas_indicadas  a indicação de saúde que ainda não virou proposta.
     transferegov_propostas ..... o convênio voluntário que a emenda financia.
+    convenios_estadual (FNS) ... a proposta de saúde fundo a fundo (2014 em diante).
 
 ⚠️⚠️ A CHAVE É O CÓDIGO DE 12 DÍGITOS (ano 4 + autor 4 + sequência 4), e cada
 fonte escreve de um jeito: a carteira grava `202432980001`, a TE
@@ -19,20 +20,26 @@ valor indicado da mesma emenda é contar o mesmo dinheiro duas vezes. O que NÃO
 casa vira linha própria — perder a emenda Pix porque a carteira não a viu seria
 o erro oposto, e o mais caro dos dois (é o que o gestor procura).
 
-⚠️ PAC e FNS FICAM FORA DESTA LISTA, de propósito. O PAC não traz código de
-emenda — só o NOME do parlamentar —, e casar por nome apagaria emenda legítima
-(a regra já escrita em `routers/parlamentares.py`, bloco 7). O FNS traz
-(`coEmendaPolitica` + `nuAnoExercicio` em `linhaPropostas[].parlamentares[]`),
-mas o formato dele contra o código de 12 dígitos nunca foi medido — até ser,
-não se casa. Os dois continuam na aba Parlamentares, que é a soma por autor.
+⚠️ O PAC FICA FORA DESTA LISTA, de propósito: não traz código de emenda — só
+o NOME do parlamentar —, e casar por nome apagaria emenda legítima (a regra já
+escrita em `routers/parlamentares.py`, bloco 7). Continua na aba Parlamentares.
+
+⭐ O FNS ENTRA PELO CÓDIGO (medido em 25/09/2026). `nuAnoExercicio` +
+`coEmendaPolitica` (sempre 8 dígitos) em `linhaPropostas[].parlamentares[]` É o
+código de 12 dígitos da CGU: 36 de 38 pares em Nova Palma e 54 de 58 em Monte
+Sião acharam a emenda na planilha da CGU com o MESMO autor. Até aqui as emendas
+de saúde de 2014-2024 não apareciam nesta aba — nem a carteira (o dump casa pelo
+CNPJ da prefeitura, não o do Fundo) nem o Parcerias (só 2025+) as viam: 23 em
+Nova Palma e 40 em Monte Sião passam a aparecer. Ver `emendas_fns`.
 """
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from typing import Optional
 
-from services.nome_parlamentar import e_pessoa
+from services.nome_parlamentar import e_parlamentar_real, e_pessoa
 
 COLEGIADOS = ("BANCADA", "COMISSAO", "RELATOR GERAL")
 
@@ -46,6 +53,7 @@ ROTULO_ORIGEM = {
     "parcerias": "Saúde (Parcerias)",
     "indicacao": "Saúde — indicada",
     "voluntaria": "Voluntária (convênio)",
+    "fns": "Saúde (FNS)",
 }
 
 
@@ -96,8 +104,106 @@ def _instrumento(origem: str, ident, situacao=None, valor=None, objeto=None) -> 
             "situacao": situacao, "valor": valor, "objeto": objeto}
 
 
+def _tipo_fns(recurso) -> Optional[str]:
+    """`dsTipoRecurso` ("EMENDA INDIVIDUAL", "EMENDA DE BANCADA"...) no tipo da CGU."""
+    r = _norm(recurso)
+    for trecho, tipo in (("INDIVID", "INDIVIDUAL"), ("BANCADA", "BANCADA"),
+                         ("COMISS", "COMISSAO"), ("RELATOR", "RELATOR GERAL")):
+        if trecho in r:
+            return tipo
+    return None
+
+
+def _dinheiro(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def emendas_fns(grupos: list[dict]) -> list[dict]:
+    """As emendas das propostas de saúde do FNS, UMA por (proposta, código).
+
+    `grupos` são as linhas FNS de `convenios_estadual`: `objeto` (o tipo da
+    proposta, "INCREMENTO MAC"), `recurso` (`dsTipoRecurso`) e `props`
+    (`raw_data.linhaPropostas`). As armadilhas medidas em 25/09/2026:
+
+    1. ⚠️ A MESMA PROPOSTA VEM EM MAIS DE UM GRUPO: o coletor busca as propostas
+       individuais por (ano, tipo, recurso), e o grupo é por nº de processo —
+       dois processos do mesmo tipo repetem a lista. Deduplica por
+       (nº da proposta, código).
+    2. Uma proposta pode ter VÁRIOS autores (2 em Nova Palma, 6 em Monte Sião):
+       um item por código, cada um com o SEU `vlIndObjeto`.
+    3. O mesmo código em MAIS DE UMA proposta: fica para `unificar_federais`
+       agrupar (a emenda soma as partes, cada proposta é um instrumento).
+    4. ⚠️ O "RECEBIDO" É O `vlPago` DO FNS, não o da CGU: na planilha de
+       favorecidos da CGU o pagamento FNS de 2024 sai para o BANCO DO BRASIL,
+       não para o fundo. Numa proposta com várias emendas, o pago é dividido
+       pela parte de cada uma.
+    5. O nome vem com acento no FNS ("JÚLIO DELGADO") e sem na CGU: quem casa é
+       o código, nunca o nome.
+    """
+    vistos: set[tuple[str, str]] = set()
+    out: list[dict] = []
+    for g in grupos:
+        props = g.get("props")
+        if isinstance(props, str):
+            try:
+                props = json.loads(props)
+            except (ValueError, TypeError):
+                props = None
+        if not isinstance(props, list):
+            continue
+        for prop in props:
+            if not isinstance(prop, dict):
+                continue
+            numero = str(prop.get("nuProposta") or "").strip()
+            por_codigo: dict[str, dict] = {}
+            for pp in prop.get("parlamentares") or ():
+                if not isinstance(pp, dict):
+                    continue
+                co = re.sub(r"\D", "", str(pp.get("coEmendaPolitica") or ""))
+                ano = re.sub(r"\D", "", str(pp.get("nuAnoExercicio") or ""))
+                cod = codigo_de(f"{ano}{co.zfill(8)}") if co and len(ano) == 4 else None
+                if not cod:
+                    continue
+                nome = (pp.get("noApelidoPolitico") or pp.get("noParlamentar")
+                        or pp.get("nome") or "").strip()
+                item = por_codigo.setdefault(cod, {"autor": None, "valor": 0.0})
+                if nome and not item["autor"] and e_parlamentar_real(nome):
+                    item["autor"] = nome
+                item["valor"] += _dinheiro(pp.get("vlIndObjeto"))
+            if not por_codigo:
+                continue
+            vl_prop = _dinheiro(prop.get("vlProposta"))
+            vl_pago = prop.get("vlPago")
+            for cod, item in por_codigo.items():
+                if (numero, cod) in vistos:
+                    continue
+                vistos.add((numero, cod))
+                # Sem `vlIndObjeto` e com uma emenda só, a proposta inteira é dela.
+                parte = item["valor"] or (vl_prop if len(por_codigo) == 1 else 0.0)
+                if vl_prop and parte > vl_prop:
+                    parte = vl_prop
+                pago = None
+                if vl_pago is not None:
+                    pago = _dinheiro(vl_pago) * (parte / vl_prop if vl_prop else 1.0)
+                out.append({
+                    "codigo": cod, "autor": item["autor"], "valor": round(parte, 2),
+                    "numero": numero or None,
+                    "situacao": str(prop.get("situacao_desc") or "").strip() or None,
+                    "valor_proposta": vl_prop,
+                    "pago": round(pago, 2) if pago is not None else None,
+                    "data_pagamento": str(prop.get("data_pagamento") or "").strip() or None,
+                    "objeto": str(g.get("objeto") or "").strip() or None,
+                    "tipo": _tipo_fns(g.get("recurso")),
+                })
+    return out
+
+
 def unificar_federais(carteira: list[dict], te: list[dict], parcerias: list[dict],
-                      indicadas: list[dict], voluntarias: list[dict]) -> list[dict]:
+                      indicadas: list[dict], voluntarias: list[dict],
+                      fns: Optional[list[dict]] = None) -> list[dict]:
     """Uma linha por emenda. Cada lista chega no formato das consultas do router
     (ver `routers/emendas_parlamentares.py`), já filtrada pelo município."""
     linhas: list[dict] = []
@@ -193,7 +299,34 @@ def unificar_federais(carteira: list[dict], te: list[dict], parcerias: list[dict
                 tipo=i.get("tipo"), situacao="Indicada, sem proposta",
                 valor=i.get("valor_total"), municipal=i.get("municipal", True)))
 
-    # 5) Voluntárias — casam pelo id da proposta que a carteira lista.
+    # 5) FNS — a proposta de saúde fundo a fundo, pelo código (`emendas_fns`).
+    # O que casa com a carteira, a TE ou o Parcerias vira instrumento e NÃO soma;
+    # o resto vira uma linha por código, com a soma das partes das propostas.
+    fns_por_codigo: dict[str, list[dict]] = {}
+    for f in fns or ():
+        fns_por_codigo.setdefault(f["codigo"], []).append(f)
+    for cod, props in fns_por_codigo.items():
+        insts = [_instrumento("fns", p["numero"] or cod, p.get("situacao"), p.get("valor"),
+                              p.get("objeto")) for p in props]
+        alvo = por_codigo.get(cod)
+        if alvo is not None:
+            alvo["instrumentos"].extend(insts)
+            continue
+        pagos = [p["pago"] for p in props if p.get("pago") is not None]
+        situacoes = list(dict.fromkeys(p["situacao"] for p in props if p.get("situacao")))
+        objetos = list(dict.fromkeys(p["objeto"] for p in props if p.get("objeto")))
+        ln = _linha("fns", cod, codigo_emenda=cod, ano=_ano(cod[:4]),
+                    autor=next((p["autor"] for p in props if p.get("autor")), None),
+                    tipo=next((p["tipo"] for p in props if p.get("tipo")), None),
+                    objeto=" · ".join(objetos) or None,
+                    situacao=" · ".join(situacoes) or None,
+                    valor=round(sum(p.get("valor") or 0.0 for p in props), 2),
+                    recebido_municipio=round(sum(pagos), 2) if pagos else None,
+                    instrumentos=insts)
+        linhas.append(ln)
+        por_codigo[cod] = ln
+
+    # 6) Voluntárias — casam pelo id da proposta que a carteira lista.
     for v in voluntarias:
         inst = _instrumento("voluntaria", v["numero_proposta"], v.get("situacao"),
                             v.get("valor_emenda"), v.get("objeto"))

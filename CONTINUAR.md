@@ -29,6 +29,25 @@
 
 ---
 
+## 1.42. Emendas de saúde do FNS na aba Federais — pelo código (25/09/2026)
+
+Cartão "InvestSUS — painéis" do relatório do dono. O cartão pedia raspar o Qlik
+para achar "o autor que falta na tela Emendas"; o autor **já estava no banco**
+(`convenios_estadual.raw_data.linhaPropostas[].parlamentares[]`, gravado pelo
+`run_fns_local.py`) — só não chegava à aba Federais, que deixava o FNS de fora "até
+o formato ser medido". Medido: `nuAnoExercicio` + `coEmendaPolitica` (8 dígitos) É o
+código de 12 dígitos da CGU (36/38 em Nova Palma, 54/58 em Monte Sião, mesmo autor).
+
+- `services/emendas_unificadas.emendas_fns` + passo 5 de `unificar_federais`: o que
+  casa com carteira/TE/Parcerias vira instrumento (não soma); o resto vira linha
+  `origem="fns"` por código. Consolidado passa o mesmo conjunto.
+- Armadilhas no docstring: a MESMA proposta repetida em grupos (dedup por proposta
+  + código), vários autores por proposta, o "recebido" é o `vlPago` do FNS dividido
+  pela parte (a CGU paga ao BANCO DO BRASIL nessa linha), casar pelo código e nunca
+  pelo nome (acento).
+- Ganho: 23 emendas em Nova Palma e 40 em Monte Sião (2014-2024) aparecem com autor.
+- ❌ Qlik do InvestSUS descartado: websocket 403 fora do navegador e o dado é o mesmo.
+
 ## 1.41. PDF de Parlamentares no modelo da planilha, execução da Emenda Pix e o "36 de 37" (24/09/2026)
 
 Pedidos da Laiza (Nova Serrana/MG, cliente da Freitas) e do dono:
