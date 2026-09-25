@@ -13,9 +13,10 @@
 #
 # A AGENDA (INFRA.md §5; dentro da janela 22:00–10:00 UTC, sem atravessar 00:00):
 # escada de 30 min entre os três tenants de MG — o painel é UM host da SES-MG e a
-# escada é por ele — e os quatro sem MG logo depois (saem em segundos):
-#   freitas 22:30 · trust 23:00 · montesiao 23:30 · santamaria 23:35 · novapalma 23:40
-#   · bgk 23:45 · juranda 23:50 (UTC).
+# escada é por ele — e os quatro sem MG ANTES deles (saem em segundos):
+#   santamaria 22:00 · novapalma 22:05 · bgk 22:10 · juranda 22:15 · freitas 22:30
+#   · trust 23:00 · montesiao 23:30 (UTC). ⚠️ Os sem MG em 23:35-23:50 atravessavam
+#   00:00 com o kill de 1500 s, e a auditoria da agenda reprovava (25/09/2026).
 # Custo medido (24/09/2026, do PC): ~1,5 s por consulta com a pausa de 1 s; 4 POSTs
 # por município (orçamentário e restos do ano + um ano de histórico). Freitas (42
 # municípios) ≈ 5 min. Orçamento interno de 20 min (SES_MG_BUDGET_S=1200), kill em
@@ -58,10 +59,10 @@ JSON
 criar "freitas"       "s49c3b58lysqq0tpelneg3g3" "30 22 * * *"
 criar "trust"         "xg714h8l7va4ejq70a5pmv5t" "0 23 * * *"
 criar "montesiao-mg"  "jhf0kjhps5keujiyhhsnvjt6" "30 23 * * *"
-criar "santamaria-rs" "wquremniv57gag3tlil8uf6d" "35 23 * * *"
-criar "novapalma-rs"  "kqcnvdsdkgn1efkm4nog8oes" "40 23 * * *"
-criar "bgk-rs"        "6xast9rw0wbzbownss9vamfq" "45 23 * * *"
-criar "juranda-pr"    "c1spfhxrshagrrvwvhoigip1" "50 23 * * *"
+criar "santamaria-rs" "wquremniv57gag3tlil8uf6d" "0 22 * * *"
+criar "novapalma-rs"  "kqcnvdsdkgn1efkm4nog8oes" "5 22 * * *"
+criar "bgk-rs"        "6xast9rw0wbzbownss9vamfq" "10 22 * * *"
+criar "juranda-pr"    "c1spfhxrshagrrvwvhoigip1" "15 22 * * *"
 
 echo "== conferência: 'ses-mg-resolucoes' tem de aparecer nos sete"
 for par in "freitas:s49c3b58lysqq0tpelneg3g3" "trust:xg714h8l7va4ejq70a5pmv5t" \
