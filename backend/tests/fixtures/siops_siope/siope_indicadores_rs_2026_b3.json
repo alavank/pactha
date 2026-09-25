@@ -1,0 +1,65 @@
+{
+ "@odata.context": "https://www.fnde.gov.br/olinda-ide/servico/DADOS_ABERTOS_SIOPE/versao/v1/odata$metadata#_Indicadores_Siope",
+ "value": [
+  {
+   "TIPO": "Municipal",
+   "NUM_ANO": 2026,
+   "NUM_PERI": 3,
+   "COD_UF": 43,
+   "SIG_UF": "RS",
+   "COD_MUNI": 431306,
+   "NOM_MUNI": "Nova Hartz",
+   "COD_INDI": 24,
+   "COD_EXIB": "1.1",
+   "NOM_INDI": "Percentual de aplicação das receitas de impostos e transferências vinculadas à educação em MDE (mínimo de 25% para estados, DF e municípios)",
+   "COD_GRUP": 3,
+   "NOM_GRUP_INDI": "Indicadores de Dispêndio com Pessoal",
+   "VAL_INDI": "28.02"
+  },
+  {
+   "TIPO": "Municipal",
+   "NUM_ANO": 2026,
+   "NUM_PERI": 3,
+   "COD_UF": 43,
+   "SIG_UF": "RS",
+   "COD_MUNI": 431306,
+   "NOM_MUNI": "Nova Hartz",
+   "COD_INDI": 67,
+   "COD_EXIB": "1.2",
+   "NOM_INDI": "Percentual de aplicação do FUNDEB na remuneração dos profissionais da educação (mínimo de 70%) - Inciso XXII, Portaria Conjunta MGI/MF/CGU Nº 33 de30-08-2023",
+   "COD_GRUP": 3,
+   "NOM_GRUP_INDI": "Indicadores de Dispêndio com Pessoal",
+   "VAL_INDI": "89.27"
+  },
+  {
+   "TIPO": "Municipal",
+   "NUM_ANO": 2026,
+   "NUM_PERI": 3,
+   "COD_UF": 43,
+   "SIG_UF": "RS",
+   "COD_MUNI": 431310,
+   "NOM_MUNI": "Nova Palma",
+   "COD_INDI": 24,
+   "COD_EXIB": "1.1",
+   "NOM_INDI": "Percentual de aplicação das receitas de impostos e transferências vinculadas à educação em MDE (mínimo de 25% para estados, DF e municípios)",
+   "COD_GRUP": 3,
+   "NOM_GRUP_INDI": "Indicadores de Dispêndio com Pessoal",
+   "VAL_INDI": "23.16"
+  },
+  {
+   "TIPO": "Municipal",
+   "NUM_ANO": 2026,
+   "NUM_PERI": 3,
+   "COD_UF": 43,
+   "SIG_UF": "RS",
+   "COD_MUNI": 431310,
+   "NOM_MUNI": "Nova Palma",
+   "COD_INDI": 67,
+   "COD_EXIB": "1.2",
+   "NOM_INDI": "Percentual de aplicação do FUNDEB na remuneração dos profissionais da educação (mínimo de 70%) - Inciso XXII, Portaria Conjunta MGI/MF/CGU Nº 33 de30-08-2023",
+   "COD_GRUP": 3,
+   "NOM_GRUP_INDI": "Indicadores de Dispêndio com Pessoal",
+   "VAL_INDI": "84.06"
+  }
+ ]
+}

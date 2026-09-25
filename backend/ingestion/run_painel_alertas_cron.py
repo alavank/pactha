@@ -121,6 +121,19 @@ def _candidatos(cur, mid):
     try:
         from services.bi_abas import prazos_dos_itens
         from services.cadastro_estadual import sigla_da_fonte
+        from services.saude_educacao import SQL_ENTREGUES, entregues_por_municipio
+        # O que o SIOPS/SIOPE ja provam entregue: sem isto o push mandava "vence
+        # em 6 dias" para o 3.2.4 de Nova Palma com o bimestre ja homologado. A
+        # MESMA regra da tela (bi_abas.prazos_dos_itens). Tabela ausente (migration
+        # que falhou) nao pode calar os outros prazos: vira "nada entregue".
+        entregues = None
+        try:
+            cur.execute(SQL_ENTREGUES.format(ids="%s"), ([mid],))
+            entregues = entregues_por_municipio(cur.fetchall()).get(mid)
+        except Exception as e:
+            _log(f"saude_educacao_bimestre indisponivel ({type(e).__name__}) — "
+                 "prazos do 3.2.3/3.2.4 sem conferir entrega")
+            cur.connection.rollback()
         for tabela, esfera in (("cagec_situacao", "CAGEC"), ("cauc_situacao", "CAUC")):
             # fetchall: o CAGEC tem uma linha por ENTIDADE (prefeitura, fundo
             # de saude, FMAS). fetchone() perderia os prazos dos fundos.
@@ -134,7 +147,8 @@ def _candidatos(cur, mid):
             for r in cur.fetchall():
                 rotulo = sigla_da_fonte(r[2]) if esfera == "CAGEC" else esfera
                 prazos += [{**p, "rotulo": rotulo}
-                           for p in prazos_dos_itens(r[0], r[1], esfera, dias=30)]
+                           for p in prazos_dos_itens(r[0], r[1], esfera, dias=30,
+                                                     entregues=entregues)]
             for p in prazos:
                 faixa = next((f for f in (7, 15, 30) if p["dias_restantes"] <= f), None)
                 if faixa is None:

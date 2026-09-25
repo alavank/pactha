@@ -17,7 +17,7 @@ from routers import (
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
-    uso, mcp_tokens, consolidado, tce_pr, cgu_convenios,
+    uso, mcp_tokens, consolidado, tce_pr, cgu_convenios, saude_educacao,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -246,6 +246,10 @@ app.include_router(siconfi.router)
 # inscricao real da carteira em 07/09/2026 era de um fundo municipal que nem
 # cadastro estadual tem.
 app.include_router(negativos.router)
+# QUINTA leitura da mesma tela (chave `cauc.ver`, tela `cauc`): SIOPS, SIOPE e os
+# instrumentos de planejamento do SUS — o detalhe dos itens 3.2.3, 3.2.4, 5.1 e
+# 5.2 do CAUC (qual bimestre falta, % aplicado, RDQA/RAG).
+app.include_router(saude_educacao.router)
 app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 # /api/obrasgov/* (CIPI): as obras federais de TODAS as areas — o que o SISMOB
 # (saude) e o SIMEC (educacao) nao cobrem. Repete de proposito a obra que ja

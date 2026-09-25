@@ -672,6 +672,10 @@ MIGRATION_FILES = [
     # não vira convênio, então era a única coisa sem dizer para que é o dinheiro.
     # Só ADD COLUMN IF NOT EXISTS nas duas tabelas de add_emendas_estaduais_execucao.
     "add_emendas_estaduais_objeto.sql",
+    # SIOPS (saúde), SIOPE (educação) e os instrumentos de planejamento do SUS
+    # (Plano, PAS, RDQA, RAG) — o detalhe dos itens 3.2.3/3.2.4/5.1/5.2 do CAUC
+    # (24/09/2026). Tabelas novas, só com FK para `municipios`.
+    "add_siops_siope_rag.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

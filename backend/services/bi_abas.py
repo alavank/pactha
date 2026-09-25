@@ -978,15 +978,23 @@ JANELA_MINIMA_DIAS = 3
 
 
 def prazos_dos_itens(itens, data_pesquisa: Optional[date], esfera: str,
-                     dias: int = 30, hoje: Optional[date] = None) -> list[dict]:
+                     dias: int = 30, hoje: Optional[date] = None,
+                     entregues: Optional[dict] = None) -> list[dict]:
     """A REGRA, isolada e sem I/O — usada pela tela (async) e pelo cron de push
     (psycopg2 sincrono). Se as duas implementassem a regra por conta propria, um
     dia a tela e a notificacao passariam a discordar sobre o mesmo prazo.
 
     Aceita os dois formatos: CAGEC manda LISTA de dicts (cada um com `validade`),
-    CAUC manda DICT {codigo: valor} em que o valor JA E a data."""
+    CAUC manda DICT {codigo: valor} em que o valor JA E a data.
+
+    `entregues` ({"SIOPS"|"SIOPE": {(ano, bimestre), ...}}, de
+    `saude_educacao_bimestre`): o que o municipio JA entregou. Com ele, o 3.2.3 e
+    o 3.2.4 do CAUC deixam de "vencer" quando o bimestre que a validade cobra ja
+    foi entregue e so o Tesouro nao atualizou — o alarme falso de Nova Palma
+    (4o bimestre homologado em 23/09/2026, aviso "vence em 6 dias")."""
     hoje = hoje or date.today()
     from services.cauc_catalogo import LABELS, _classifica
+    from services.saude_educacao import entrega_cobre_validade_do_cauc
 
     if isinstance(itens, dict):        # CAUC
         pares = [(cod, val, LABELS.get(cod, f"Exigência {cod}"),
@@ -1019,6 +1027,9 @@ def prazos_dos_itens(itens, data_pesquisa: Optional[date], esfera: str,
         if (esfera or "").upper() == "CAUC" and data_pesquisa \
                 and (d - data_pesquisa).days < JANELA_MINIMA_DIAS:
             continue                   # cadencia de atualizacao, nao vencimento
+        if (esfera or "").upper() == "CAUC" and \
+                entrega_cobre_validade_do_cauc(codigo, d, entregues):
+            continue                   # ja entregue; e o extrato que esta atrasado
         restantes = (d - hoje).days
         if restantes < 0 or restantes > dias:
             continue                   # ja venceu (= pendencia) ou ainda longe
@@ -1039,6 +1050,16 @@ async def documentos_vencendo(db: AsyncSession, ids: list[int],
         return []
     hoje = date.today()
     out: list[dict] = []
+
+    # O que o SIOPS/SIOPE ja provam entregue (mata o alarme falso do 3.2.3/3.2.4).
+    # `to_regclass` antes: numa migration que falhou, a consulta abortaria a
+    # transacao e levaria junto o resto do painel.
+    from services.saude_educacao import SQL_ENTREGUES, entregues_por_municipio
+    entregues: dict = {}
+    if (await db.execute(text(
+            "SELECT to_regclass('public.saude_educacao_bimestre') IS NOT NULL"))).scalar():
+        entregues = entregues_por_municipio((await db.execute(
+            text(SQL_ENTREGUES.format(ids=":ids")), {"ids": ids})).fetchall())
 
     for tabela, esfera in (("cagec_situacao", "CAGEC"), ("cauc_situacao", "CAUC")):
         # `entidade` so existe no CAGEC, que tem UMA LINHA POR ENTIDADE
@@ -1066,7 +1087,8 @@ async def documentos_vencendo(db: AsyncSession, ids: list[int],
         """), {"ids": ids})).fetchall()
         for mid, nome, itens, pesquisa, ent_nome, principal, fonte in rows:
             rotulo = sigla_da_fonte(fonte) if esfera == "CAGEC" else esfera
-            for p in prazos_dos_itens(itens, pesquisa, esfera, dias, hoje):
+            for p in prazos_dos_itens(itens, pesquisa, esfera, dias, hoje,
+                                      entregues=entregues.get(mid)):
                 out.append({"municipio_id": mid, "municipio": nome,
                             # So quando NAO e a principal: repetir "Prefeitura"
                             # em toda linha e ruido que ninguem le.
