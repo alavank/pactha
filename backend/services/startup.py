@@ -668,6 +668,10 @@ MIGRATION_FILES = [
     # Emendas federais: o recebido POR MUNICÍPIO e o convênio gerado, pelos outros
     # dois arquivos do zip da CGU (24/09/2026). Tabelas novas, FK para `municipios`.
     "add_emendas_federais_vinculos.sql",
+    # Emendas de MG: OBJETO e FASE DO PLANO de cada indicação (25/09/2026). A TE-MG
+    # não vira convênio, então era a única coisa sem dizer para que é o dinheiro.
+    # Só ADD COLUMN IF NOT EXISTS nas duas tabelas de add_emendas_estaduais_execucao.
+    "add_emendas_estaduais_objeto.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

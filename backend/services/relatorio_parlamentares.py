@@ -585,7 +585,10 @@ def linha_estadual(x: dict) -> dict:
     tipo = str(x.get("tipo_atendimento") or "").strip()
     tipo = "" if tipo in ("-", "--") else tipo
     benef = str(x.get("beneficiario") or "").strip()
-    recurso = frase(tipo or x.get("grupo_despesa") or "Indicação estadual")
+    # O OBJETO primeiro (dados da SEGOV, 25/09/2026): a TE-MG não tem convênio e
+    # "Transferência especial – Prefeitura" não dizia para que era o dinheiro.
+    objeto = str(x.get("objeto") or "").strip()
+    recurso = frase(objeto or tipo or x.get("grupo_despesa") or "Indicação estadual")
     if benef:
         recurso += f" – {nome_proprio(benef)}"
     valor = _f(x.get("valor_indicacao"))

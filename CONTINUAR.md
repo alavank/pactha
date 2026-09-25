@@ -210,6 +210,13 @@ arquivo tem e nada mais tem é o **SALDO DA CONTA** do Fundo Municipal, por cont
 > (a planilha parou em 12/05), mas só de 2023 em diante e sem o saldo de restos a
 > pagar. Monte Sião pela fonte nova: 48 indicações ao município (R$ 4,90 mi pagos) e 15
 > a entidades. O que está abaixo sobre layouts e aba "12-05" é da 1ª versão.
+>
+> **25/09/2026 — objeto e fase do plano** (`add_emendas_estaduais_objeto.sql`): a TE-MG
+> não vira convênio e a aba mostrava só "Transferência Especial → Prefeitura". Agora
+> `objeto` (título do plano de trabalho/proposta, ou a descrição da indicação) é o título
+> da linha na aba, no PDF de parlamentares e no bloco das entidades, e `fase_plano`
+> (situação do instrumento) vira selo quando não é o normal — ADEQUAÇÃO em destaque: é a
+> prefeitura que precisa corrigir o plano (22 das 3.834 TE de 2026 no Estado).
 
 Sétima fonte do relatório do dono ("emendas.mg.gov.br — emendas impositivas e TE
 estadual", prioridade 1). O cartão dizia que o PACTHA "deriva o parlamentar do texto do

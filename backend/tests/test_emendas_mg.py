@@ -61,6 +61,36 @@ def test_le_ibge_e_cnpj_exportados_como_float_e_zero_como_zero():
                            "status_instrumento": "REGISTRADO NO SIAFI"}
 
 
+@pytest.mark.parametrize("extra,objeto", [
+    # TE: o plano de trabalho diz para que é o dinheiro (a TE não vira convênio).
+    ({"plano_titulo": "COBERTURA DA QUADRA", "proposta_titulo": "COBERTURA E FECHAMENTO",
+      "descricao_indicacao": ""}, "COBERTURA DA QUADRA"),
+    ({"proposta_titulo": "COBERTURA E FECHAMENTO"}, "COBERTURA E FECHAMENTO"),
+    # Resolução SES / doação de bens: só a descrição.
+    ({"descricao_indicacao": "DOAÇÃO DE KIT FEIRA LIVRE"}, "DOAÇÃO DE KIT FEIRA LIVRE"),
+    ({}, None),
+])
+def test_objeto_pelo_plano_pela_proposta_ou_pela_descricao(extra, objeto):
+    x, = em.ler_csv(_csv([_linha(1, **extra)]))
+    assert x["objeto"] == objeto
+
+
+def test_fase_do_plano_e_a_situacao_do_instrumento():
+    x, = em.ler_csv(_csv([_linha(1, status_instrumento="ADEQUAÇÃO")]))
+    assert x["fase_plano"] == "ADEQUAÇÃO"
+    x, = em.ler_csv(_csv([_linha(1, status_instrumento="")]))
+    assert x["fase_plano"] is None
+
+
+def test_objeto_e_fase_sao_da_segov_mesmo_na_linha_do_sigcon():
+    """O SIGCON não tem os dois: a fonte grava sempre (armadilha 8), e um CSV sem
+    objeto não apaga o que já estava."""
+    sql = " ".join(em._SQL.split())
+    assert "objeto = COALESCE(EXCLUDED.objeto, emendas_estaduais.objeto)" in sql
+    assert "fase_plano = EXCLUDED.fase_plano" in sql
+    assert "fase_plano = EXCLUDED.fase_plano" in " ".join(em._SQL_OUTROS.split())
+
+
 def test_caixa_escolar_sem_ibge_e_cnpj_que_perdeu_o_zero():
     x, = em.ler_csv(_csv([_linha(23899, ibge="", cnpj="1834744000174,0",
                                  tipo_benef="CAIXA ESCOLAR", benef="CX ESC FULANO")]))
