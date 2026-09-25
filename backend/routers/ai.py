@@ -877,16 +877,30 @@ async def _tool_query_simec_liberacoes(db: AsyncSession, inp: dict) -> str:
         where.append("ano = :a"); params["a"] = int(inp["ano"])
     if inp.get("programa"):
         where.append("programa ILIKE :p"); params["p"] = f"%{inp['programa']}%"
+    # ⚠️ SO O QUE E DO MUNICIPIO (prefeitura, secretaria, fundo) entra nas linhas e
+    # no total — a mesma regra da tela (services/liberacoes_fnde.py). O PDDE das
+    # caixas escolares (escola que pode ser estadual) vai numa linha a parte.
+    from services.liberacoes_fnde import SQL_DO_MUNICIPIO
     sql = f"""
-        SELECT programa, dt_pgto, valor, descricao, banco, agencia, conta, ano
-        FROM simec_par_liberacoes WHERE {' AND '.join(where)}
+        SELECT programa, dt_pgto, valor, descricao, banco, agencia, conta, ano, favorecido
+        FROM simec_par_liberacoes WHERE {' AND '.join(where)} AND {SQL_DO_MUNICIPIO}
         ORDER BY dt_pgto DESC NULLS LAST LIMIT 200
     """
     rows = (await db.execute(text(sql), params)).fetchall()
+    esc = (await db.execute(text(f"""
+        SELECT COUNT(*), COALESCE(SUM(valor), 0), COUNT(DISTINCT cnpj_favorecido)
+        FROM simec_par_liberacoes WHERE {' AND '.join(where)} AND NOT ({SQL_DO_MUNICIPIO})
+    """), params)).fetchone()
+    linha_escolas = (
+        f"Fora do total (caixas escolares/APM/CPM e entidades, podem ser escolas estaduais): "
+        f"{esc[0]} liberacao(oes) a {esc[2]} favorecido(s), {_fmt_money(esc[1])}"
+        if esc and esc[0] else None)
     if not rows:
-        return f"Nenhuma liberacao SIMEC encontrada."
+        return linha_escolas or "Nenhuma liberacao SIMEC encontrada."
     total = sum(float(r[2] or 0) for r in rows)
-    out = [f"{len(rows)} liberacao(oes) SIMEC, total: {_fmt_money(total)}"]
+    out = [f"{len(rows)} liberacao(oes) do municipio (FNDE/SIMEC), total: {_fmt_money(total)}"]
+    if linha_escolas:
+        out.append(linha_escolas)
     # Sumario por programa
     from collections import defaultdict
     agg = defaultdict(lambda: [0, 0.0])
@@ -900,6 +914,7 @@ async def _tool_query_simec_liberacoes(db: AsyncSession, inp: dict) -> str:
     for r in rows[:50]:
         out.append(
             f"- {_fmt_dt(r[1])} | {r[0]:<10} | {_fmt_money(r[2])} | {(r[3] or '')[:60]} | {r[4] or ''} ag {r[5] or ''} c/c {r[6] or ''}"
+            + (f" | favorecido: {r[8]}" if r[8] else "")
         )
     return "\n".join(out)
 

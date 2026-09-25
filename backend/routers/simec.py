@@ -6,11 +6,18 @@ Endpoints (todos requerem auth):
   GET /api/simec/resumo?municipio_id=     -> totais por programa e ano
   GET /api/simec/termos?municipio_id=     -> Termos de Compromisso (o instrumento)
 
-Os dados sao alimentados por DOIS coletores, de duas telas do MEC:
-  - ingestion/simec_par.py    -> dimensoes + liberacoes (os PAGAMENTOS: OB, data)
-  - ingestion/simec_termos.py -> termos de compromisso (o INSTRUMENTO)
-Fonte original: simec.mec.gov.br/cte/relatoriopublico/impressao.php e
-                simec.mec.gov.br/par/carregaTermos.php (ambas publicas).
+Os dados sao alimentados por TRES coletores:
+  - ingestion/fnde_liberacoes.py -> liberacoes (os PAGAMENTOS: OB, data) de TODA
+                                    entidade do municipio, pela consulta do FNDE
+                                    (pls/simad) — desde 24/09/2026 a fonte principal
+  - ingestion/simec_par.py       -> dimensoes do PAR + liberacoes como PLANO B
+                                    (so a prefeitura, so o ano corrente)
+  - ingestion/simec_termos.py    -> termos de compromisso (o INSTRUMENTO)
+
+⚠️ O TOTAL DO MUNICIPIO e prefeitura + secretaria + fundo + orgao municipal
+(`services/liberacoes_fnde.SQL_DO_MUNICIPIO`). A caixa escolar (PDDE da escola,
+que pode ser ESTADUAL) vem na lista marcada `do_municipio = false` e no bloco
+`escolas` do /resumo — sempre visivel, nunca somada.
 """
 from datetime import date
 from typing import Optional
@@ -20,6 +27,7 @@ from sqlalchemy import text
 from database import get_db
 from services.auth import get_current_user, ensure_municipio_access, ensure_tela
 from services.registro_rotas import exige
+from services.liberacoes_fnde import ROTULO_TIPO, SQL_DO_MUNICIPIO, do_municipio
 from models.user import User
 
 router = APIRouter(prefix="/api/simec", tags=["simec"])
@@ -68,7 +76,11 @@ async def liberacoes(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Liberacoes de recursos MEC (PNAE, PNATE, QUOTA, PDDE, etc)."""
+    """Liberacoes de recursos MEC (PNAE, PNATE, QUOTA, PDDE, etc).
+
+    Devolve TODAS as linhas — inclusive as das caixas escolares — cada uma com o
+    favorecido e `do_municipio`. Quem soma (a tela) soma so `do_municipio`; o
+    `valor_municipio` daqui ja vem com essa regra, a mesma do /resumo."""
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "simec")
     where = ["municipio_id = :mun"]
@@ -79,7 +91,8 @@ async def liberacoes(
         where.append("programa = :prog"); params["prog"] = programa
     sql = f"""
         SELECT programa, programa_full, dt_pgto, ob, valor, parcela,
-               descricao, banco, agencia, conta, ano, updated_at
+               descricao, banco, agencia, conta, ano, updated_at,
+               cnpj_favorecido, favorecido, tipo_favorecido, fonte
         FROM simec_par_liberacoes
         WHERE {' AND '.join(where)}
         ORDER BY dt_pgto DESC NULLS LAST, programa
@@ -98,9 +111,20 @@ async def liberacoes(
         "conta": row[9],
         "ano": row[10],
         "atualizado_em": row[11].isoformat() if row[11] else None,
+        "cnpj_favorecido": row[12] or None,
+        "favorecido": _clean(row[13]),
+        "tipo_favorecido": row[14],
+        "tipo_favorecido_rotulo": ROTULO_TIPO.get(row[14] or "", row[14]),
+        "do_municipio": do_municipio(row[14]),
+        "fonte": row[15],
     } for row in r.fetchall()]
     last = max((i["atualizado_em"] for i in items if i["atualizado_em"]), default=None)
-    return {"items": items, "total": len(items), "atualizado_em": last}
+    return {
+        "items": items,
+        "total": len(items),
+        "valor_municipio": round(sum(i["valor"] or 0 for i in items if i["do_municipio"]), 2),
+        "atualizado_em": last,
+    }
 
 
 @router.get("/termos", dependencies=[exige("simec.ver")])
@@ -167,31 +191,72 @@ async def resumo(
     db: AsyncSession = Depends(get_db),
     current: User = Depends(get_current_user),
 ):
-    """Totais por programa e por ano (para sumario rapido na tela)."""
+    """Totais por programa e por ano (para sumario rapido na tela).
+
+    `por_programa`, `por_ano` e `total_geral` sao SO do municipio
+    (`SQL_DO_MUNICIPIO`). As escolas (caixa escolar/APM/CPM, que podem ser
+    estaduais) e as entidades vem a parte em `escolas`, por favorecido.
+    `fechamento` e a data que o FNDE carimba no simad ("dados referentes ao
+    fechamento do dia"), a mais recente lida para o municipio."""
     ensure_municipio_access(current, municipio_id)
     ensure_tela(current, "simec")
-    rp = await db.execute(text("""
+    rp = await db.execute(text(f"""
         SELECT programa, COUNT(*), COALESCE(SUM(valor), 0)
         FROM simec_par_liberacoes
-        WHERE municipio_id = :mun
+        WHERE municipio_id = :mun AND {SQL_DO_MUNICIPIO}
         GROUP BY programa
         ORDER BY SUM(valor) DESC NULLS LAST
     """), {"mun": municipio_id})
     por_programa = [{"programa": _clean(r[0]), "qtde": r[1], "total": float(r[2] or 0)}
                     for r in rp.fetchall()]
 
-    ra = await db.execute(text("""
+    ra = await db.execute(text(f"""
         SELECT ano, COUNT(*), COALESCE(SUM(valor), 0)
         FROM simec_par_liberacoes
-        WHERE municipio_id = :mun AND ano IS NOT NULL
+        WHERE municipio_id = :mun AND ano IS NOT NULL AND {SQL_DO_MUNICIPIO}
         GROUP BY ano
         ORDER BY ano DESC
     """), {"mun": municipio_id})
     por_ano = [{"ano": r[0], "qtde": r[1], "total": float(r[2] or 0)}
                for r in ra.fetchall()]
 
+    # Quem recebeu, dentro e fora da conta. Uma linha por favorecido.
+    rf = await db.execute(text("""
+        SELECT cnpj_favorecido, MAX(favorecido), tipo_favorecido, COUNT(*),
+               COALESCE(SUM(valor), 0), MAX(dt_pgto)
+        FROM simec_par_liberacoes
+        WHERE municipio_id = :mun
+        GROUP BY cnpj_favorecido, tipo_favorecido
+        ORDER BY SUM(valor) DESC NULLS LAST
+    """), {"mun": municipio_id})
+    favorecidos = [{
+        "cnpj": r[0] or None, "nome": _clean(r[1]), "tipo": r[2],
+        "tipo_rotulo": ROTULO_TIPO.get(r[2] or "", r[2]), "do_municipio": do_municipio(r[2]),
+        "qtde": r[3], "total": float(r[4] or 0),
+        "ultimo_pgto": r[5].isoformat() if r[5] else None,
+    } for r in rf.fetchall()]
+    fora = [f for f in favorecidos if not f["do_municipio"]]
+
+    # None = o simad ainda nao rodou para este municipio (a tela diz isso).
+    fech = None
+    rc = await db.execute(text("""
+        SELECT MAX(fechamento), MAX(atualizado_em) FROM fnde_liberacoes_carga
+        WHERE municipio_id = :mun
+    """), {"mun": municipio_id})
+    c = rc.fetchone()
+    if c and (c[0] or c[1]):
+        fech = {"fechamento": c[0].isoformat() if c[0] else None,
+                "coletado_em": c[1].isoformat() if c[1] else None}
+
     return {
         "por_programa": por_programa,
         "por_ano": por_ano,
         "total_geral": sum(p["total"] for p in por_programa),
+        "favorecidos": [f for f in favorecidos if f["do_municipio"]],
+        "escolas": {
+            "total": sum(f["total"] for f in fora),
+            "qtde": sum(f["qtde"] for f in fora),
+            "favorecidos": fora,
+        },
+        "fnde": fech,
     }

@@ -2642,9 +2642,15 @@ async def montar_conteudo(db: AsyncSession, municipio_id: int, ano_emissao: int 
         logger.warning(f"RM: TE indisponivel p/ {municipio_id}: {str(ex)[:120]}")
 
     # === SIMEC liberacoes (MEC) -> agrupado por programa, ja sao pagamentos => PARTE 3 ===
-    lb = await db.execute(text("""
+    # ⚠️ SO O QUE E DO MUNICIPIO (prefeitura, secretaria, fundo — services/
+    # liberacoes_fnde.py). Desde 24/09/2026 a tabela tambem tem o PDDE de cada
+    # caixa escolar (pode ser escola ESTADUAL): no RM seriam centenas de linhas
+    # de dinheiro que nao e da prefeitura. O salario-educacao da SECRETARIA entra
+    # — e receita do municipio que o SIMEC nao enxergava.
+    from services.liberacoes_fnde import SQL_DO_MUNICIPIO
+    lb = await db.execute(text(f"""
         SELECT programa, programa_full, dt_pgto, ob, valor, descricao, banco, agencia, conta, ano
-        FROM simec_par_liberacoes WHERE municipio_id = :m
+        FROM simec_par_liberacoes WHERE municipio_id = :m AND {SQL_DO_MUNICIPIO}
         ORDER BY dt_pgto DESC NULLS LAST
     """), {"m": municipio_id})
     for r in lb.fetchall():

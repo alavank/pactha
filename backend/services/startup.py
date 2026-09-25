@@ -693,6 +693,11 @@ MIGRATION_FILES = [
     # pagamentos) aos fundos municipais e hospitais (24/09/2026). Tabelas novas,
     # só com FK para `municipios`.
     "add_fes_rs_pagamentos.sql",
+    # Liberações do FNDE (pls/simad) com o FAVORECIDO: CNPJ/nome/tipo/fonte em
+    # `simec_par_liberacoes` (criada em add_simec_par.sql, bem acima), a UNIQUE
+    # ganha o CNPJ (a mesma OB paga várias caixas escolares) e a tabela nova
+    # `fnde_liberacoes_carga` (FK só para `municipios`) (24/09/2026). DDL.
+    "add_fnde_liberacoes_favorecido.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

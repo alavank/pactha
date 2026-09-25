@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026; RS com os repasses do Fundo Estadual de Saúde (SES-RS) desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **35 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026; RS com os repasses do Fundo Estadual de Saúde (SES-RS) desde 24/09/2026; as liberações do FNDE por entidade — prefeitura, secretaria e caixas escolares — pela consulta `pls/simad` desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **35 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -28,6 +28,49 @@
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
 
 ---
+
+## 1.47. Liberações do FNDE por entidade — a consulta `pls/simad` no lugar do SIMEC (24/09/2026)
+
+As liberações do MEC/FNDE (PNAE, PNATE, QUOTA, PDDE, PAR...) em `simec_par_liberacoes` vinham
+só do relatório público do SIMEC, que lê **o CNPJ da prefeitura e só o ano corrente**. Dois
+furos medidos: Monte Sião passou a receber o salário-educação no CNPJ da **Secretaria** de
+educação em 03/2026 (a tela mostrava jan+fev, R$ 444 mil, e escondia **R$ 1.168.706,81** de
+mar a set); Nova Palma não tinha QUOTA nenhuma (vai toda à Secretaria: R$ 169.008,08 em
+2026). E o PDDE das escolas (caixas escolares) não aparecia nunca.
+
+- **Coletor novo, `ingestion/fnde_liberacoes.py`** (task `fnde-liberacoes`): POST com o IBGE
+  de 6 dígitos → lista de TODAS as entidades do município no ano; GET por CNPJ → as mesmas
+  tabelas do SIMEC (mesmo parser de linha, `simec_par.parse_relatorio`), qualquer ano de
+  2000 em diante, sem Cloudflare. Toda noite o ano corrente e o anterior; histórico desde
+  `FNDE_LIB_ANO_INICIAL` (2015) em carga inicial, `FNDE_LIB_ANOS_CARGA` (3) anos por
+  município por rodada, controlada por `fnde_liberacoes_carga` (que também guarda o
+  "fechamento do dia" do FNDE, D-1, mostrado na tela). Armadilhas no cabeçalho do arquivo.
+- **Por que coletor novo e não remendo no `simec_par`:** outro host e outra pilha (httpx x
+  curl_cffi), cadência própria com orçamento de tempo, e falha própria no `ingestion_log` —
+  um não esconde o outro.
+- **A tabela ganhou o favorecido** (`add_fnde_liberacoes_favorecido.sql`):
+  `cnpj_favorecido`, `favorecido`, `tipo_favorecido`, `fonte`. ⚠️ **A UNIQUE ganhou o CNPJ**:
+  a MESMA OB paga várias caixas (a 007948 de 30/04/2026 paga 6 caixas de Monte Sião); na
+  chave antiga elas virariam uma linha só. Linhas antigas nascem `prefeitura`/`simec` pelo
+  DEFAULT e recebem o CNPJ de `municipios.cnpj` — a soma de antes não muda.
+- **O que soma no município** (`services/liberacoes_fnde.py`, a MESMA classificação da CGU em
+  `transferencias_pasta.grupo_favorecido`): prefeitura + secretaria + fundo + órgão municipal.
+  Decisão: o salário-educação da Secretaria **entra** (é receita do município; o total
+  antigo estava errado). Caixa escolar/APM/CPM (a escola pode ser estadual) fica **fora**,
+  sempre à vista. Tela, IA e RM filtram por `SQL_DO_MUNICIPIO`;
+  `tests/test_fnde_liberacoes.py` falha se uma consulta nova esquecer.
+- **SIMEC vira plano B das liberações** e segue dono das dimensões do PAR. Ele grava só o que
+  o simad não tem (nunca por cima: `ON CONFLICT ... WHERE fonte = 'simec'` + NOT EXISTS da
+  gêmea); quando o simad falha para um município, o coletor novo chama o SIMEC para o ano
+  corrente e a rodada fica `partial` com o motivo. Nada é apagado, exceto a linha do SIMEC
+  que o simad confirmou (mesma data e OB da prefeitura) sob outra chave.
+- **Conferido num Postgres 16 real** (banco com as linhas antigas do SIMEC de Monte Sião e
+  Nova Palma, migration 2x + re-rodada forçada, coletor 2x contra o simad real): Monte Sião
+  2026 = R$ 2.161.921,84 no município (era R$ 993.215,03), Secretaria QUOTA 2026 = R$
+  1.168.706,81 (7 OBs, 19/03 a 17/09), PNAE ago/2026 = R$ 33.765,50 (= CGU); escolas 2026 à
+  parte R$ 115.475,00. Nova Palma 2026 = R$ 665.118,11 (era R$ 496.110,03).
+- **Falta depois do merge:** criar a task (`scripts/criar_task_fnde_liberacoes.sh`, 03:00-04:00
+  UTC) e conferir a 1ª rodada (`ingestion_log.source = 'fnde_liberacoes'`).
 
 ## 1.43. Fundo a fundo estadual da saúde de MG — pagamento de Resoluções da SES (24/09/2026)
 
