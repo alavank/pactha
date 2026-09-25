@@ -73,6 +73,8 @@ TELAS_CATALOG = [
     # conseguia conceder. Ver add_tela_investsus.sql para o backfill.
     {"key": "investsus", "label": "InvestSUS"},
     {"key": "simec", "label": "SIMEC - PAR (MEC)"},
+    # PDDE (25/09/2026), ao lado do SIMEC no grupo EDUCAÇÃO. MESMO TEXTO de `telas.ts`.
+    {"key": "pdde", "label": "PDDE — dinheiro nas escolas"},
     {"key": "dou", "label": "Diário Oficial"},
     {"key": "bi", "label": "Painel de Indicadores (BI)"},
     # Trilha de auditoria. ENTRA no catálogo do cliente (ao contrário de
@@ -111,7 +113,10 @@ TELAS_TODAS = [
     # Recursos recebidos por pasta (24/09/2026): as transferências da CGU.
     "cgu_transferencias",
     # `suas` SAIU: o painel do MDS vive dentro de `paineis` (ver telas.ts).
-    "acordofes", "fns", "investsus", "simec", "paineis", "bi", "bi_tela",
+    "acordofes", "fns", "investsus", "simec",
+    # PDDE (25/09/2026): saldo e situação das escolas (FNDE).
+    "pdde",
+    "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",
     # ⭐⭐ AS DEZOITO DO INCREMENTO «PERMISSAO POR TELA» (05/09/2026).
     #

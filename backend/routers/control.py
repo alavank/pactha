@@ -405,6 +405,9 @@ _COBERTURA_TABELAS = [
     # distinto de proposito: `m["fontes"]` e dict indexado pelo rotulo, e
     # repetir a string sobrescreveria a contagem das liberacoes em silencio.
     ("simec_termos",         "SIMEC-PAR (termos de compromisso)", "Educação"),
+    # PDDE (25/09/2026): as CONTAS das escolas (todos os meses carregados). Zero
+    # = ainda não coletado — todo município com escola tem conta de PDDE.
+    ("pdde_saldo",           "PDDE (contas das escolas)",    "Educação"),
 ]
 
 # ⚠️ DUAS TABELAS SAO MULTI-FONTE, e contar o total mentiria dos dois lados.

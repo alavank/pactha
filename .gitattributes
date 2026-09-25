@@ -30,3 +30,5 @@
 *.ico  binary
 *.pdf  binary
 *.zip  binary
+# .xlsx é um ZIP: as planilhas REAIS do PDDE Info são fixtures de teste (25/09/2026).
+*.xlsx binary

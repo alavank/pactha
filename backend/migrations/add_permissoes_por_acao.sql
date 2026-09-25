@@ -243,6 +243,10 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     ('investsus.ver', 'consultas', FALSE),
     ('simec.ver', 'consultas', FALSE),
     ('simec.exportar', 'consultas', FALSE),
+    -- PDDE (25/09/2026): o saldo parado nas contas das escolas e a situação
+    -- de cada uma para receber a próxima parcela (FNDE). Só `ver`; a
+    -- concessão aos que já estão no ar é de `add_tela_pdde.sql`.
+    ('pdde.ver', 'consultas', FALSE),
     ('parlamentares.ver', 'consultas', FALSE),
     ('parlamentares.exportar', 'consultas', FALSE),
     -- CONSOLIDADO da carteira (18/09/2026). Tela nova: no bloco de
@@ -460,6 +464,7 @@ WITH marca AS (
         ('investsus', 'investsus.ver', FALSE),
         ('simec', 'simec.ver', FALSE),
         ('simec', 'simec.exportar', FALSE),
+        ('pdde', 'pdde.ver', FALSE),
         ('parlamentares', 'parlamentares.ver', FALSE),
         ('parlamentares', 'parlamentares.exportar', FALSE),
         ('consolidado', 'consolidado.ver', FALSE),

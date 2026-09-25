@@ -125,6 +125,8 @@ export const TELAS: TelaDef[] = [
   // Recursos recebidos por pasta (24/09/2026): as transferências da CGU mês a mês.
   { key: "cgu_transferencias", label: "Recursos recebidos por pasta" },
   { key: "simec", label: "SIMEC - PAR (MEC)" },
+  // PDDE (25/09/2026): saldo parado e situação de cada escola (FNDE, PDDE Info).
+  { key: "pdde", label: "PDDE — dinheiro nas escolas" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },
   { key: "ai", label: "IA PACTHA" },

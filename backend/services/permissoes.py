@@ -510,6 +510,12 @@ _RECURSOS: tuple = (
     _Recurso("simec", SEC_CONSULTAS, "SIMEC - PAR (MEC)",
              "as liberações e dimensões do PAR", "", ("ver", "exportar"),
              tela="simec"),
+    # PDDE (25/09/2026): o saldo parado na conta de cada escola e se ela está
+    # suspensa para a próxima parcela (FNDE, PDDE Info). Só `ver`: não há
+    # exportação nem coleta sob demanda. Nacional.
+    _Recurso("pdde", SEC_CONSULTAS, "PDDE — dinheiro nas escolas",
+             "o saldo e a situação das escolas no PDDE", "",
+             ("ver",), fonte="no PDDE Info (FNDE)", tela="pdde"),
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",
              "a base de parlamentares e a atuação deles no município", "",
              ("ver", "exportar"), tela="parlamentares"),

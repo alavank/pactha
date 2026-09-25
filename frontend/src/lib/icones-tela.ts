@@ -25,7 +25,7 @@ import {
   Activity, Archive, ArrowLeftRight, BadgeDollarSign, BarChart3, Bookmark,
   Building2, CalendarClock, Coins, Edit2, FileSignature, FileText, HandCoins,
   Handshake, HardHat, HeartPulse, KeyRound, Landmark, LayoutGrid, Layers,
-  LifeBuoy, Newspaper, PiggyBank, Radar, Scale, ScrollText, Settings, ShieldAlert, ShieldCheck,
+  LifeBuoy, Newspaper, PiggyBank, Radar, Scale, School, ScrollText, Settings, ShieldAlert, ShieldCheck,
   SlidersHorizontal, Sparkles, Stethoscope, Target, UserCircle2, Users, Vote,
   Wallet, XCircle,
 } from "lucide-react";
@@ -88,6 +88,7 @@ const ICONES: Record<string, Icone> = {
   "/dashboard/obrasgov": HardHat,
 
   "/dashboard/simec": Target,
+  "/dashboard/pdde": School,                      // PDDE — dinheiro nas escolas
   "/dashboard/cauc": ShieldCheck,                 // o "escudinho" que o dono citou
   "/dashboard/rm": FileText,
   "/dashboard/ai": Sparkles,

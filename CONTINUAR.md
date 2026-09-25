@@ -11,7 +11,7 @@
 
 ## 1. O QUE É ISTO (em 30 segundos)
 
-**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026; RS com os repasses do Fundo Estadual de Saúde (SES-RS) desde 24/09/2026; as liberações do FNDE por entidade — prefeitura, secretaria e caixas escolares — pela consulta `pls/simad` desde 24/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **35 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
+**PACTHA** = sistema de **monitoramento de convênios e transferências governamentais** para municípios e assessorias (MG/ES/GO/RS com fontes estaduais; PR desde 22/09/2026, com as federais + o TCE-PR, os convênios do Estado e as certidões estaduais; TO com os convênios do Estado pelo TRANSFERE.TO desde 23/09/2026; MG com a planilha oficial de emendas da SEGOV desde 24/09/2026; saldo das contas do Fundo Municipal pelo arquivo anual do Portal FNS desde 24/09/2026; o fundo a fundo estadual da saúde de MG pelo pagamento de Resoluções da SES desde 24/09/2026; os recursos recebidos por pasta, mês a mês, pelas transferências da CGU desde 24/09/2026; SIOPS, SIOPE e RDQA/RAG — o detalhe dos itens de saúde e educação do CAUC — desde 24/09/2026; RS com os repasses do Fundo Estadual de Saúde (SES-RS) desde 24/09/2026; as liberações do FNDE por entidade — prefeitura, secretaria e caixas escolares — pela consulta `pls/simad` desde 24/09/2026; o PDDE — saldo parado nas contas das escolas e escolas suspensas, pelo PDDE Info do FNDE — desde 25/09/2026). Módulos: SIGCON-MG (convênios estaduais), TransfereGov, Emendas, Parlamentares, CAUC, Acordo FES, FNS, SIMEC/PAR, **Obras** (SISMOB + Obras.gov.br/CIPI), IA (Claude), Diário Oficial (DOU federal coletado + diários estaduais em tempo real), Relatório de Monitoramento (RM), Documentos, Cofre de Senhas (AES-256), Telegram, extensão Chrome de captura gov.br, Painel de Indicadores (BI, em todos os tenants) com Modo Tela/links públicos, selos de frescor por tela e watchdog de coleta. São **36 fontes oficiais** (o `CLAUDE.md` mantém a contagem em dia).
 
 - **Frontend:** Next.js 16 (App Router) + Tailwind v4 + daisyUI + shadcn. Pasta `frontend/`.
 - **Painel (pasta `painel/`):** removida do repo em 12/09/2026 — o BI virou módulo do frontend principal (`/dashboard` + `/tela`).
@@ -28,6 +28,59 @@
 ⚠️ **Este repo tem RULESET no GitHub exigindo PR aprovado.** Não tente pushar direto na `main` — crie branch e abra PR.
 
 ---
+
+## 1.48. PDDE — dinheiro nas escolas: saldo parado e escolas suspensas (25/09/2026)
+
+O PDDE (FNDE) cai na conta de cada ESCOLA — da caixa escolar/APM (UEx) ou, sem ela, da
+prefeitura (EEx). O PACTHA só via o PDDE PAGO (transferências da CGU, ação 0515, e as
+liberações do FNDE por entidade da §1.47). Agora vê o que ficou PARADO nas contas e qual
+escola está SUSPENSA — a próxima parcela que não vem. Fonte: PDDE Info
+(`www.fnde.gov.br/pddeinfo`), GET sem login nem captcha, 200 da VPS; o botão «Gerar
+Relatório Excel» de cada relatório devolve TUDO (a listagem HTML pagina de 10 em 10 —
+conferido: 46 = 46, 29 = 29, 92 = 92). As armadilhas estão no cabeçalho de
+`ingestion/pdde_info.py`; as que decidem o desenho:
+
+- **Três planilhas por município** (código FNDE = IBGE de 6 dígitos + UF; código errado
+  dá 400, não o Brasil): saldo por CONTA e mês; situação da PC por escola (INEP) e ano;
+  relatório de SUSPENSÃO por escola, parcela e motivo. Tabelas `pdde_saldo`,
+  `pdde_prestacao`, `pdde_suspensao` e `pdde_carga` (o que foi lido inteiro) —
+  `add_pdde_info.sql`. Cada (município, mês/ano) é trocado inteiro, só com a planilha lida
+  até o fim e conferida (UF, município e mês/ano do cabeçalho e de toda linha).
+- ⚠️ **Programa vazio = só 5 programas.** O coletor manda os 20 códigos (seletor ∪ padrão):
+  Santa Maria passa de 387 para 404 contas (Educação Integral).
+- ⚠️ **Mês não publicado dá 200 com zero linha.** O mês sai do seletor do formulário (em
+  24/09 o mais novo era 08/2026); planilha vazia de saldo ou PC = `partial`, nada apagado.
+- ⚠️ **A mesma conta vem duas vezes** quando a caixa escolar atende duas redes (Aimorés:
+  76 linhas, 72 contas) — uma linha por conta, redes numa lista.
+- ⚠️ **A rede decide de quem é o dinheiro.** A «Caixa Escolar Renato Franco Bueno» (os
+  R$ 62.167,73 do relatório do dono; R$ 238 mil somando as contas) é de escola ESTADUAL. A
+  PC não traz a rede: é pedida duas vezes (todas e `esferaAdm=2`). A tela conta a rede
+  municipal e mostra as outras à parte.
+- ⚠️ **A "situação da PC" diz adimplente onde a suspensão diz inadimplente** (Santa Maria
+  2026: 235 linhas "Adimplente", e 7 "Inadimplente (UEX)" + 48 "UEX sem dirigente ativo" no
+  relatório de suspensão). O alerta da tela sai da SUSPENSÃO. "Situação de atendimento"
+  (pagamento por escola, com data) e "cadastro" ficaram de fora: o pago já vem da CGU.
+- **Tela** EDUCAÇÃO › «PDDE — dinheiro nas escolas» (`/dashboard/pdde`). EDUCAÇÃO virou
+  grupo do menu com o SIMEC (chave `simec` inalterada). Rota `GET /api/pdde`, permissão
+  `pdde.ver` (catálogo 104 → 105), concedida por `add_tela_pdde.sql` a quem tem
+  `usuarios.conceder`. A conta mora em `services/pdde.py`: **parado** = saldo ≥ o previsto
+  do ano para as escolas da executora; **suspensa** = linha no relatório de suspensão; o
+  PDDE liberado no ano são as liberações do FNDE (simad, §1.47) pelo CNPJ — o MESMO dado
+  do bloco das escolas na tela do SIMEC (ano não lido = "—", nunca zero).
+- **Conferido num Postgres 16 zerado** (156/156 migrations depois do rebase sobre o simad,
+  duas vezes, sem `falhou`) contra a fonte real: Monte Sião — saldo de 08/2026 R$ 406.301,99
+  em 46 contas; rede municipal R$ 140.395,03 em 14 executoras, 3 com saldo acima do
+  previsto (R$ 76.799,16; Lázaro Cândido R$ 35.916,36 contra R$ 10.041 previstos em 2026);
+  PC 2026 com 28 linhas, todas adimplentes; 2 suspensões (a APAE); PDDE liberado em 2026
+  R$ 115.475,00 a 14 executoras (= o bloco das escolas do SIMEC), R$ 101.685,00 na rede
+  municipal; o de 2025 (R$ 172.084,00) é igual ao previsto somado da PC de 2025. Nova Palma
+  — R$ 30.666,77 em 23 contas, municipal R$ 13.438,38; 2 suspensões, de escola ESTADUAL
+  ("UEX sem dirigente ativo"); liberado 2026 R$ 35.320,00. Santa Maria (só a planilha): 92
+  suspensões em 2026, 17 em 8 escolas MUNICIPAIS. Rodadas: 1ª 40-45 s (18 planilhas, 2
+  municípios), 2ª 23-25 s, 3ª 24 s; relidas 20 fatias, todas idênticas.
+- **Task** `pdde-info`: entre 05:00 e 06:00 UTC, escada por tamanho (freitas 05:00 …
+  juranda 05:53), `scripts/criar_task_pdde_info.sh` — **depois** do deploy. Até isso rodar,
+  a task NÃO existe.
 
 ## 1.47. Liberações do FNDE por entidade — a consulta `pls/simad` no lugar do SIMEC (24/09/2026)
 

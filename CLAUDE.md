@@ -5,8 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **35 official data sources** (federal +
-MG/ES/GO/RS/PR/TO state). The newest (24/09/2026) is SES-MG's **pagamento de
+emendas) for Brazilian municipalities, tracking **36 official data sources** (federal +
+MG/ES/GO/RS/PR/TO state). The newest (25/09/2026) is the **PDDE** (`pdde_info.py`): the
+FNDE's PDDE Info Excel exports, per município (IBGE 6 digits) — the BALANCE parked in
+each school's bank account (per account and month), the school's prestação de contas
+situation and the SUSPENSION report (which school's next installment won't come, and
+why) -> `pdde_saldo`/`pdde_prestacao`/`pdde_suspensao`, screen EDUCAÇÃO › "PDDE —
+dinheiro nas escolas". ⚠️ An empty program filter means only 5 programs; an unpublished
+month answers 200 with zero rows; many caixas escolares belong to STATE schools (the
+screen counts the municipal network); the PC report says "Adimplente" where the
+suspension report says "Inadimplente" — alerts come from the suspension report. Before
+it (24/09/2026), SES-MG's **pagamento de
 resoluções** (`ses_mg_resolucoes.py`): every payment order from the State health fund
 to the Fundo Municipal, per Resolução SES — MG's ordinary health fundo a fundo, which
 PACTHA did not have (Monte Sião 2026: R$ 431 mil ordinary + R$ 4,0 mi of emendas). The
