@@ -26,7 +26,7 @@
 // divergirem.
 
 import {
-  LayoutDashboard, LayoutGrid, FileText, Newspaper, Target, Landmark,
+  LayoutDashboard, LayoutGrid, FileText, Newspaper, GraduationCap, Landmark,
   Sparkles, Edit2, UserCircle2, FileSignature, ShieldCheck, HeartPulse,
   BarChart3, CalendarClock, Radar, HardHat, Users, ScrollText, Activity,
   KeyRound, SlidersHorizontal, Layers,
@@ -235,7 +235,8 @@ export const NAV_ITEMS: NavEntry[] = [
   // recurso: é o trabalho da equipe SOBRE essas fontes.
   { href: "/dashboard/agendamentos", label: "Agendamentos", icon: CalendarClock },
   // ⭐ SAÚDE é um grupo porque a saúde é uma PASTA do município, não quatro
-  // sistemas avulsos. O SIMEC fica FORA de propósito — é educação (FNDE).
+  // sistemas avulsos. O SIMEC fica FORA de propósito — é educação (FNDE), e
+  // mora no grupo EDUCAÇÃO, logo abaixo.
   {
     label: "Saúde",
     icon: HeartPulse,
@@ -263,7 +264,21 @@ export const NAV_ITEMS: NavEntry[] = [
       { href: "/dashboard/sismob", label: "Obras da Saúde (SISMOB)" },
     ],
   },
-  { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)", icon: Target },
+  /* ⭐ EDUCAÇÃO é um grupo pelo mesmo motivo que SAÚDE é (25/09/2026): a
+     educação é uma PASTA do município. O SIMEC (o PAR: obras, equipamentos e
+     termos com o FNDE) era item solto; o PDDE chegou com o dinheiro que o FNDE
+     deposita na conta de cada ESCOLA — o saldo parado nela e se ela está
+     suspensa para a próxima parcela. Os dois são FNDE e o mesmo gestor
+     (secretaria de educação) responde pelos dois. A chave de tela do SIMEC
+     não muda (`simec`), então ninguém ganha nem perde acesso. */
+  {
+    label: "Educação",
+    icon: GraduationCap,
+    children: [
+      { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)" },
+      { href: "/dashboard/pdde", label: "PDDE — dinheiro nas escolas" },
+    ],
+  },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },
   { href: "/dashboard/ai", label: "IA PACTHA", icon: Sparkles },
   { href: "/dashboard/paineis", label: "Painéis Municipais", icon: LayoutGrid },

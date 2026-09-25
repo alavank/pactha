@@ -438,5 +438,8 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     #
     # 24/09/2026: 103 -> 104. `cgu_transferencias.ver` — os recursos recebidos
     # por pasta (FPM, FUNDEB, fundo a fundo...), pelas transferências da CGU. So LE.
-    assert len(permissoes.CATALOGO) == 104
+    #
+    # 25/09/2026: 104 -> 105. `pdde.ver` — o saldo parado nas contas das escolas e
+    # a situação de cada uma para a próxima parcela (PDDE, FNDE). So LE.
+    assert len(permissoes.CATALOGO) == 105
     assert not any("propri" in c for c in permissoes.CATALOGO)

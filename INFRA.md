@@ -568,6 +568,21 @@ O desenho atual (13/09/2026, "coleta noturna"):
   pausadas). Criar com `scripts/criar_task_fnde_liberacoes.sh` **depois do deploy**.
   Nenhuma task existente muda: o `simec_par` segue no `run_all()` (dimensões do PAR +
   liberações como plano B, que nunca escrevem por cima do simad).
+- **`pdde-info` (25/09/2026), entre 05:00 e 06:00 UTC, escada por TAMANHO da carteira:**
+  freitas 05:00 (orçamento 1080 s), trust 05:20 (540 s), bgk 05:31 (300 s), santamaria
+  05:38, novapalma 05:43, montesiao 05:48, juranda 05:53 (180 s cada); kill = orçamento +
+  60 s, timeout da task = kill + 120 s; no pior caso a juranda termina 05:57. O PDDE Info
+  (`www.fnde.gov.br/pddeinfo`, Excel por município: saldo das contas das escolas, situação
+  da PC, suspensões) — `ingestion/pdde_info.py`. Custo medido: 1ª noite ~22 s por
+  município, depois ~10 s (suspensão + PC do ano todo dia; saldo novo e ano anterior a cada
+  7 dias; histórico de 12 meses 2 por noite). O host `www.fnde.gov.br` é o mesmo do SIOPE
+  da `siops-siope` (OData, poucas consultas por UF, que cruza esta hora em novapalma 05:00,
+  bgk 05:15 e juranda 05:30 — leve, sem bloqueio medido) e da `fnde-liberacoes`
+  (`pls/simad`, 03:00–04:00 UTC; kill de 2700 s na juranda = 04:45), que fica FORA de
+  05:00–06:00. Migration `add_pdde_info.sql` (DDL, tabelas
+  novas): deploy depois das 10:00 UTC ou com as coletas pausadas. Criação:
+  `scripts/criar_task_pdde_info.sh`, **depois** do deploy — até isso rodar, a task NÃO
+  existe em nenhum worker.
 - **`emendas-mg` (24/09/2026), escada de 10 min de 07:40 (freitas) a 08:40 UTC
   (juranda):** o CSV de indicações da SEGOV no dados.mg.gov.br (~30 MB; as `.xlsx` do
   emendas.mg.gov.br dão 403 à VPS) nos

@@ -200,6 +200,14 @@ _SOURCES = [
      "SELECT (SELECT max(carregado_em) FROM cgu_transferencias_carga), "
      "(SELECT count(*) FROM cgu_transferencias)",
      "cgu_transferencias"),
+    # PDDE (25/09/2026). NACIONAL (código IBGE de 6 dígitos). A data é a da última
+    # planilha lida INTEIRA (`pdde_carga`); conta as CONTAS de escola no saldo. O
+    # saldo é mensal e atrasado (em 24/09 o mais novo era 08/2026) — o mês de
+    # referência está na tela.
+    ("FNDE — PDDE (saldo e situação das escolas)",
+     "SELECT (SELECT max(carregado_em) FROM pdde_carga), "
+     "(SELECT count(*) FROM pdde_saldo)",
+     "pdde_info"),
     ("DOU — Diário Oficial da União",
      "SELECT (SELECT max(atualizado_em) FROM dou_cobertura), "
      "(SELECT count(*) FROM dou_atos_municipio WHERE evidencia <> 'cidade')",

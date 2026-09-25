@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 35 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 36 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 35 sources has its own collector file with source-specific gotchas documented
+Each of the 36 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -388,6 +388,33 @@ list in the file header; the ones that bite:
 - Current + previous year every night; history from `FNDE_LIB_ANO_INICIAL` (2015),
   `FNDE_LIB_ANOS_CARGA` (3) years per município per run, tracked in `fnde_liberacoes_carga`
   (which also stores the FNDE "fechamento do dia", D-1, shown on the screen).
+
+## PDDE — school bank balances and suspensions (`ingestion/pdde_info.py`, 25/09/2026)
+
+FNDE's PDDE Info (`www.fnde.gov.br/pddeinfo`, plain GET, no captcha). Three reports per
+município (`co_municipio_fnde` = IBGE 6 digits + `sg_uf`), each via its hidden "Gerar
+Relatório Excel" endpoint, which returns EVERY row (the HTML list pages by 10; measured
+equal). Full list in the file header; the ones that bite:
+- **An empty `co_programa` is NOT "all"**: the server defaults to 5 programs. Send the
+  explicit list (form selector ∪ default, 20 codes): Santa Maria 387 → 404 accounts.
+- **An unpublished month answers 200 with zero rows.** The month comes from the form's
+  `<select name="mes">` (latest was 08/2026 on 24/09), never from today's date. Zero rows
+  of saldo or PC = `partial`, nothing deleted; zero SUSPENSIONS is a real answer.
+- **A wrong code answers 400** ("municípios não pertencem às UFs") — the filter is not
+  ignored. Each sheet's header ("Município: X (UF)", "Mês"/"Ano") and every row are checked
+  against the request. A non-xlsx body (400 text, 500 `ORA-01722`) is a failure, never zero.
+- **Same account twice, same balance**, when the caixa escolar serves two networks
+  (Aimorés: 76 rows, 72 accounts): one row per (CNPJ, bank, agency, account, program).
+- **The network decides whose money it is**: many caixas are STATE schools'. Saldo and
+  suspension carry "Rede de Ensino"; the PC doesn't — it is asked twice (all and
+  `esferaAdm=2`). Screen totals are the municipal network (`services/pdde.py`).
+- **PC "Adimplente" ≠ not suspended**: Santa Maria 2026 PC says 235× adimplente while the
+  suspension report has 7 "Inadimplente (UEX)". Alerts come from the suspension report.
+- PDDE PAID is not collected here: it's the FNDE liberações by entity (`pls/simad`,
+  `simec_par_liberacoes`, the same rows the SIMEC screen shows), matched by CNPJ.
+- Nightly per município: suspension + PC of the current year (3 sheets, ~10 s); latest saldo
+  and previous year re-read every 7 days; 12-month saldo history 2 months/night. Budget
+  `PDDE_BUDGET_S` per tenant (daily part first, then the queue).
 
 ## SIOPS, SIOPE and DigiSUS — the CAUC's health/education items (`ingestion/siops_siope.py`, 24/09/2026)
 

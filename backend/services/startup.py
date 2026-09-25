@@ -543,6 +543,10 @@ MIGRATION_FILES = [
     # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
     # `add_cgu_transferencias.sql`.
     "add_tela_cgu_transferencias.sql",
+    # PDDE — dinheiro nas escolas (25/09/2026): tela e acao a quem tem
+    # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
+    # `add_pdde_info.sql`.
+    "add_tela_pdde.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.
@@ -698,6 +702,10 @@ MIGRATION_FILES = [
     # ganha o CNPJ (a mesma OB paga várias caixas escolares) e a tabela nova
     # `fnde_liberacoes_carga` (FK só para `municipios`) (24/09/2026). DDL.
     "add_fnde_liberacoes_favorecido.sql",
+    # PDDE (FNDE, PDDE Info): o saldo de cada conta de escola por mes, a
+    # situacao da prestacao de contas por escola e as suspensoes, e o que ja
+    # foi lido inteiro (25/09/2026). Tabelas novas, FK so para `municipios`.
+    "add_pdde_info.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

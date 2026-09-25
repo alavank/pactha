@@ -277,7 +277,10 @@ def test_upserts_miram_a_chave_nova():
 def test_migration_registrada_antes_da_auditoria():
     from services.startup import MIGRATION_FILES
     i = MIGRATION_FILES.index("add_fnde_liberacoes_favorecido.sql")
-    assert MIGRATION_FILES[i + 1] == "add_auditoria_imutavel.sql"
+    # ACIMA da auditoria (que é sempre a última) — "logo acima" quebraria com a
+    # próxima migration nova (`add_pdde_info.sql`, 25/09/2026, entrou entre as duas).
+    assert i < MIGRATION_FILES.index("add_auditoria_imutavel.sql")
+    assert MIGRATION_FILES[-1] == "add_auditoria_imutavel.sql"
     assert MIGRATION_FILES.index("add_simec_par.sql") < i
     assert MIGRATION_FILES.index("add_municipio_identificadores.sql") < i
 

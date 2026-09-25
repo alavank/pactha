@@ -150,6 +150,9 @@ WITH marca AS (
            -- Recursos recebidos por pasta (24/09/2026), idem: banco NOVO aqui,
            -- os que estão no ar por `add_tela_cgu_transferencias.sql`.
            ('cgu_transferencias'),
+           -- PDDE — dinheiro nas escolas (25/09/2026), idem: banco NOVO aqui,
+           -- os que estão no ar por `add_tela_pdde.sql`.
+           ('pdde'),
            -- As quatro abas de Configuracoes que eram governadas pelo PAPEL
            -- `admin` e viraram telas de verdade.
            ('telemetria'), ('frescor'), ('usuarios'), ('parametros'),

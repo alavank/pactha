@@ -22,6 +22,9 @@ out/
 # Source documents (not for repo)
 *.pdf
 *.xlsx
+# Planilha REAL da fonte usada como fixture de teste (PDDE Info, 25/09/2026):
+# versionada de propósito, como os CSVs acima.
+!backend/tests/fixtures/**/*.xlsx
 
 .claude/settings.local.json
 

@@ -172,6 +172,10 @@ FRESCOR_HORAS_NACIONAL = {
     # (relê o mês corrente e o anterior toda noite). Mês não publicado ou carga
     # inicial que não coube gravam 'partial', que aqui não conta como sucesso.
     "cgu_transferencias": 30,
+    # PDDE Info / FNDE (25/09/2026): task diária em todo worker (suspensão e PC do
+    # ano de todo município toda noite). Planilha recusada ou orçamento estourado
+    # na parte diária gravam 'partial', que aqui não conta como sucesso.
+    "pdde_info": 30,
     # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
     # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
     # limit — e o CIPI muda devagar. 54h = dois dias + folga.

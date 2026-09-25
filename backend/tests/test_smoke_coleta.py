@@ -40,6 +40,7 @@ COLETORES = {
     "ingestion.dou_federal": "ingest",
     "ingestion.cgu_convenios": "ingest",
     "ingestion.cgu_transferencias": "ingest",
+    "ingestion.pdde_info": "ingest",
     "ingestion.convenios_pr": "ingest",
     "ingestion.convenios_to": "ingest",
     "ingestion.emendas_mg": "ingest",
