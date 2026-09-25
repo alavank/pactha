@@ -18,8 +18,12 @@ Fonte (sem login, sem captcha, GET simples; a VPS responde 200 — medido 24/09/
       consultasaldoentidade/consultasaldoentidade/excel      (saldo por conta, mês)
       situacaoprestacaoconta/situacaoprestacaoconta/excel    (PC por escola, ano)
       relatoriosuspensao/relatoriosuspensao/excel            (suspensões, ano)
-    O município vai como `co_municipio_fnde` = IBGE com 6 dígitos (Monte Sião
-    314340, Nova Palma 431310) e `sg_uf`.
+    O município vai como `co_municipio_fnde` e `sg_uf`. ⚠️ `co_municipio_fnde` é o
+    código DO FNDE, que em ~14% dos municípios NÃO é o IBGE de 6 dígitos (Tocos do
+    Moji: IBGE 316905, FNDE 317850 — com o IBGE a planilha dizia "município não
+    pertence às UFs selecionadas"). Resolvido pela lista oficial do FNDE em
+    `services/codigo_fnde.py` (25/09/2026). Monte Sião 314340 e Nova Palma 431310
+    coincidem com o IBGE.
 
 Medido para conferência (24-25/09/2026): Monte Sião, saldo de 08/2026 — 46 linhas,
 16 CNPJs (13 caixas escolares municipais, 1 estadual, a APAE e a prefeitura);
@@ -129,6 +133,8 @@ from decimal import Decimal, InvalidOperation
 import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from services.codigo_fnde import CodigosFNDE  # noqa: E402
 
 log = logging.getLogger("pdde_info")
 
@@ -484,10 +490,10 @@ class Alvo:
     nome: str
     ibge: str
     uf: str
-
-    @property
-    def codigo_fnde(self) -> str:
-        return self.ibge[:6]
+    # O código NO FNDE (`services/codigo_fnde`): ~14% dos municípios não usam o IBGE
+    # de 6 dígitos (Tocos do Moji: IBGE 316905, FNDE 317850 — a planilha respondia
+    # "município não pertence à UF"). Vazio até `ingest` resolver pela lista oficial.
+    codigo_fnde: str = ""
 
 
 def ler(client: httpx.Client, a: Alvo, p: Pedido, programas: list[str]) -> tuple[list, int]:
@@ -650,6 +656,7 @@ def ingest(dry: bool = False) -> int:
                          f"{meses[0]:%m/%Y}", len(programas), len(alvos))
 
                 validos: list[tuple[Alvo, list[Pedido]]] = []
+                codigos = CodigosFNDE(client)
                 for a in alvos:
                     uf = UF_DO_IBGE.get(a.ibge[:2], "")
                     if len(a.ibge) < 6 or not uf:
@@ -661,6 +668,19 @@ def ingest(dry: bool = False) -> int:
                         rod.notas.append(f"{a.nome}: UF {a.uf} ≠ UF do IBGE {a.ibge} ({uf})")
                         continue
                     a.uf = uf
+                    try:
+                        cod, como = codigos.codigo(uf, a.ibge, a.nome)
+                    except Exception as e:
+                        # Sem a lista, o IBGE de 6 dígitos — a planilha confere o
+                        # município (`confere`) e recusa se for de outro.
+                        cod, como = a.ibge[:6], f"lista do FNDE indisponível ({type(e).__name__})"
+                    if not cod:
+                        rod.parcial = True
+                        rod.notas.append(f"{a.nome}: {como}")
+                        continue
+                    if como == "nome":
+                        log.info("  %s: código FNDE %s (o IBGE é %s)", a.nome, cod, a.ibge[:6])
+                    a.codigo_fnde = cod
                     validos.append((a, pedidos(hoje, meses, _cargas(cur, a.id))))
 
                 # Primeiro o DIÁRIO de todo município; depois a fila (ver CUSTO).

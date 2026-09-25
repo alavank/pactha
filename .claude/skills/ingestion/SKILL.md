@@ -368,7 +368,16 @@ report (`simec_par.py`) only shows the PREFEITURA's CNPJ and the current year: i
 salário-educação paid to the Secretaria's CNPJ (Monte Sião, R$ 1,17 mi Mar–Sep/2026) and
 every school's PDDE. SIMEC keeps the PAR dimensions and is plan B for liberações. Full trap
 list in the file header; the ones that bite:
-- **POST by 6-digit IBGE → entity list; GET by `p_cgc` → that entity's tables**, identical
+- ⚠️ **The município code is the FNDE's, NOT the IBGE, in ~14% of municípios** (MG 116/853,
+  RS 117/497, TO 48/139...; Tocos do Moji: IBGE 316905, FNDE 317850) — and one IBGE can be
+  ANOTHER município's FNDE code (Xangri-lá's 432380 is Barra do Guarita). Both `pdde_info`
+  and `fnde_liberacoes` resolve it with `services/codigo_fnde.py` from the FNDE's own list
+  (`/pddeinfo/pddeinfo/corp/get-municipio?sg_uf=UF`, one GET per UF): 2.210/2.212 by IBGE or
+  exact name within the UF, two by IBGE alias. No list = no guessing (simad → plan B).
+- **An entity the list names can come back as an empty shell** (header only, 1,5 KB —
+  Giruá's Secretaria de Educação, 25/09/2026): the FNDE's own nightly inconsistency, not a
+  new layout. Retried once; persisting = that entity fails with that reason.
+- **POST by 6-digit FNDE code → entity list; GET by `p_cgc` → that entity's tables**, identical
   to SIMEC's and parsed by the same `simec_par.parse_relatorio`. A 7-digit IBGE answers
   "Não foram encontrados dados", the same page as "nothing received". Each list row carries
   the município in its `onclick`: another one = filter ignored = list refused.
