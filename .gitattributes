@@ -32,3 +32,5 @@
 *.zip  binary
 # .xlsx é um ZIP: as planilhas REAIS do PDDE Info são fixtures de teste (25/09/2026).
 *.xlsx binary
+# .csv.gz: recortes REAIS da despesa aberta de MG, fixtures do FEAS (26/09/2026).
+*.gz   binary
