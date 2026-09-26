@@ -26,6 +26,10 @@ reportlab>=4.2.0
 pypdf>=5.1.0
 python-docx>=1.1.0  # Geracao de Documentos (export DOCX)
 openpyxl>=3.1.0  # leitura de .xlsx no acordofes_ingest (estava faltando)
+# Cliente websocket SÍNCRONO (`websockets.sync`, 11+) do engine Qlik do painel do
+# MDS (ingestion/fnas_suas.py). Já vinha de carona do uvicorn[standard]; explícito
+# para a versão com `additional_headers` não depender dele.
+websockets>=13.0
 # .xls BIFF (Excel 97, exportado do Access) das planilhas de pagamento do FES da
 # SES-RS (ingestion/fes_rs.py). O openpyxl só lê .xlsx; o pandas delega ao xlrd.
 xlrd>=2.0.1

@@ -441,5 +441,8 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     #
     # 25/09/2026: 104 -> 105. `pdde.ver` — o saldo parado nas contas das escolas e
     # a situação de cada uma para a próxima parcela (PDDE, FNDE). So LE.
-    assert len(permissoes.CATALOGO) == 105
+    #
+    # 26/09/2026: 105 -> 106. `fnas.ver` — o saldo das contas do fundo de
+    # assistência social, os repasses do FNAS e as emendas (painel do MDS). So LE.
+    assert len(permissoes.CATALOGO) == 106
     assert not any("propri" in c for c in permissoes.CATALOGO)

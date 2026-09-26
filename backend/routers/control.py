@@ -408,6 +408,9 @@ _COBERTURA_TABELAS = [
     # PDDE (25/09/2026): as CONTAS das escolas (todos os meses carregados). Zero
     # = ainda não coletado — todo município com escola tem conta de PDDE.
     ("pdde_saldo",           "PDDE (contas das escolas)",    "Educação"),
+    # FNAS (26/09/2026): o saldo das contas do fundo de assistência social (conta x
+    # mês, desde 2007). Zero = ainda não coletado — todo município tem fundo.
+    ("fnas_saldo_conta",     "FNAS (contas do fundo)",       "Assistência Social"),
 ]
 
 # ⚠️ DUAS TABELAS SAO MULTI-FONTE, e contar o total mentiria dos dois lados.

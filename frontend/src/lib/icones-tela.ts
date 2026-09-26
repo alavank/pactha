@@ -23,7 +23,7 @@
 // permissões. Rota que não estiver aqui não quebra: cai no `PADRAO` abaixo.
 import {
   Activity, Archive, ArrowLeftRight, BadgeDollarSign, BarChart3, Bookmark,
-  Building2, CalendarClock, Coins, Edit2, FileSignature, FileText, HandCoins,
+  Building2, CalendarClock, Coins, Edit2, FileSignature, FileText, HandCoins, HandHeart,
   Handshake, HardHat, HeartPulse, KeyRound, Landmark, LayoutGrid, Layers,
   LifeBuoy, Newspaper, PiggyBank, Radar, Scale, School, ScrollText, Settings, ShieldAlert, ShieldCheck,
   SlidersHorizontal, Sparkles, Stethoscope, Target, UserCircle2, Users, Vote,
@@ -89,6 +89,7 @@ const ICONES: Record<string, Icone> = {
 
   "/dashboard/simec": Target,
   "/dashboard/pdde": School,                      // PDDE — dinheiro nas escolas
+  "/dashboard/fnas": HandHeart,                   // Assistência social — FNAS
   "/dashboard/cauc": ShieldCheck,                 // o "escudinho" que o dono citou
   "/dashboard/rm": FileText,
   "/dashboard/ai": Sparkles,

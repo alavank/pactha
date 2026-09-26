@@ -178,7 +178,7 @@ em uma sessão — o rótulo "SC Transferências" já existe em `frontend/src/li
 
 ---
 
-## 4. InvestSUS e SISMOB — o estado real
+## 4. InvestSUS, SISMOB, SiGPC e SUASWeb — o estado real
 
 ### InvestSUS: a credencial já foi entregue e ela funciona
 
@@ -220,6 +220,28 @@ atrás do **SCPA — o mesmo autenticador do InvestSUS**. Ninguém sondou até h
 **dois**. Vale fazer o recon do SISMOB logado no mesmo dia e com a mesma conta do
 InvestSUS — o padrão de reconhecimento já está documentado no cabeçalho de
 `services/investsus_conteudo.py`.
+
+### SiGPC (FNDE): só com o gov.br do gestor — registrado, NÃO construir (26/09/2026)
+
+Cartão "SiGPC — prestação de contas da educação" do relatório de fontes do dono (p.32,
+prioridade 3). Situação, pendências e prazos de prestação de contas do PDDE, PNAE e PNATE
+por exercício. **Só existe logado**: gov.br do gestor, com perfil que o dirigente municipal
+de educação cadastra. Medido em 26/09/2026: não há consulta pública
+(`/sigpc/contasonline/` 404, `/pls/simad/` sem rotina de prestação de contas). Pela regra
+de só usar fonte pública enquanto a prefeitura avalia o sistema, fica fora.
+
+O que da prestação de contas **já chega sem login**: as escolas com PDDE suspenso
+(`pdde_info`, #576), que é a consequência visível da conta não prestada, e as liberações
+por entidade (`fnde_liberacoes`, #575), onde repasse que parou de vir aparece como buraco no
+histórico. Se um cliente entregar a credencial, o slot é o do `simec` no Cofre.
+
+### SUASWeb: as consultas "públicas" têm hCaptcha conferido no servidor (26/09/2026)
+
+`aplicacoes.mds.gov.br/suaswebcons` abre sem login três relatórios (Parcelas Pagas, Saldo
+Detalhado por Conta, Distribuição Financeira por Piso), mas o Pesquisar devolve "Falha na
+verificação do Captcha" sem o token do hCaptcha. **Não automatizar.** O mesmo dado, com
+mais detalhe, sai do painel Qlik do FNAS, que aceita sessão anônima (ver o cartão FNAS em
+`CONTINUAR.md`). A parte logada (plano de ação, demonstrativo) segue fora, como o SiGPC.
 
 ---
 

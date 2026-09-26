@@ -29,7 +29,7 @@ import {
   LayoutDashboard, LayoutGrid, FileText, Newspaper, GraduationCap, Landmark,
   Sparkles, Edit2, UserCircle2, FileSignature, ShieldCheck, HeartPulse,
   BarChart3, CalendarClock, Radar, HardHat, Users, ScrollText, Activity,
-  KeyRound, SlidersHorizontal, Layers,
+  KeyRound, SlidersHorizontal, Layers, HandHeart,
 } from "lucide-react";
 import { hrefToTela } from "@/lib/telas";
 
@@ -277,6 +277,18 @@ export const NAV_ITEMS: NavEntry[] = [
     children: [
       { href: "/dashboard/simec", label: "SIMEC - PAR (MEC)" },
       { href: "/dashboard/pdde", label: "PDDE — dinheiro nas escolas" },
+    ],
+  },
+  /* ⭐ ASSISTÊNCIA SOCIAL é um grupo pelo mesmo motivo que SAÚDE e EDUCAÇÃO
+     (26/09/2026): é uma PASTA do município, com fundo próprio (o FMAS) e gestor
+     próprio. Nasce com o FNAS — o saldo de cada conta do fundo, os repasses e as
+     emendas, do painel do MDS; o cofinanciamento estadual (FEAS) entra aqui
+     quando chegar. */
+  {
+    label: "Assistência Social",
+    icon: HandHeart,
+    children: [
+      { href: "/dashboard/fnas", label: "Assistência social — FNAS" },
     ],
   },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },

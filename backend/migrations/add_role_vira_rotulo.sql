@@ -153,6 +153,9 @@ WITH marca AS (
            -- PDDE — dinheiro nas escolas (25/09/2026), idem: banco NOVO aqui,
            -- os que estão no ar por `add_tela_pdde.sql`.
            ('pdde'),
+           -- Assistência social — FNAS (26/09/2026), idem: banco NOVO aqui,
+           -- os que estão no ar por `add_tela_fnas.sql`.
+           ('fnas'),
            -- As quatro abas de Configuracoes que eram governadas pelo PAPEL
            -- `admin` e viraram telas de verdade.
            ('telemetria'), ('frescor'), ('usuarios'), ('parametros'),

@@ -516,6 +516,12 @@ _RECURSOS: tuple = (
     _Recurso("pdde", SEC_CONSULTAS, "PDDE — dinheiro nas escolas",
              "o saldo e a situação das escolas no PDDE", "",
              ("ver",), fonte="no PDDE Info (FNDE)", tela="pdde"),
+    # FNAS (26/09/2026): o saldo de cada conta do fundo municipal de assistência
+    # social mês a mês, os repasses do FNAS e as emendas (painel do MDS). Só
+    # `ver`: não há exportação nem coleta sob demanda. Nacional.
+    _Recurso("fnas", SEC_CONSULTAS, "Assistência social — FNAS",
+             "o saldo das contas do fundo de assistência social e os repasses do FNAS", "",
+             ("ver",), fonte="no painel de repasses do MDS", tela="fnas"),
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",
              "a base de parlamentares e a atuação deles no município", "",
              ("ver", "exportar"), tela="parlamentares"),

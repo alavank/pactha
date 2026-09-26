@@ -176,6 +176,9 @@ FRESCOR_HORAS_NACIONAL = {
     # ano de todo município toda noite). Planilha recusada ou orçamento estourado
     # na parte diária gravam 'partial', que aqui não conta como sucesso.
     "pdde_info": 30,
+    # FNAS / painel do MDS (26/09/2026): task diária em todo worker. Janela vazia
+    # de município que já tinha dado grava 'partial', que aqui não conta como sucesso.
+    "fnas_suas": 30,
     # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
     # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
     # limit — e o CIPI muda devagar. 54h = dois dias + folga.
