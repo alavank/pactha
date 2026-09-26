@@ -243,6 +243,18 @@ verificação do Captcha" sem o token do hCaptcha. **Não automatizar.** O mesmo
 mais detalhe, sai do painel Qlik do FNAS, que aceita sessão anônima (ver o cartão FNAS em
 `CONTINUAR.md`). A parte logada (plano de ação, demonstrativo) segue fora, como o SiGPC.
 
+### PNAB — Aldir Blanc: o repasse já estava coberto; o que faltava era 2027 (26/09/2026)
+
+Cartão "PNAB — Política Nacional Aldir Blanc (cultura)" (p.34). O repasse e o plano de ação
+**já estavam no PACTHA**: `faf_planos` (Fundo a Fundo do TransfereGov — em Nova Palma os 4
+planos são da Aldir Blanc) e `cgu_transferencias` (ação 00UV, mês a mês). O que o cartão
+trouxe de novo é a exigência da Lei 14.399/2022, art. 6º, § 8º (Lei 15.132/2025): **a partir
+de 2027 só recebe quem dispuser de fundo de cultura**. Construído: `snc_cultura.py` (adesão e
+leis registradas no Sistema Nacional de Cultura) + aba "Cultura (PNAB)" na Regularidade, que
+cruza o registro com para onde o PNAB foi na CGU. Monte Sião: sem adesão ao SNC e PNAB na
+prefeitura → risco. ⚠️ "Conforme regulamento": quando o regulamento sair, conferir se ele
+pede mais que a lei do fundo (CNPJ próprio, conta, conselho) e ajustar `services/cultura_pnab.py`.
+
 ---
 
 ## 5. Sequência proposta

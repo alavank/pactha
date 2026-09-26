@@ -446,6 +446,17 @@ since 2007), repasses (every OB since 2004) and emendas (with parlamentar). The 
   rows for two municípios, ~8 s); then the window from last year on is swapped per
   município. Empty window for a município that had data = `partial`, nothing deleted.
 
+## SNC — Sistema Nacional de Cultura, for PNAB 2027 (`ingestion/snc_cultura.py`, 26/09/2026)
+
+From 2027 only entes with a culture fund receive the PNAB (Lei 14.399/2022, art. 6º, § 8º).
+The public adhesion page `snc.cultura.gov.br/adesao/detalhar/<IBGE7>` (UTF-8 HTML, no login)
+lists the agreement status and each component law with `fa-check` + document link or
+`fa-times`. ⚠️ The page also carries names, e-mails and phones of the mayor, culture manager
+and council members — the collector cuts ONLY the status and component blocks; nothing
+personal is stored or kept in fixtures. Unknown IBGE = 404 (`partial`). A registered fund law
+is not proof the fund is apt ("conforme regulamento"), so the Regularidade tab
+(`services/cultura_pnab.py`) crosses it with where the PNAB (CGU action 00UV) actually landed.
+
 ## SIOPS, SIOPE and DigiSUS — the CAUC's health/education items (`ingestion/siops_siope.py`, 24/09/2026)
 
 The detail behind CAUC 3.2.3/3.2.4/5.1/5.2: which bimestre is missing, when it was

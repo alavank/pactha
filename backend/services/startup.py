@@ -697,6 +697,10 @@ MIGRATION_FILES = [
     # (Plano, PAS, RDQA, RAG) — o detalhe dos itens 3.2.3/3.2.4/5.1/5.2 do CAUC
     # (24/09/2026). Tabelas novas, só com FK para `municipios`.
     "add_siops_siope_rag.sql",
+    # SNC: a adesao ao Sistema Nacional de Cultura e as leis registradas (fundo de
+    # cultura, que o PNAB exige a partir de 2027) (26/09/2026). Tabela nova, so
+    # com FK para `municipios`.
+    "add_snc_cultura.sql",
     # Repasses do Fundo Estadual de Saúde do RS (SES-RS, planilha mensal de
     # pagamentos) aos fundos municipais e hospitais (24/09/2026). Tabelas novas,
     # só com FK para `municipios`.

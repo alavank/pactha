@@ -38,6 +38,7 @@ import { Bloco, BlocoHead, Lista, Selo, Vazio, situacaoTom } from "@/components/
 import { formatDataHora, horasDesde } from "@/lib/bi-format";
 import { TituloTela } from "@/components/TituloTela";
 import { NotaCauc, SaudeEducacaoAba, type SaudeEducacaoResp } from "./SaudeEducacao";
+import { alertaCulturaPnab, CulturaPnabAba, type CulturaPnabResp } from "./CulturaPnab";
 
 interface Item {
   codigo: string;
@@ -1063,6 +1064,9 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
   /* SIOPS, SIOPE e instrumentos do SUS — o detalhe dos itens 3.2.3/3.2.4/5.1/5.2
      do CAUC. Aba própria, e uma frase ao lado de cada um desses itens. */
   const [saude, setSaude] = useState<SaudeEducacaoResp | null>(null);
+  /* PNAB 2027 — o fundo de cultura que a Lei Aldir Blanc exige a partir de 2027
+     (SNC + para onde o PNAB foi na CGU). Aba própria. */
+  const [cultura, setCultura] = useState<CulturaPnabResp | null>(null);
   const [loading, setLoading] = useState(true);
   /* ⚠️ A ABA VIVE NA URL (`?aba=`). Sem isso, um link mandado para o
      jurídico ("olha o CADIN do fundo") abre no CAUC, e a pessoa tem de
@@ -1093,6 +1097,7 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
     if (!municipioId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCauc(null); setCagec(null); setContas(null); setTesouro(null); setSaude(null);
+      setCultura(null);
       setLoading(false); return;
     }
     setLoading(true);
@@ -1105,13 +1110,15 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
       api.get<SiconfiResp>("/siconfi", { params: { municipio_id: municipioId } }),
       api.get<NegativosResp>("/cadastros-negativos", { params: { municipio_id: municipioId } }),
       api.get<SaudeEducacaoResp>("/saude-educacao", { params: { municipio_id: municipioId } }),
-    ]).then(([a, b, c, d, e, f]) => {
+      api.get<CulturaPnabResp>("/cultura-pnab", { params: { municipio_id: municipioId } }),
+    ]).then(([a, b, c, d, e, f, g]) => {
       setCauc(a.status === "fulfilled" ? a.value.data : null);
       setCagec(b.status === "fulfilled" ? b.value.data : null);
       setContas(c.status === "fulfilled" ? c.value.data : null);
       setTesouro(d.status === "fulfilled" ? d.value.data : null);
       setNegativos(e.status === "fulfilled" ? e.value.data : null);
       setSaude(f.status === "fulfilled" ? f.value.data : null);
+      setCultura(g.status === "fulfilled" ? g.value.data : null);
     }).finally(() => setLoading(false));
   }, [municipioId]);
 
@@ -1191,9 +1198,13 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
                  alerta: !!contas?.tem_dados && contas.total > 0 });
     lista.push({ id: "tesouro", label: "Tesouro Nacional", sub: "CAPAG e contas entregues",
                  alerta: false });
+    /* PNAB 2027: o ponto vermelho é "sem fundo de cultura à vista" ou "fundo que não
+       recebe" — a regra vem do servidor (`services/cultura_pnab.py`). */
+    lista.push({ id: "cultura", label: "Cultura (PNAB)", sub: "fundo de cultura exigido em 2027",
+                 alerta: alertaCulturaPnab(cultura) });
     return lista;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cauc, cagec, contas, negativos, saude, siglaEst, ufDoMunicipio, chaveCadin, chaveCfil]);
+  }, [cauc, cagec, contas, negativos, saude, cultura, siglaEst, ufDoMunicipio, chaveCadin, chaveCfil]);
 
   /* Aba de URL que não existe neste município (um link de Nova Palma aberto
      num ambiente de Minas pede `?aba=cfil`) volta para a primeira, em vez de
@@ -1247,8 +1258,9 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
             Exigências para assinar convênio, uma aba por cadastro: a <strong>federal</strong>{" "}
             (CAUC), a de <strong>saúde e educação</strong> (SIOPS, SIOPE e RAG), a{" "}
             <strong>estadual</strong> — o cadastro de convenentes do estado deste
-            município —, os <strong>cadastros negativos</strong> (CADIN, CFIL) e o{" "}
-            <strong>Tesouro Nacional</strong> (CAPAG e contas entregues).
+            município —, os <strong>cadastros negativos</strong> (CADIN, CFIL), o{" "}
+            <strong>Tesouro Nacional</strong> (CAPAG e contas entregues) e a{" "}
+            <strong>cultura</strong> (o fundo que o PNAB exige a partir de 2027).
           </p>
         </div>
       )}
@@ -1329,6 +1341,9 @@ export function RegularidadeTela({ municipioId, embutido = false, abaInicial }: 
 
           {/* ---------------- Saúde e educação (SIOPS, SIOPE, DigiSUS) ---------------- */}
           {aba === "saude" && <SaudeEducacaoAba dados={saude} />}
+
+          {/* ---------------- Cultura (PNAB 2027: fundo de cultura) ---------------- */}
+          {aba === "cultura" && <CulturaPnabAba dados={cultura} />}
 
           {/* ---------------- Cadastro estadual (CAGEC em MG, CHE no RS) ---------------- */}
           <section className={aba === "estadual" ? "space-y-2.5" : "hidden"}>

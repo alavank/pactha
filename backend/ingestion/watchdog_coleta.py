@@ -160,6 +160,9 @@ FRESCOR_HORAS_NACIONAL = {
     # fora do ar, UF vazia com prazo vencido ou arquivo do DGMP recusado gravam
     # 'partial', que aqui nao conta como sucesso.
     "siops_siope": 30,
+    # SNC / Sistema Nacional de Cultura (26/09/2026): task diaria em todo worker, uma
+    # pagina por municipio. IBGE 404 ou layout mudado gravam 'partial'.
+    "snc_cultura": 30,
     # DOU federal (22/09/2026): task diaria em todo worker, NACIONAL (todo
     # municipio ativo, sem recorte de UF). 30h = um dia + folga. Busca que falhou
     # ou estouro de orcamento gravam 'partial', que aqui nao conta como sucesso.

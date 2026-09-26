@@ -49,6 +49,7 @@ COLETORES = {
     "ingestion.fes_rs": "ingest",
     "ingestion.fns_saldo": "ingest",
     "ingestion.siops_siope": "ingest",
+    "ingestion.snc_cultura": "ingest",
     "ingestion.regularidade_pr": "ingest",
     "ingestion.emendas_estaduais": None,
     "ingestion.watchdog_coleta": "main",
