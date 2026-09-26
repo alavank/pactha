@@ -29,6 +29,31 @@
 
 ---
 
+## 1.50. Assistência social — FNAS: o saldo de cada conta do fundo (26/09/2026)
+
+Cartão "FNAS — Portal de Dados (assistência social)" do relatório de fontes do dono (p.33).
+O cartão propunha "extração do painel Qlik (engenharia própria)" como pesada e frágil. Medido:
+o engine do Qlik do MDS aceita websocket ANÔNIMO, também da VPS (sonda: 101), e responde
+por município em ~2 s. Coletor `ingestion/fnas_suas.py` (armadilhas no cabeçalho), tabelas
+`add_fnas_suas.sql`, tela nova no grupo novo do menu **ASSISTÊNCIA SOCIAL**.
+
+- **O dado novo é o SALDO por conta, todo mês.** A CGU (`cgu_transferencias`) já dava quanto
+  o FNAS mandou por mês; ninguém dava quanto ficou. Monte Sião, 08/2026: R$ 890 mil em 15
+  contas, **R$ 341 mil em 5 contas sem repasse desde 2022-2023 e sem gasto** (só juros) — três
+  delas de emenda (Bittar/relatoria 2021, Abramo 2020, Hugo Leal 2022). Nova Palma: nenhuma.
+- **"Parado"** = saldo ≥ R$ 1.000, nenhum repasse na conta em 12 meses e o saldo não caiu mais
+  de 10% no ano (`services/fnas.py`). "Meses de repasse em conta" é régua da tela, não regra do MDS.
+- **A emenda pendura na conta** onde a OB caiu, e a tela mostra o saldo dessa conta hoje.
+  ⚠️ Conta aberta para emenda recente pode ainda não aparecer no saldo (Monte Sião: as de
+  03/2026, 257982/257990, fora do saldo de 08/2026) — a emenda mostra "—" no saldo.
+- **SUASWeb descartado**: as consultas "públicas" (parcelas, saldo por conta) exigem hCaptcha
+  conferido no servidor. **SiGPC** (p.32) registrado, não construído: só com o gov.br do
+  gestor. Os dois em `docs/BACKLOG_POR_ESTADO.md` §4.
+- A 1ª carga contra Postgres real pegou `VARCHAR(60)` estourado pelo GRUPO2 — texto do painel
+  é TEXT; largura fixa só em código.
+- Task `fnas-suas`: escada de 5 min de 02:10 a 02:40 UTC (INFRA §5), criada por
+  `scripts/criar_task_fnas_suas.sh` **depois** do deploy.
+
 ## 1.49. Pendências da 1ª rodada das fontes novas (25/09/2026)
 
 Conferência da madrugada de 25/09 (primeira noite de SIOPS/SES-RS/PDDE/FNDE):

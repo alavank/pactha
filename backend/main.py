@@ -18,7 +18,7 @@ from routers import (
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
     uso, mcp_tokens, consolidado, tce_pr, cgu_convenios, cgu_transferencias, saude_educacao,
-    pdde,
+    pdde, fnas,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -204,6 +204,9 @@ app.include_router(cgu_transferencias.router)
 # /api/pdde: o saldo parado na conta de cada escola e a situação dela para a
 # próxima parcela (FNDE, PDDE Info) — `ingestion/pdde_info.py`.
 app.include_router(pdde.router)
+# /api/fnas: o saldo de cada conta do fundo de assistência social, os repasses do
+# FNAS e as emendas (painel do MDS) — `ingestion/fnas_suas.py`.
+app.include_router(fnas.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)

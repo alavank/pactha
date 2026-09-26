@@ -127,6 +127,9 @@ export const TELAS: TelaDef[] = [
   { key: "simec", label: "SIMEC - PAR (MEC)" },
   // PDDE (25/09/2026): saldo parado e situação de cada escola (FNDE, PDDE Info).
   { key: "pdde", label: "PDDE — dinheiro nas escolas" },
+  // FNAS (26/09/2026): saldo das contas do fundo de assistência social, repasses e
+  // emendas (painel do MDS).
+  { key: "fnas", label: "Assistência social — FNAS" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },
   { key: "ai", label: "IA PACTHA" },

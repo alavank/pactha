@@ -547,6 +547,10 @@ MIGRATION_FILES = [
     # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
     # `add_pdde_info.sql`.
     "add_tela_pdde.sql",
+    # Assistencia social — FNAS (26/09/2026): tela e acao a quem tem
+    # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
+    # `add_fnas_suas.sql`.
+    "add_tela_fnas.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.
@@ -706,6 +710,10 @@ MIGRATION_FILES = [
     # situacao da prestacao de contas por escola e as suspensoes, e o que ja
     # foi lido inteiro (25/09/2026). Tabelas novas, FK so para `municipios`.
     "add_pdde_info.sql",
+    # FNAS (painel do MDS): o saldo de cada conta do fundo de assistencia social
+    # por mes, cada repasse (OB), as emendas com o parlamentar e o que ja foi lido
+    # (26/09/2026). Tabelas novas, FK so para `municipios`. DDL.
+    "add_fnas_suas.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

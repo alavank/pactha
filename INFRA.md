@@ -547,6 +547,15 @@ O desenho atual (13/09/2026, "coleta noturna"):
   1020 s. Migration `add_fns_saldo_conta.sql` (tabela nova) no deploy do #552, 24/09/2026
   ~03:57 UTC: "146/146 em dia" nas sete APIs. **Task criada nos sete em 24/09/2026 ~04:05
   UTC** por `scripts/criar_task_fns_saldo.sh`; primeira rodada no mesmo dia, 06:00 UTC.
+- **`fnas-suas` (26/09/2026), escada de 5 min de 02:10 (freitas) a 02:40 UTC
+  (juranda):** o painel Qlik de repasses do MDS (`paineis.mds.gov.br`, websocket anônimo)
+  — saldo de cada conta do fundo de assistência social, OBs do FNAS e emendas. Um cubo por
+  app com todos os municípios do tenant; 1ª rodada lê o histórico (~8 s de painel para
+  dois municípios), as seguintes a janela do ano passado para cá. Nenhuma outra task usa
+  esse host. Kill 600 s, timeout da task 720 s. Migration `add_fnas_suas.sql` (DDL,
+  tabelas novas): deploy depois das 10:00 UTC ou com as coletas pausadas. Criação:
+  `scripts/criar_task_fnas_suas.sh`, **depois** do deploy — até isso rodar, a task NÃO
+  existe em nenhum worker.
 - **`fes-rs` (24/09/2026), escada de 5 min de 05:00 (freitas) a 05:30 UTC
   (juranda):** as planilhas mensais de pagamento do Fundo Estadual de Saúde da SES-RS
   (`saude.rs.gov.br/pagamentos-mes`, ~5 MB por mês, o ano corrente) nos tenants com

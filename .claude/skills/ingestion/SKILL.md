@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 36 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 37 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 36 sources has its own collector file with source-specific gotchas documented
+Each of the 37 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -424,6 +424,27 @@ equal). Full list in the file header; the ones that bite:
 - Nightly per município: suspension + PC of the current year (3 sheets, ~10 s); latest saldo
   and previous year re-read every 7 days; 12-month saldo history 2 months/night. Budget
   `PDDE_BUDGET_S` per tenant (daily part first, then the queue).
+
+## FNAS — social-assistance fund accounts (`ingestion/fnas_suas.py`, 26/09/2026)
+
+The MDS "Repasses Fundo a Fundo" panel is Qlik Sense; its engine accepts an ANONYMOUS
+websocket (`wss://paineis.mds.gov.br/public/app/<id>`, 101 from the VPS, no cookie) —
+unlike InvestSUS (403 outside the browser). JSON-RPC: `OpenDoc` → `CreateSessionObject`
+(a hypercube) → paged `GetHyperCubeData`. Three apps: saldos (every account, every month
+since 2007), repasses (every OB since 2004) and emendas (with parlamentar). The SUASWeb's
+"public" balance report has a server-checked hCaptcha — don't. Full list in the header:
+- **A wrong field in the set expression returns the WHOLE country**, silently. Every row
+  is checked against the requested IBGEs (`confere`, `FiltroIgnorado`) plus a per-município
+  ceiling; an impossible IBGE (`999999`) was proven to return 0 in the three apps.
+- **Years filter by value, never by search**: `NU_ANO_SALDO={">=2025"}` returns ZERO rows;
+  send `{2025,2026,2027}`. Months are text (`{'08'}`, not `{8}`).
+- **A null-suppressed dimension that is empty drops the row**: only the key dimension
+  suppresses nulls. Measures carry a `Count(...)` so an emptied account stays in the cube.
+- **Leading zeros vary** ("000000197475" / "0000197475" / "197475"): account and agency
+  are stored without them — that's how an OB matches the account that received it.
+- One cube per app with all of the tenant's municípios. First run = full history (6.350
+  rows for two municípios, ~8 s); then the window from last year on is swapped per
+  município. Empty window for a município that had data = `partial`, nothing deleted.
 
 ## SIOPS, SIOPE and DigiSUS — the CAUC's health/education items (`ingestion/siops_siope.py`, 24/09/2026)
 

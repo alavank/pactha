@@ -208,6 +208,14 @@ _SOURCES = [
      "SELECT (SELECT max(carregado_em) FROM pdde_carga), "
      "(SELECT count(*) FROM pdde_saldo)",
      "pdde_info"),
+    # FNAS (26/09/2026). NACIONAL (IBGE de 6 dígitos). A data é a da última leitura
+    # do painel do MDS (`fnas_carga`); conta as linhas de saldo (conta x mês). O
+    # saldo é mensal e atrasado (em 26/09 o mais novo era 08/2026) — o mês de
+    # referência está na tela.
+    ("MDS — FNAS (saldo das contas e repasses da assistência social)",
+     "SELECT (SELECT max(lido_em) FROM fnas_carga), "
+     "(SELECT count(*) FROM fnas_saldo_conta)",
+     "fnas_suas"),
     ("DOU — Diário Oficial da União",
      "SELECT (SELECT max(atualizado_em) FROM dou_cobertura), "
      "(SELECT count(*) FROM dou_atos_municipio WHERE evidencia <> 'cidade')",

@@ -75,6 +75,8 @@ TELAS_CATALOG = [
     {"key": "simec", "label": "SIMEC - PAR (MEC)"},
     # PDDE (25/09/2026), ao lado do SIMEC no grupo EDUCAÇÃO. MESMO TEXTO de `telas.ts`.
     {"key": "pdde", "label": "PDDE — dinheiro nas escolas"},
+    # FNAS (26/09/2026), no grupo ASSISTÊNCIA SOCIAL. MESMO TEXTO de `telas.ts`.
+    {"key": "fnas", "label": "Assistência social — FNAS"},
     {"key": "dou", "label": "Diário Oficial"},
     {"key": "bi", "label": "Painel de Indicadores (BI)"},
     # Trilha de auditoria. ENTRA no catálogo do cliente (ao contrário de
@@ -116,6 +118,8 @@ TELAS_TODAS = [
     "acordofes", "fns", "investsus", "simec",
     # PDDE (25/09/2026): saldo e situação das escolas (FNDE).
     "pdde",
+    # FNAS (26/09/2026): saldo das contas do fundo e repasses (painel do MDS).
+    "fnas",
     "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",
     # ⭐⭐ AS DEZOITO DO INCREMENTO «PERMISSAO POR TELA» (05/09/2026).

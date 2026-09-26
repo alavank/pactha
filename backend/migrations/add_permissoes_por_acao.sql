@@ -247,6 +247,10 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- de cada uma para receber a próxima parcela (FNDE). Só `ver`; a
     -- concessão aos que já estão no ar é de `add_tela_pdde.sql`.
     ('pdde.ver', 'consultas', FALSE),
+    -- FNAS (26/09/2026): o saldo de cada conta do fundo de assistência social,
+    -- os repasses do FNAS e as emendas (painel do MDS). Só `ver`; a concessão aos
+    -- que já estão no ar é de `add_tela_fnas.sql`.
+    ('fnas.ver', 'consultas', FALSE),
     ('parlamentares.ver', 'consultas', FALSE),
     ('parlamentares.exportar', 'consultas', FALSE),
     -- CONSOLIDADO da carteira (18/09/2026). Tela nova: no bloco de
@@ -465,6 +469,7 @@ WITH marca AS (
         ('simec', 'simec.ver', FALSE),
         ('simec', 'simec.exportar', FALSE),
         ('pdde', 'pdde.ver', FALSE),
+        ('fnas', 'fnas.ver', FALSE),
         ('parlamentares', 'parlamentares.ver', FALSE),
         ('parlamentares', 'parlamentares.exportar', FALSE),
         ('consolidado', 'consolidado.ver', FALSE),

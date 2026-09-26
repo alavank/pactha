@@ -5,8 +5,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **36 official data sources** (federal +
-MG/ES/GO/RS/PR/TO state). The newest (25/09/2026) is the **PDDE** (`pdde_info.py`): the
+emendas) for Brazilian municipalities, tracking **37 official data sources** (federal +
+MG/ES/GO/RS/PR/TO state). The newest (26/09/2026) is the **FNAS** (`fnas_suas.py`): the
+MDS's "Repasses Fundo a Fundo" Qlik panel, read through the engine websocket with an
+anonymous session — the BALANCE of every account of the Fundo Municipal de Assistência
+Social month by month, every FNAS payment order, and the emendas with the parlamentar ->
+`fnas_saldo_conta`/`fnas_repasse`/`fnas_emenda`, screen ASSISTÊNCIA SOCIAL › "Assistência
+social — FNAS" (Monte Sião: R$ 341 mil sitting untouched since 2022 in 5 accounts). ⚠️ A
+wrong set-expression field returns the WHOLE country (every row is checked against the
+requested IBGEs); `{">=2025"}` returns zero rows (years go as an explicit list); a
+null-suppressed empty dimension drops every row. Traps in the file header. Before it
+(25/09/2026), the **PDDE** (`pdde_info.py`): the
 FNDE's PDDE Info Excel exports, per município (IBGE 6 digits) — the BALANCE parked in
 each school's bank account (per account and month), the school's prestação de contas
 situation and the SUSPENSION report (which school's next installment won't come, and
