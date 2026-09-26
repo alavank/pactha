@@ -51,8 +51,8 @@ por município em ~2 s. Coletor `ingestion/fnas_suas.py` (armadilhas no cabeçal
   gestor. Os dois em `docs/BACKLOG_POR_ESTADO.md` §4.
 - A 1ª carga contra Postgres real pegou `VARCHAR(60)` estourado pelo GRUPO2 — texto do painel
   é TEXT; largura fixa só em código.
-- Task `fnas-suas`: escada de 5 min de 02:10 a 02:40 UTC (INFRA §5), criada por
-  `scripts/criar_task_fnas_suas.sh` **depois** do deploy.
+- #578 no ar em 26/09 ~04:10 UTC. Task `fnas-suas` criada nos sete em 26/09 ~12:15 UTC
+  (escada 02:10–02:40 UTC, INFRA §5); 1ª rodada na madrugada de 27/09.
 
 ## 1.49. Pendências da 1ª rodada das fontes novas (25/09/2026)
 
