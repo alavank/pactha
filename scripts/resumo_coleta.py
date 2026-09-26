@@ -60,6 +60,7 @@ ONDE_OLHAR = {
     "siops_siope": ("siops.datasus.gov.br/consmuntransm.php (homologados), "
                     "siops-consulta-publica-api.saude.gov.br, fnde.gov.br/olinda-ide "
                     "(SIOPE) e digisusgmp.saude.gov.br (RDQA/RAG)"),
+    "snc_cultura": "snc.cultura.gov.br/adesao/detalhar/<IBGE> (adesao ao SNC e lei do fundo de cultura)",
     "fes_rs": "saude.rs.gov.br/pagamentos-mes (planilhas 'GERAL PAGOS em <mes>' do FES)",
     "cagec": "cagec.mg.gov.br/convenente-web (consulta publica por CNPJ)",
     "cauc": "CAUC/Tesouro (consulta por CNPJ)",

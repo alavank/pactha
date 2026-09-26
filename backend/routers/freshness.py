@@ -181,6 +181,11 @@ _SOURCES = [
     ("SIOPS / SIOPE / RAG — Saúde e educação",
      "SELECT max(atualizado_em), count(*) FROM saude_educacao_bimestre",
      "siops_siope"),
+    # SNC (26/09/2026). NACIONAL (IBGE de 7 dígitos). Conta os municípios lidos;
+    # serve ao alerta do PNAB 2027 na tela de Regularidade (aba Cultura).
+    ("SNC — Sistema Nacional de Cultura (fundo de cultura / PNAB 2027)",
+     "SELECT max(lido_em), count(*) FROM snc_cultura",
+     "snc_cultura"),
     # DOU federal (22/09/2026). NACIONAL: todo municipio ativo com ibge_code. A
     # data e a da COBERTURA (ultima busca feita inteira), nao a do ato: semana
     # sem nada no DOU sobre o municipio e resultado, e nao coleta parada. Conta

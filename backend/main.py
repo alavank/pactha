@@ -13,7 +13,7 @@ from routers import (
     users, simec, rm, ai, gestao, parlamentares, status_changes,
     documentos, cauc, cagec, siconfi, negativos, acordofes, control, freshness, painel, bi,
     sismob, obrasgov, parcerias, faf_planos, investsus, auditoria, permissoes,
-    repasses,
+    repasses, cultura_pnab,
     contas_irregulares,
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
@@ -260,6 +260,9 @@ app.include_router(negativos.router)
 # instrumentos de planejamento do SUS — o detalhe dos itens 3.2.3, 3.2.4, 5.1 e
 # 5.2 do CAUC (qual bimestre falta, % aplicado, RDQA/RAG).
 app.include_router(saude_educacao.router)
+# SEXTA leitura da mesma tela (`cauc.ver`, tela `cauc`): o fundo de cultura que o
+# PNAB exige a partir de 2027 (SNC + para onde o PNAB foi na CGU).
+app.include_router(cultura_pnab.router)
 app.include_router(sismob.router)   # /api/sismob/* (obras de saude do MS)
 # /api/obrasgov/* (CIPI): as obras federais de TODAS as areas — o que o SISMOB
 # (saude) e o SIMEC (educacao) nao cobrem. Repete de proposito a obra que ja

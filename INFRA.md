@@ -612,6 +612,14 @@ O desenho atual (13/09/2026, "coleta noturna"):
   (`SES_MG_BUDGET_S`), kill 1500 s, timeout da task 1620 s — a freitas termina até 22:55,
   longe do reinício das 00:00. Migration `add_ses_mg_resolucoes.sql` (DDL, tabelas
   novas): deploy depois das 10:00 UTC. Criar com `scripts/criar_task_ses_mg_resolucoes.sh`.
+- **`snc-cultura` (26/09/2026), escada de 5 min de 06:40 (freitas) a 07:10 UTC
+  (juranda):** a página pública de adesão ao Sistema Nacional de Cultura
+  (`snc.cultura.gov.br/adesao/detalhar/<IBGE>`), uma por município com 1 s de pausa — o
+  fundo de cultura que o PNAB exige a partir de 2027 (`ingestion/snc_cultura.py`, aba
+  Cultura da Regularidade). Nenhuma outra task usa esse host. Kill 600 s, timeout da task
+  720 s. Migration `add_snc_cultura.sql` (DDL, tabela nova): deploy depois das 10:00 UTC ou
+  com as coletas pausadas. Criação: `scripts/criar_task_snc_cultura.sh`, **depois** do
+  deploy — até isso rodar, a task NÃO existe em nenhum worker.
 - **`siops-siope` (24/09/2026), escada de 15 min de 04:00 (freitas) a 05:30 UTC
   (juranda):** SIOPS (lista legada de homologados + API), SIOPE (OData do FNDE) e DigiSUS
   DGMP, por UF da carteira — quatro hosts que nenhuma outra task usa. Medido localmente com
