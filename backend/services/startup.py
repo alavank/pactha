@@ -551,6 +551,10 @@ MIGRATION_FILES = [
     # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
     # `add_fnas_suas.sql`.
     "add_tela_fnas.sql",
+    # Assistencia social — Estado (FEAS) (26/09/2026): tela e acao a quem tem
+    # `usuarios.conceder`, pelo mesmo desenho. Nao toca as tabelas de
+    # `add_feas_estadual.sql`.
+    "add_tela_feas.sql",
     # ⭐ LIMPEZA DA TROCA DE FONTE DA TRANSFERENCIA ESPECIAL (06/09/2026): apaga
     # os planos que o casamento por NOME creditou ao municipio errado. Ver o
     # cabecalho do .sql.
@@ -714,6 +718,10 @@ MIGRATION_FILES = [
     # por mes, cada repasse (OB), as emendas com o parlamentar e o que ja foi lido
     # (26/09/2026). Tabelas novas, FK so para `municipios`. DDL.
     "add_fnas_suas.sql",
+    # FEAS (despesa aberta de MG e do RS): cada pagamento do Fundo Estadual de
+    # Assistencia Social ao municipio e o que ja foi lido (26/09/2026). Tabelas
+    # novas, FK so para `municipios`. DDL.
+    "add_feas_estadual.sql",
     # Migration nova que precise reescrever audit_log entra ACIMA desta linha,
     # nunca abaixo.
     "add_auditoria_imutavel.sql",

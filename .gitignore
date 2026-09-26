@@ -13,6 +13,10 @@ out/
 !backend/tests/fixtures/**/*.csv
 *.zip
 *.gz
+# Recortes REAIS da despesa aberta de MG (.csv.gz) e do RS (.zip) usados como
+# fixture do FEAS (26/09/2026): versionados de propósito, como os CSVs acima.
+!backend/tests/fixtures/**/*.zip
+!backend/tests/fixtures/**/*.gz
 /data/
 .DS_Store
 .vercel

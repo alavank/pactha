@@ -179,6 +179,9 @@ FRESCOR_HORAS_NACIONAL = {
     # FNAS / painel do MDS (26/09/2026): task diária em todo worker. Janela vazia
     # de município que já tinha dado grava 'partial', que aqui não conta como sucesso.
     "fnas_suas": 30,
+    # FEAS / despesa aberta de MG e RS (26/09/2026): task diária nos workers com
+    # município de MG ou RS; nos outros a rodada é `success` com nota (sem alvo).
+    "feas_estadual": 30,
     # Obras.gov.br/CIPI. Cadencia REAL de 2 dias (auto-limite de 44h no proprio
     # ingest): a varredura e cara — uma pagina a cada 8s por causa do rate
     # limit — e o CIPI muda devagar. 54h = dois dias + folga.

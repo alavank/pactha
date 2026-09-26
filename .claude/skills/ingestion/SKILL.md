@@ -1,11 +1,11 @@
 ---
 name: ingestion
-description: Rules for PACTHA's data collectors — the 37 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
+description: Rules for PACTHA's data collectors — the 38 official government sources, per-source gotchas, scraping stack, on-demand queue, and concurrency limits. Use when working in backend/ingestion/, adding or fixing a collector/scraper, touching scraper_jobs, changing scrape scheduling, or debugging why a source returns empty/partial data.
 ---
 
 # Ingestion — `backend/ingestion/`
 
-Each of the 37 sources has its own collector file with source-specific gotchas documented
+Each of the 38 sources has its own collector file with source-specific gotchas documented
 **inline in that file** (field-name mismatches between endpoints, silent-empty-result traps,
 pagination quirks, portal-specific JS/postback timing). Read the target collector's own
 comments before touching it — `CONTINUAR.md` §5 also summarizes the sharpest traps
@@ -445,6 +445,26 @@ since 2007), repasses (every OB since 2004) and emendas (with parlamentar). The 
 - One cube per app with all of the tenant's municípios. First run = full history (6.350
   rows for two municípios, ~8 s); then the window from last year on is swapped per
   município. Empty window for a município that had data = `partial`, nothing deleted.
+
+## FEAS — state co-financing of social assistance (`ingestion/feas_estadual.py`, 26/09/2026)
+
+Every payment of the state social-assistance fund (FEAS) to the município, from each
+state's OPEN EXPENDITURE data — not the secretariats' portals the report card suggested.
+MG: dados.mg `despesa` package (the same files `cge_despesa_ob.py` reads), payment = an
+"OP ..." document with `vr_pago` ≠ 0 on an empenho whose executing unit is `1480004 -
+SEDESE/FEAS/SUBAS` (action 4431 = Piso Mineiro). RS: dados.rs `{ano}-despesa-do-estado`,
+one ZIP per month, `Cod_UO = 2178`, `FaseGasto = 'Pagamento'`. Full list in the header:
+- **The money goes to TWO CNPJs.** Piso Mineiro/Gaúcho land on the FUNDO MUNICIPAL's CNPJ;
+  FEAS emendas/programs on the PREFEITURA's. The fund's CNPJ comes from the FNAS panel
+  (`fnas_saldo_conta`, FUNDO MUNICIPAL) — without FNAS loaded only the prefeitura matches.
+- **RS ZIP**: the server cuts the download (~10 MB) or stalls without closing — 90 s read
+  timeout + `Range` resume; the CSV (150+ MB, Latin-1) is read as a STREAM (whole-file
+  decode hit MemoryError). ~1 month publication lag.
+- **The file is the truth of its period**: MG year / RS month swapped whole per município.
+  An MG year that had payments and came back empty = `partial`, nothing deleted; an empty
+  RS month is valid (the whole state paid R$ 2,6 mi fundo a fundo Jan–Jul 2026).
+- `feas_carga` keeps each CKAN resource's `last_modified` + a hash of the CNPJs searched:
+  an unchanged resource is not downloaded again.
 
 ## SIOPS, SIOPE and DigiSUS — the CAUC's health/education items (`ingestion/siops_siope.py`, 24/09/2026)
 

@@ -18,7 +18,7 @@ from routers import (
     cofinanciamento, parametros, monitoramento, consulta_popular, programas_rs,
     conteudo_rs, programas_captacao, agendamentos,
     uso, mcp_tokens, consolidado, tce_pr, cgu_convenios, cgu_transferencias, saude_educacao,
-    pdde, fnas,
+    pdde, fnas, feas,
 )
 from config import get_settings
 from services.security_headers import SecurityHeadersMiddleware
@@ -207,6 +207,9 @@ app.include_router(pdde.router)
 # /api/fnas: o saldo de cada conta do fundo de assistência social, os repasses do
 # FNAS e as emendas (painel do MDS) — `ingestion/fnas_suas.py`.
 app.include_router(fnas.router)
+# /api/feas: o que o Fundo Estadual de Assistência Social pagou ao município (MG e
+# RS, despesa aberta do Estado) — `ingestion/feas_estadual.py`.
+app.include_router(feas.router)
 app.include_router(cofre.router)
 app.include_router(session_capture.router)
 app.include_router(service_tokens.router)

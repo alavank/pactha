@@ -59,6 +59,7 @@ const TELAS: Array<[RegExp, string]> = [
   [/^\/dashboard\/simec/, "SIMEC - PAR"],
   [/^\/dashboard\/pdde/, "PDDE — dinheiro nas escolas"],
   [/^\/dashboard\/fnas/, "Assistência social — FNAS"],
+  [/^\/dashboard\/feas/, "Assistência social — Estado (FEAS)"],
   [/^\/dashboard\/cauc/, "Regularidade"],
   [/^\/dashboard\/rm\/(\d+)/, "Relatório de Monitoramento nº $1"],
   [/^\/dashboard\/rm/, "Relatórios de Monitoramento"],
