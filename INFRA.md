@@ -553,9 +553,9 @@ O desenho atual (13/09/2026, "coleta noturna"):
   app com todos os municípios do tenant; 1ª rodada lê o histórico (~8 s de painel para
   dois municípios), as seguintes a janela do ano passado para cá. Nenhuma outra task usa
   esse host. Kill 600 s, timeout da task 720 s. Migration `add_fnas_suas.sql` (DDL,
-  tabelas novas): deploy depois das 10:00 UTC ou com as coletas pausadas. Criação:
-  `scripts/criar_task_fnas_suas.sh`, **depois** do deploy — até isso rodar, a task NÃO
-  existe em nenhum worker.
+  tabelas novas) no deploy do #578, 26/09/2026 ~04:10 UTC, com as coletas pausadas.
+  **Task criada nos sete em 26/09/2026 ~12:15 UTC** por `scripts/criar_task_fnas_suas.sh`;
+  primeira rodada na madrugada de 27/09 (02:10 UTC).
 - **`fes-rs` (24/09/2026), escada de 5 min de 05:00 (freitas) a 05:30 UTC
   (juranda):** as planilhas mensais de pagamento do Fundo Estadual de Saúde da SES-RS
   (`saude.rs.gov.br/pagamentos-mes`, ~5 MB por mês, o ano corrente) nos tenants com
