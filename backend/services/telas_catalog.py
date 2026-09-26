@@ -77,6 +77,8 @@ TELAS_CATALOG = [
     {"key": "pdde", "label": "PDDE — dinheiro nas escolas"},
     # FNAS (26/09/2026), no grupo ASSISTÊNCIA SOCIAL. MESMO TEXTO de `telas.ts`.
     {"key": "fnas", "label": "Assistência social — FNAS"},
+    # FEAS (26/09/2026), no grupo ASSISTÊNCIA SOCIAL. MESMO TEXTO de `telas.ts`.
+    {"key": "feas", "label": "Assistência social — Estado (FEAS)"},
     {"key": "dou", "label": "Diário Oficial"},
     {"key": "bi", "label": "Painel de Indicadores (BI)"},
     # Trilha de auditoria. ENTRA no catálogo do cliente (ao contrário de
@@ -120,6 +122,8 @@ TELAS_TODAS = [
     "pdde",
     # FNAS (26/09/2026): saldo das contas do fundo e repasses (painel do MDS).
     "fnas",
+    # FEAS (26/09/2026): pagamentos do fundo estadual de assistência (MG e RS).
+    "feas",
     "paineis", "bi", "bi_tela",
     "bi_link", "dou", "cofre", "sessoes", "auditoria",
     # ⭐⭐ AS DEZOITO DO INCREMENTO «PERMISSAO POR TELA» (05/09/2026).

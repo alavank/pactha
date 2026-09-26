@@ -216,6 +216,13 @@ _SOURCES = [
      "SELECT (SELECT max(lido_em) FROM fnas_carga), "
      "(SELECT count(*) FROM fnas_saldo_conta)",
      "fnas_suas"),
+    # FEAS (26/09/2026). MG e RS (despesa aberta do Estado). A data é a da última
+    # leitura de um recurso do CKAN (`feas_carga`); conta os pagamentos gravados. O
+    # RS publica um arquivo por mês com ~1 mês de atraso — o mês está na tela.
+    ("Estado — FEAS (cofinanciamento da assistência social, MG e RS)",
+     "SELECT (SELECT max(lido_em) FROM feas_carga), "
+     "(SELECT count(*) FROM feas_pagamento)",
+     "feas_estadual"),
     ("DOU — Diário Oficial da União",
      "SELECT (SELECT max(atualizado_em) FROM dou_cobertura), "
      "(SELECT count(*) FROM dou_atos_municipio WHERE evidencia <> 'cidade')",

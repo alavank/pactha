@@ -522,6 +522,11 @@ _RECURSOS: tuple = (
     _Recurso("fnas", SEC_CONSULTAS, "Assistência social — FNAS",
              "o saldo das contas do fundo de assistência social e os repasses do FNAS", "",
              ("ver",), fonte="no painel de repasses do MDS", tela="fnas"),
+    # FEAS (26/09/2026): o que o Fundo Estadual de Assistência Social pagou ao
+    # fundo municipal e à prefeitura (MG e RS, despesa aberta do Estado). Só `ver`.
+    _Recurso("feas", SEC_CONSULTAS, "Assistência social — Estado (FEAS)",
+             "os pagamentos do fundo estadual de assistência social ao município", "",
+             ("ver",), fonte="na despesa aberta do Estado", tela="feas"),
     _Recurso("parlamentares", SEC_CONSULTAS, "Parlamentares",
              "a base de parlamentares e a atuação deles no município", "",
              ("ver", "exportar"), tela="parlamentares"),

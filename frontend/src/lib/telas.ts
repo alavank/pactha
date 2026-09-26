@@ -130,6 +130,8 @@ export const TELAS: TelaDef[] = [
   // FNAS (26/09/2026): saldo das contas do fundo de assistência social, repasses e
   // emendas (painel do MDS).
   { key: "fnas", label: "Assistência social — FNAS" },
+  // FEAS (26/09/2026): pagamentos do fundo estadual de assistência (MG e RS).
+  { key: "feas", label: "Assistência social — Estado (FEAS)" },
   { key: "cauc", label: "Regularidade (federal e estadual)" },
   { key: "rm", label: "Relatório de Monitoramento" },
   { key: "ai", label: "IA PACTHA" },

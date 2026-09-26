@@ -444,5 +444,8 @@ def test_o_alcance_nao_virou_permissao_do_catalogo():
     #
     # 26/09/2026: 105 -> 106. `fnas.ver` — o saldo das contas do fundo de
     # assistência social, os repasses do FNAS e as emendas (painel do MDS). So LE.
-    assert len(permissoes.CATALOGO) == 106
+    #
+    # 26/09/2026: 106 -> 107. `feas.ver` — os pagamentos do fundo estadual de
+    # assistência social ao município (MG e RS). So LE.
+    assert len(permissoes.CATALOGO) == 107
     assert not any("propri" in c for c in permissoes.CATALOGO)

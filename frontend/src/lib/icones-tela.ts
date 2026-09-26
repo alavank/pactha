@@ -90,6 +90,7 @@ const ICONES: Record<string, Icone> = {
   "/dashboard/simec": Target,
   "/dashboard/pdde": School,                      // PDDE — dinheiro nas escolas
   "/dashboard/fnas": HandHeart,                   // Assistência social — FNAS
+  "/dashboard/feas": Landmark,                    // Assistência social — Estado (FEAS)
   "/dashboard/cauc": ShieldCheck,                 // o "escudinho" que o dono citou
   "/dashboard/rm": FileText,
   "/dashboard/ai": Sparkles,

@@ -251,6 +251,10 @@ INSERT INTO permissoes_catalogo (chave, secao, escrita) VALUES
     -- os repasses do FNAS e as emendas (painel do MDS). Só `ver`; a concessão aos
     -- que já estão no ar é de `add_tela_fnas.sql`.
     ('fnas.ver', 'consultas', FALSE),
+    -- FEAS (26/09/2026): o que o Fundo Estadual de Assistência Social pagou ao
+    -- município (MG e RS). Só `ver`; a concessão aos que já estão no ar é de
+    -- `add_tela_feas.sql`.
+    ('feas.ver', 'consultas', FALSE),
     ('parlamentares.ver', 'consultas', FALSE),
     ('parlamentares.exportar', 'consultas', FALSE),
     -- CONSOLIDADO da carteira (18/09/2026). Tela nova: no bloco de
@@ -470,6 +474,7 @@ WITH marca AS (
         ('simec', 'simec.exportar', FALSE),
         ('pdde', 'pdde.ver', FALSE),
         ('fnas', 'fnas.ver', FALSE),
+        ('feas', 'feas.ver', FALSE),
         ('parlamentares', 'parlamentares.ver', FALSE),
         ('parlamentares', 'parlamentares.exportar', FALSE),
         ('consolidado', 'consolidado.ver', FALSE),

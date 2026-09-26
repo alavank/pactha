@@ -411,6 +411,9 @@ _COBERTURA_TABELAS = [
     # FNAS (26/09/2026): o saldo das contas do fundo de assistência social (conta x
     # mês, desde 2007). Zero = ainda não coletado — todo município tem fundo.
     ("fnas_saldo_conta",     "FNAS (contas do fundo)",       "Assistência Social"),
+    # FEAS (26/09/2026): os pagamentos do fundo estadual (MG e RS). Zero pode ser
+    # real no RS (paga pouco e irregular) — a tela diz até que mês a fonte chega.
+    ("feas_pagamento",       "FEAS (pagamentos do Estado)",  "Assistência Social"),
 ]
 
 # ⚠️ DUAS TABELAS SAO MULTI-FONTE, e contar o total mentiria dos dois lados.

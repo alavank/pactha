@@ -547,6 +547,19 @@ O desenho atual (13/09/2026, "coleta noturna"):
   1020 s. Migration `add_fns_saldo_conta.sql` (tabela nova) no deploy do #552, 24/09/2026
   ~03:57 UTC: "146/146 em dia" nas sete APIs. **Task criada nos sete em 24/09/2026 ~04:05
   UTC** por `scripts/criar_task_fns_saldo.sh`; primeira rodada no mesmo dia, 06:00 UTC.
+- **`feas-estadual` (26/09/2026), a partir de 03:10 UTC:** MG em escada de 5 min (freitas
+  03:10, trust 03:15, montesiao 03:20), juranda 03:25 (sem município de MG/RS: sai em
+  segundos), e o RS a 30 MIN um do outro (santamaria 03:30, novapalma 04:00, bgk 04:30) —
+  a 1ª carga do RS levou 1.170 s num tenant e dois downloads simultâneos do dados.rs
+  travaram (medido); depois, só o mês novo. O cofinanciamento estadual da assistência social (FEAS de MG e do RS) pela
+  despesa aberta do Estado (dados.mg `despesa`; dados.rs `{ano}-despesa-do-estado`) —
+  `ingestion/feas_estadual.py`. UMA HORA DEPOIS da `fnas-suas`, de propósito: o CNPJ do
+  fundo municipal, onde cai o Piso Mineiro, vem do painel do FNAS. Só baixa recurso cujo
+  `last_modified` mudou (`feas_carga`); a 1ª rodada lê os anos corrente e anterior dos dois
+  Estados. Os mesmos arquivos de MG que a `cge_despesa_ob` lê. Kill 1800 s, timeout da
+  task 1920 s. Migration `add_feas_estadual.sql` (DDL, tabelas novas): deploy depois das
+  10:00 UTC ou com as coletas pausadas. Criação: `scripts/criar_task_feas_estadual.sh`,
+  **depois** do deploy — até isso rodar, a task NÃO existe em nenhum worker.
 - **`fnas-suas` (26/09/2026), escada de 5 min de 02:10 (freitas) a 02:40 UTC
   (juranda):** o painel Qlik de repasses do MDS (`paineis.mds.gov.br`, websocket anônimo)
   — saldo de cada conta do fundo de assistência social, OBs do FNAS e emendas. Um cubo por

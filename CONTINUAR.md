@@ -29,6 +29,30 @@
 
 ---
 
+## 1.51. Assistência social — Estado (FEAS): o cofinanciamento estadual, MG e RS (26/09/2026)
+
+Cartão "Cofinanciamento estadual do SUAS — FEAS-MG/RS/ES" (p.34). O cartão mandava raspar
+os portais das secretarias; o pagamento está na **despesa aberta do Estado**, com o CNPJ de
+quem recebeu. Coletor `ingestion/feas_estadual.py` (armadilhas no cabeçalho), tabelas
+`add_feas_estadual.sql`, tela ASSISTÊNCIA SOCIAL › "Assistência social — Estado (FEAS)".
+
+- **MG**: pacote `despesa` do dados.mg (os mesmos arquivos da `cge_despesa_ob`), UE do
+  empenho `1480004 - SEDESE/FEAS/SUBAS`. Monte Sião 2026: Piso Mineiro R$ 68.160 em 6 OBs
+  (jan-mar juntos em 27/04, depois R$ 8.520/mês até 21/09), no CNPJ do FUNDO — não da
+  prefeitura. Piso sem pagamento há mais de 60 dias vira aviso na tela.
+- **RS**: `{ano}-despesa-do-estado` do dados.rs, um ZIP por mês (~1 mês de atraso), UO 2178.
+  O RS paga pouco e irregular (R$ 2,6 mi fundo a fundo no Estado inteiro, jan-jul 2026);
+  Santa Maria recebeu R$ 25 mil de Piso Gaúcho em 06/2026, Nova Palma nada em 2026.
+- **O CNPJ do fundo vem do FNAS** (`fnas_saldo_conta`): por isso a task roda uma hora
+  depois da `fnas-suas`. Sem ele, só a prefeitura casa (nota na rodada).
+- A 1ª carga contra Postgres real pegou duas coisas do servidor do RS: download que PARA
+  sem fechar (timeout de leitura de 90 s + `Range`) e CSV de 150+ MB que estoura memória se
+  decodificado inteiro (lido em fluxo).
+- **Achado para depois**: o mesmo `despesa` de MG mostra TUDO que o Estado pagou à
+  prefeitura (Monte Sião 2026: R$ 3,3 mi em escolas, R$ 900 mil SEINFRA, R$ 500 mil de
+  Transferência Especial...) — um "recursos recebidos do Estado por pasta", irmão do da CGU.
+- ES registrado no BACKLOG §3.4 (sem cliente); PR não entrou no cartão.
+
 ## 1.50. Assistência social — FNAS: o saldo de cada conta do fundo (26/09/2026)
 
 Cartão "FNAS — Portal de Dados (assistência social)" do relatório de fontes do dono (p.33).

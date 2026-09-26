@@ -289,6 +289,7 @@ export const NAV_ITEMS: NavEntry[] = [
     icon: HandHeart,
     children: [
       { href: "/dashboard/fnas", label: "Assistência social — FNAS" },
+      { href: "/dashboard/feas", label: "Assistência social — Estado (FEAS)" },
     ],
   },
   { href: "/dashboard/rm", label: "Relatório de Monitoramento", icon: FileText },

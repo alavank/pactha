@@ -5,8 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 PACTHA is a monitoring platform for government grants/transfers (convênios, repasses,
-emendas) for Brazilian municipalities, tracking **37 official data sources** (federal +
-MG/ES/GO/RS/PR/TO state). The newest (26/09/2026) is the **FNAS** (`fnas_suas.py`): the
+emendas) for Brazilian municipalities, tracking **38 official data sources** (federal +
+MG/ES/GO/RS/PR/TO state). The newest (26/09/2026) is the **FEAS** (`feas_estadual.py`):
+the STATE co-financing of social assistance (Piso Mineiro, Piso Gaúcho, FEAS programs and
+emendas), payment by payment, from each state's open expenditure data (MG: dados.mg
+`despesa`, executing unit 1480004 SEDESE/FEAS; RS: dados.rs monthly ZIPs, UO 2178) ->
+`feas_pagamento`, screen ASSISTÊNCIA SOCIAL › "Assistência social — Estado (FEAS)". ⚠️ The
+money lands on the FUNDO MUNICIPAL's CNPJ (taken from the FNAS panel) or the prefeitura's;
+the RS server cuts/stalls downloads (Range resume) and its CSV must be streamed. Traps in
+the file header. Same day, the **FNAS** (`fnas_suas.py`): the
 MDS's "Repasses Fundo a Fundo" Qlik panel, read through the engine websocket with an
 anonymous session — the BALANCE of every account of the Fundo Municipal de Assistência
 Social month by month, every FNAS payment order, and the emendas with the parlamentar ->
